@@ -3,7 +3,7 @@
 KH muốn giải quyết vấn đề gì
 Ai là người sử dụng hệ thống  
 Tại sao cách truyền thống không thể giải quyết được vấn đề đó
-Giá trị của hệ thống tạo ra
+Giá trị của hệ thống tạo ra.
 
 3. Xác định các stack holders
 
