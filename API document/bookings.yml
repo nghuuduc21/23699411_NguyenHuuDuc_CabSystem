@@ -1,0 +1,221 @@
+openapi: 3.0.0
+info:
+  title: CAB System API - Bookings
+  description: 'Nghiệp vụ: Bookings. Đặt xe và tìm tài xế phù hợp (FR01–FR06)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Bookings
+  description: Đặt xe và tìm tài xế phù hợp (FR01–FR06)
+security:
+- bearerAuth: []
+paths:
+  /bookings:
+    post:
+      summary: Tạo yêu cầu đặt xe (điểm đón, điểm đến, loại xe)
+      description: 'FR01 — Xác định vị trí của khách hàng
+
+        FR02–FR06 — Tìm, lọc, xếp hạng và gửi yêu cầu đến tài xế phù hợp (bất đồng bộ,
+
+        kết quả trả về qua `/bookings/{bookingId}/status` hoặc Notification)
+
+        UC02 — Đặt xe
+
+        '
+      operationId: createBooking
+      tags:
+      - Bookings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreateRequest'
+      responses:
+        '201':
+          description: Yêu cầu đặt xe được tạo, hệ thống bắt đầu tìm tài xế (AC01)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          description: Thông tin không hợp lệ, ví dụ điểm đón không xác định được (AC02)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /bookings/{bookingId}:
+    parameters:
+    - $ref: '#/components/parameters/BookingIdParam'
+    get:
+      summary: Xem chi tiết một yêu cầu đặt xe
+      operationId: getBookingById
+      tags:
+      - Bookings
+      responses:
+        '200':
+          description: Thông tin booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /bookings/{bookingId}/status:
+    parameters:
+    - $ref: '#/components/parameters/BookingIdParam'
+    get:
+      summary: Kiểm tra trạng thái tìm tài xế của một booking
+      description: 'FR10 — Thông báo không tìm được tài xế: trạng thái `NO_DRIVER_FOUND` (AC09)
+
+        BRULE07 — không tìm được tài xế thì phải thông báo khách hàng
+
+        '
+      operationId: getBookingStatus
+      tags:
+      - Bookings
+      responses:
+        '200':
+          description: Trạng thái hiện tại của booking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingStatusResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /bookings/{bookingId}/cancel:
+    parameters:
+    - $ref: '#/components/parameters/BookingIdParam'
+    post:
+      summary: Hủy yêu cầu đặt xe (trước khi/đang trong quá trình tìm tài xế)
+      operationId: cancelBooking
+      tags:
+      - Bookings
+      responses:
+        '200':
+          description: Booking đã được hủy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '409':
+          description: Không thể hủy (booking đã chuyển sang trạng thái không cho phép hủy)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    BookingIdParam:
+      name: bookingId
+      in: path
+      required: true
+      description: ID của yêu cầu đặt xe
+      schema:
+        type: integer
+        format: int64
+  responses:
+    NotFound:
+      description: Không tìm thấy tài nguyên
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    BookingStatusEnum:
+      type: string
+      enum:
+      - PENDING
+      - SEARCHING_DRIVER
+      - DRIVER_ASSIGNED
+      - NO_DRIVER_FOUND
+      - CANCELLED
+      description: BRULE07 / FR10 — NO_DRIVER_FOUND khi không tìm được tài xế phù hợp
+    BookingCreateRequest:
+      type: object
+      required:
+      - pickup_lat
+      - pickup_lng
+      - destination_lat
+      - destination_lng
+      - vehicle_type_id
+      properties:
+        pickup_lat:
+          type: number
+          format: double
+        pickup_lng:
+          type: number
+          format: double
+        pickup_address:
+          type: string
+        destination_lat:
+          type: number
+          format: double
+        destination_lng:
+          type: number
+          format: double
+        destination_address:
+          type: string
+        vehicle_type_id:
+          type: integer
+          format: int64
+    Booking:
+      type: object
+      properties:
+        booking_id:
+          type: integer
+          format: int64
+        customer_id:
+          type: integer
+          format: int64
+        vehicle_type_id:
+          type: integer
+          format: int64
+        pickup_lat:
+          type: number
+          format: double
+        pickup_lng:
+          type: number
+          format: double
+        pickup_address:
+          type: string
+        destination_lat:
+          type: number
+          format: double
+        destination_lng:
+          type: number
+          format: double
+        destination_address:
+          type: string
+        status:
+          $ref: '#/components/schemas/BookingStatusEnum'
+        created_at:
+          type: string
+          format: date-time
+    BookingStatusResponse:
+      type: object
+      properties:
+        booking_id:
+          type: integer
+          format: int64
+        status:
+          $ref: '#/components/schemas/BookingStatusEnum'
+        trip_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: Có giá trị khi status = DRIVER_ASSIGNED
+    Error:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
