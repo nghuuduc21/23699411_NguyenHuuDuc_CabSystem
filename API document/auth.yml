@@ -1,0 +1,156 @@
+openapi: 3.0.0
+info:
+  title: CAB System API - Auth
+  description: 'Nghiệp vụ: Auth. Đăng ký, đăng nhập, xác thực (FR26)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Auth
+  description: Đăng ký, đăng nhập, xác thực (FR26)
+security:
+- bearerAuth: []
+paths:
+  /auth/register:
+    post:
+      summary: Đăng ký tài khoản (Customer hoặc Driver)
+      description: FR26 — Đăng ký và đăng nhập
+      operationId: registerAccount
+      tags:
+      - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Tài khoản được tạo thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Dữ liệu không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Số điện thoại/email đã tồn tại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      summary: Đăng nhập (Customer, Driver, Operator) — UC01
+      description: FR26 — Đăng ký và đăng nhập
+      operationId: login
+      tags:
+      - Auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Đăng nhập thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Sai thông tin đăng nhập
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '423':
+          description: Tài khoản bị khóa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/logout:
+    post:
+      summary: Đăng xuất, hủy phiên hiện tại
+      operationId: logout
+      tags:
+      - Auth
+      responses:
+        '204':
+          description: Đăng xuất thành công
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+      - role
+      - full_name
+      - phone
+      - password
+      properties:
+        role:
+          type: string
+          enum:
+          - customer
+          - driver
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+    LoginRequest:
+      type: object
+      required:
+      - identifier
+      - password
+      properties:
+        identifier:
+          type: string
+          description: Số điện thoại hoặc email
+        password:
+          type: string
+          format: password
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        role:
+          type: string
+          enum:
+          - customer
+          - driver
+          - operator
+        expires_in:
+          type: integer
+          description: Thời gian sống của token (giây)
+    Error:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
