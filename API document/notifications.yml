@@ -1,0 +1,117 @@
+openapi: 3.0.0
+info:
+  title: CAB System API - Notifications
+  description: 'Nghiệp vụ: Notifications. Thông báo cho khách hàng và tài xế (FR21–FR24)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Notifications
+  description: Thông báo cho khách hàng và tài xế (FR21–FR24)
+security:
+- bearerAuth: []
+paths:
+  /notifications:
+    get:
+      summary: Danh sách thông báo của người dùng đang đăng nhập
+      description: 'FR21 — Gửi thông báo đặt xe
+
+        FR22 — Gửi thông báo tài xế nhận chuyến
+
+        FR23 — Gửi thông báo trạng thái chuyến
+
+        FR24 — Gửi thông báo thanh toán
+
+        '
+      operationId: listMyNotifications
+      tags:
+      - Notifications
+      parameters:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/NotificationStatus'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Danh sách thông báo
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+  /notifications/{notificationId}/read:
+    parameters:
+    - name: notificationId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    patch:
+      summary: Đánh dấu thông báo đã đọc
+      operationId: markNotificationRead
+      tags:
+      - Notifications
+      responses:
+        '200':
+          description: Thông báo được cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        default: 20
+  schemas:
+    NotificationStatus:
+      type: string
+      enum:
+      - unread
+      - read
+    NotificationType:
+      type: string
+      enum:
+      - BOOKING_RECEIVED
+      - DRIVER_ASSIGNED
+      - TRIP_STATUS_CHANGED
+      - PAYMENT_RESULT
+    Notification:
+      type: object
+      properties:
+        notification_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        title:
+          type: string
+        content:
+          type: string
+        status:
+          $ref: '#/components/schemas/NotificationStatus'
+        created_at:
+          type: string
+          format: date-time
