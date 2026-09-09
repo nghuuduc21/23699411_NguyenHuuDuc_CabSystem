@@ -1,0 +1,164 @@
+
+03 drivers · YML
+openapi: 3.0.0
+info:
+  title: CAB System API - Drivers
+  description: 'Nghiệp vụ: Drivers. Quản lý hồ sơ và trạng thái hoạt động của tài xế (FR28, FR06 theo
+    BR)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Drivers
+  description: Quản lý hồ sơ và trạng thái hoạt động của tài xế (FR28, FR06 theo BR)
+security:
+- bearerAuth: []
+paths:
+  /drivers/me:
+    get:
+      summary: Xem hồ sơ tài xế đang đăng nhập
+      description: FR28 — Quản lý hồ sơ tài xế
+      operationId: getMyDriverProfile
+      tags:
+      - Drivers
+      responses:
+        '200':
+          description: Thông tin tài xế
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+    put:
+      summary: Cập nhật hồ sơ tài xế
+      description: FR28 — Quản lý hồ sơ tài xế
+      operationId: updateMyDriverProfile
+      tags:
+      - Drivers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverUpdateRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+  /drivers/me/status:
+    patch:
+      summary: Chuyển trạng thái sẵn sàng / không sẵn sàng nhận chuyến
+      description: BRULE01 — chỉ tài xế Available/Ready mới được gửi yêu cầu chuyến
+      operationId: updateDriverStatus
+      tags:
+      - Drivers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - status
+              properties:
+                status:
+                  $ref: '#/components/schemas/DriverStatus'
+      responses:
+        '200':
+          description: Trạng thái được cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+  /drivers/me/location:
+    post:
+      summary: Cập nhật vị trí hiện tại của tài xế
+      description: FR13 — Theo dõi vị trí tài xế
+      operationId: updateDriverLocation
+      tags:
+      - Drivers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationUpdate'
+      responses:
+        '204':
+          description: Vị trí đã được ghi nhận
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    DriverStatus:
+      type: string
+      enum:
+      - available
+      - unavailable
+      - on_trip
+      - offline
+    Driver:
+      type: object
+      properties:
+        driver_id:
+          type: integer
+          format: int64
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        license_number:
+          type: string
+        rating:
+          type: number
+          format: float
+        status:
+          $ref: '#/components/schemas/DriverStatus'
+        current_latitude:
+          type: number
+          format: double
+        current_longitude:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+    DriverUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        license_number:
+          type: string
+    LocationUpdate:
+      type: object
+      required:
+      - latitude
+      - longitude
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        recorded_at:
+          type: string
+          format: date-time
+ 
+Beta
+0 / 0
+used queries
+1
