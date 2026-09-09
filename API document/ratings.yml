@@ -1,0 +1,104 @@
+openapi: 3.0.0
+info:
+  title: CAB System API - Ratings
+  description: 'Nghiệp vụ: Ratings. Đánh giá tài xế sau chuyến (FR25)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Ratings
+  description: Đánh giá tài xế sau chuyến (FR25)
+security:
+- bearerAuth: []
+paths:
+  /trips/{tripId}/rating:
+    parameters:
+    - $ref: '#/components/parameters/TripIdParam'
+    post:
+      summary: Khách hàng đánh giá tài xế sau chuyến
+      description: 'FR25 — Đánh giá tài xế (AC14)
+
+        BRULE11 — chỉ khách hàng đã hoàn thành chuyến mới được đánh giá
+
+        UC07 — không cho phép tạo đánh giá trùng
+
+        '
+      operationId: createRating
+      tags:
+      - Ratings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatingCreateRequest'
+      responses:
+        '201':
+          description: Đánh giá được ghi nhận, điểm rating của tài xế được cập nhật
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rating'
+        '409':
+          description: Chuyến đi đã được đánh giá trước đó
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TripIdParam:
+      name: tripId
+      in: path
+      required: true
+      description: ID của chuyến đi
+      schema:
+        type: integer
+        format: int64
+  schemas:
+    RatingCreateRequest:
+      type: object
+      required:
+      - score
+      properties:
+        score:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+    Rating:
+      type: object
+      properties:
+        rating_id:
+          type: integer
+          format: int64
+        trip_id:
+          type: integer
+          format: int64
+        customer_id:
+          type: integer
+          format: int64
+        driver_id:
+          type: integer
+          format: int64
+        score:
+          type: integer
+        comment:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
