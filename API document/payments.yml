@@ -1,0 +1,218 @@
+openapi: 3.0.0
+info:
+  title: CAB System API - Payments
+  description: 'Nghiệp vụ: Payments. Thanh toán và xử lý giao dịch (FR17–FR20)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Payments
+  description: Thanh toán và xử lý giao dịch (FR17–FR20)
+security:
+- bearerAuth: []
+paths:
+  /trips/{tripId}/payments:
+    parameters:
+    - $ref: '#/components/parameters/TripIdParam'
+    post:
+      summary: Khởi tạo thanh toán cho chuyến đi
+      description: 'FR17 — Xử lý thanh toán tiền mặt (AC11)
+
+        FR18 — Xử lý thanh toán điện tử, hệ thống chuyển yêu cầu đến Payment Provider (AC12)
+
+        BRULE09 — không lưu thông tin thanh toán nhạy cảm (thẻ/tài khoản) trong CAB
+
+        UC06 — Thanh toán chuyến đi
+
+        '
+      operationId: createPayment
+      tags:
+      - Payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentCreateRequest'
+      responses:
+        '201':
+          description: Giao dịch thanh toán được khởi tạo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /payments/{paymentId}:
+    parameters:
+    - $ref: '#/components/parameters/PaymentIdParam'
+    get:
+      summary: Xem trạng thái một giao dịch thanh toán
+      description: FR20 — Lưu thông tin giao dịch (chỉ trạng thái/metadata, không lưu dữ liệu thẻ)
+      operationId: getPaymentById
+      tags:
+      - Payments
+      responses:
+        '200':
+          description: Thông tin giao dịch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /payments/{paymentId}/webhook:
+    parameters:
+    - $ref: '#/components/parameters/PaymentIdParam'
+    post:
+      summary: Webhook nhận kết quả giao dịch từ Payment Provider
+      description: 'FR18 — Xử lý thanh toán điện tử (nhận kết quả)
+
+        FR19 — Xử lý thanh toán thất bại (AC13)
+
+        BRULE10 — thanh toán thất bại phải được ghi nhận
+
+        '
+      operationId: paymentWebhook
+      tags:
+      - Payments
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentWebhookPayload'
+      responses:
+        '200':
+          description: Webhook đã được xử lý
+  /payments/{paymentId}/retry:
+    parameters:
+    - $ref: '#/components/parameters/PaymentIdParam'
+    post:
+      summary: Thực hiện thanh toán lại sau khi thất bại
+      description: 'FR19 — Xử lý thanh toán thất bại — cho phép thực hiện lại theo chính sách
+
+        BRULE10 — thanh toán thất bại phải được ghi nhận
+
+        '
+      operationId: retryPayment
+      tags:
+      - Payments
+      responses:
+        '201':
+          description: Giao dịch thanh toán mới được khởi tạo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '409':
+          description: Giao dịch trước đó không ở trạng thái FAILED nên không thể retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TripIdParam:
+      name: tripId
+      in: path
+      required: true
+      description: ID của chuyến đi
+      schema:
+        type: integer
+        format: int64
+    PaymentIdParam:
+      name: paymentId
+      in: path
+      required: true
+      description: ID của giao dịch thanh toán
+      schema:
+        type: integer
+        format: int64
+  responses:
+    BadRequest:
+      description: Dữ liệu không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Không tìm thấy tài nguyên
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    PaymentMethod:
+      type: string
+      enum:
+      - cash
+      - electronic
+    PaymentStatus:
+      type: string
+      enum:
+      - PENDING
+      - SUCCESS
+      - FAILED
+    PaymentCreateRequest:
+      type: object
+      required:
+      - payment_method
+      properties:
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        return_url:
+          type: string
+          format: uri
+          description: URL redirect sau khi thanh toán điện tử hoàn tất (nếu áp dụng)
+    Payment:
+      type: object
+      properties:
+        payment_id:
+          type: integer
+          format: int64
+        trip_id:
+          type: integer
+          format: int64
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        amount:
+          type: number
+          format: float
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        transaction_id:
+          type: string
+          nullable: true
+          description: Mã giao dịch từ Payment Provider (không chứa dữ liệu thẻ)
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+    PaymentWebhookPayload:
+      type: object
+      required:
+      - transaction_id
+      - status
+      properties:
+        transaction_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        failure_reason:
+          type: string
+          nullable: true
+    Error:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
