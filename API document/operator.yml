@@ -1,0 +1,526 @@
+openapi: 3.0.0
+info:
+  title: CAB System API - Operator
+  description: 'Nghiệp vụ: Operator. Giám sát, xử lý sự cố, phân quyền, báo cáo, audit log (FR30–FR34)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Operator
+  description: Giám sát, xử lý sự cố, phân quyền, báo cáo, audit log (FR30–FR34)
+security:
+- bearerAuth: []
+paths:
+  /operator/trips:
+    get:
+      summary: Danh sách và trạng thái các chuyến đang diễn ra
+      description: 'FR30 — Giám sát chuyến đi (AC15)
+
+        UC08 — Giám sát chuyến đi
+
+        '
+      operationId: listOperatorTrips
+      tags:
+      - Operator
+      parameters:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/TripStatus'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Danh sách chuyến đi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operator/trips/{tripId}/incidents:
+    parameters:
+    - $ref: '#/components/parameters/TripIdParam'
+    post:
+      summary: Ghi nhận và xử lý sự cố của một chuyến đi
+      description: 'FR31 — Xử lý chuyến bị lỗi
+
+        BRULE12 — chỉ người có quyền mới được thực hiện thao tác quản trị
+
+        '
+      operationId: createTripIncident
+      tags:
+      - Operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IncidentCreateRequest'
+      responses:
+        '201':
+          description: Sự cố được ghi nhận
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Incident'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operator/customers:
+    get:
+      summary: Quản lý danh sách khách hàng (UC19)
+      operationId: listCustomersAsOperator
+      tags:
+      - Operator
+      parameters:
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Danh sách khách hàng
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Customer'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operator/drivers:
+    get:
+      summary: Quản lý danh sách tài xế (UC20)
+      operationId: listDriversAsOperator
+      tags:
+      - Operator
+      parameters:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/DriverStatus'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Danh sách tài xế
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Driver'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operator/payments:
+    get:
+      summary: Tra cứu giao dịch thanh toán (UC24)
+      operationId: listPaymentsAsOperator
+      tags:
+      - Operator
+      parameters:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/PaymentStatus'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Danh sách giao dịch
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Payment'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operator/roles:
+    get:
+      summary: Danh sách vai trò và quyền hạn (UC25)
+      description: FR32 — Quản lý phân quyền
+      operationId: listRoles
+      tags:
+      - Operator
+      responses:
+        '200':
+          description: Danh sách vai trò
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operator/reports:
+    get:
+      summary: Báo cáo hoạt động kinh doanh (UC26)
+      description: 'FR33 — Xem báo cáo hoạt động
+
+        Chỉ số: số lượng chuyến, doanh thu, tỷ lệ hoàn thành, tỷ lệ hủy, hiệu quả tài xế
+
+        '
+      operationId: getOperatorReport
+      tags:
+      - Operator
+      parameters:
+      - name: from
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+      - name: to
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+      responses:
+        '200':
+          description: Báo cáo hoạt động trong khoảng thời gian
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationalReport'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /operator/audit-logs:
+    get:
+      summary: Tra cứu lịch sử thao tác quan trọng
+      description: FR34 — Lưu lịch sử và Audit Log
+      operationId: listAuditLogs
+      tags:
+      - Operator
+      parameters:
+      - name: operatorId
+        in: query
+        schema:
+          type: integer
+          format: int64
+      - name: entityType
+        in: query
+        schema:
+          type: string
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Danh sách audit log
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLog'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TripIdParam:
+      name: tripId
+      in: path
+      required: true
+      description: ID của chuyến đi
+      schema:
+        type: integer
+        format: int64
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        default: 20
+  responses:
+    Forbidden:
+      description: Không có quyền thực hiện thao tác (BRULE12)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Customer:
+      type: object
+      properties:
+        customer_id:
+          type: integer
+          format: int64
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        date_of_birth:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - active
+          - suspended
+        created_at:
+          type: string
+          format: date-time
+    DriverStatus:
+      type: string
+      enum:
+      - available
+      - unavailable
+      - on_trip
+      - offline
+    Driver:
+      type: object
+      properties:
+        driver_id:
+          type: integer
+          format: int64
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        license_number:
+          type: string
+        rating:
+          type: number
+          format: float
+        status:
+          $ref: '#/components/schemas/DriverStatus'
+        current_latitude:
+          type: number
+          format: double
+        current_longitude:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+    Vehicle:
+      type: object
+      properties:
+        vehicle_id:
+          type: integer
+          format: int64
+        driver_id:
+          type: integer
+          format: int64
+        vehicle_type_id:
+          type: integer
+          format: int64
+        license_plate:
+          type: string
+        brand:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        status:
+          type: string
+          enum:
+          - active
+          - inactive
+    TripStatus:
+      type: string
+      enum:
+      - DRIVER_ASSIGNED
+      - ARRIVED_AT_PICKUP
+      - PICKED_UP
+      - IN_PROGRESS
+      - COMPLETED
+      - CANCELLED
+    Trip:
+      type: object
+      properties:
+        trip_id:
+          type: integer
+          format: int64
+        booking_id:
+          type: integer
+          format: int64
+        driver_id:
+          type: integer
+          format: int64
+        customer_id:
+          type: integer
+          format: int64
+        vehicle:
+          $ref: '#/components/schemas/Vehicle'
+        status:
+          $ref: '#/components/schemas/TripStatus'
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+        distance:
+          type: number
+          format: float
+          description: Đơn vị km
+        duration:
+          type: integer
+          description: Đơn vị giây
+        eta_seconds:
+          type: integer
+          description: FR15 — thời gian dự kiến tài xế đến điểm đón
+        fare_amount:
+          type: number
+          format: float
+          nullable: true
+    PaymentMethod:
+      type: string
+      enum:
+      - cash
+      - electronic
+    PaymentStatus:
+      type: string
+      enum:
+      - PENDING
+      - SUCCESS
+      - FAILED
+    Payment:
+      type: object
+      properties:
+        payment_id:
+          type: integer
+          format: int64
+        trip_id:
+          type: integer
+          format: int64
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        amount:
+          type: number
+          format: float
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        transaction_id:
+          type: string
+          nullable: true
+          description: Mã giao dịch từ Payment Provider (không chứa dữ liệu thẻ)
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+    Role:
+      type: object
+      properties:
+        role_id:
+          type: integer
+          format: int64
+        role_name:
+          type: string
+        description:
+          type: string
+    Incident:
+      type: object
+      properties:
+        incident_id:
+          type: integer
+          format: int64
+        trip_id:
+          type: integer
+          format: int64
+        operator_id:
+          type: integer
+          format: int64
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+          - open
+          - resolved
+        created_at:
+          type: string
+          format: date-time
+    IncidentCreateRequest:
+      type: object
+      required:
+      - description
+      properties:
+        description:
+          type: string
+    OperationalReport:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+        total_trips:
+          type: integer
+        total_revenue:
+          type: number
+          format: float
+        completion_rate:
+          type: number
+          format: float
+          description: Tỷ lệ chuyến hoàn thành (%)
+        cancellation_rate:
+          type: number
+          format: float
+          description: Tỷ lệ hủy (%)
+        top_drivers:
+          type: array
+          items:
+            type: object
+            properties:
+              driver_id:
+                type: integer
+                format: int64
+              full_name:
+                type: string
+              completed_trips:
+                type: integer
+              average_rating:
+                type: number
+                format: float
+    AuditLog:
+      type: object
+      properties:
+        log_id:
+          type: integer
+          format: int64
+        operator_id:
+          type: integer
+          format: int64
+        action:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
