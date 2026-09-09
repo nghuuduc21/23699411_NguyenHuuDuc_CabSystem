@@ -1,0 +1,220 @@
+openapi: 3.0.0
+info:
+  title: CAB System API - Customers
+  description: 'Nghiệp vụ: Customers. Quản lý hồ sơ khách hàng (FR27)'
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/api/v1
+  description: Local server
+tags:
+- name: Customers
+  description: Quản lý hồ sơ khách hàng (FR27)
+security:
+- bearerAuth: []
+paths:
+  /customers/me:
+    get:
+      summary: Xem thông tin cá nhân của khách hàng đang đăng nhập
+      description: FR27 — Quản lý hồ sơ khách hàng
+      operationId: getMyCustomerProfile
+      tags:
+      - Customers
+      responses:
+        '200':
+          description: Thông tin khách hàng
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      summary: Cập nhật thông tin cá nhân của khách hàng
+      description: FR27 — Quản lý hồ sơ khách hàng
+      operationId: updateMyCustomerProfile
+      tags:
+      - Customers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerUpdateRequest'
+      responses:
+        '200':
+          description: Cập nhật thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /customers/me/trips:
+    get:
+      summary: Xem lịch sử chuyến đi của khách hàng
+      operationId: getMyTripHistory
+      tags:
+      - Customers
+      parameters:
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: Danh sách chuyến đi đã thực hiện
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        default: 20
+  responses:
+    BadRequest:
+      description: Dữ liệu không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Chưa xác thực hoặc token không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Customer:
+      type: object
+      properties:
+        customer_id:
+          type: integer
+          format: int64
+        full_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        date_of_birth:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - active
+          - suspended
+        created_at:
+          type: string
+          format: date-time
+    CustomerUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        date_of_birth:
+          type: string
+          format: date
+    Vehicle:
+      type: object
+      properties:
+        vehicle_id:
+          type: integer
+          format: int64
+        driver_id:
+          type: integer
+          format: int64
+        vehicle_type_id:
+          type: integer
+          format: int64
+        license_plate:
+          type: string
+        brand:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        status:
+          type: string
+          enum:
+          - active
+          - inactive
+    TripStatus:
+      type: string
+      enum:
+      - DRIVER_ASSIGNED
+      - ARRIVED_AT_PICKUP
+      - PICKED_UP
+      - IN_PROGRESS
+      - COMPLETED
+      - CANCELLED
+    Trip:
+      type: object
+      properties:
+        trip_id:
+          type: integer
+          format: int64
+        booking_id:
+          type: integer
+          format: int64
+        driver_id:
+          type: integer
+          format: int64
+        customer_id:
+          type: integer
+          format: int64
+        vehicle:
+          $ref: '#/components/schemas/Vehicle'
+        status:
+          $ref: '#/components/schemas/TripStatus'
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+        distance:
+          type: number
+          format: float
+          description: Đơn vị km
+        duration:
+          type: integer
+          description: Đơn vị giây
+        eta_seconds:
+          type: integer
+          description: FR15 — thời gian dự kiến tài xế đến điểm đón
+        fare_amount:
+          type: number
+          format: float
+          nullable: true
+    Error:
+      type: object
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
