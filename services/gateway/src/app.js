@@ -27,8 +27,8 @@ export function createApp({
   // Kiểm tra service mà Gateway phụ thuộc.
   app.get('/health/services', async (req, res) => {
     try {
-      const response = await fetch(`${identityUrl}/health`, {
-        signal: AbortSignal.timeout(3000),
+      const response = await fetch(`${identityUrl}/ready`, {
+        signal: AbortSignal.timeout(7000),
       });
 
       // fetch không tự báo lỗi khi server trả HTTP 503.
@@ -41,7 +41,7 @@ export function createApp({
       // Kiểm tra cả cấu trúc/nội dung phản hồi.
       if (
         identity.service !== 'identity' ||
-        identity.status !== 'healthy'
+        identity.status !== 'ready'
       ) {
         throw new Error('Identity trả health response không hợp lệ');
       }

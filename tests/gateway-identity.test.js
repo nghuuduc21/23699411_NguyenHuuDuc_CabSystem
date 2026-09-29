@@ -41,7 +41,7 @@ test('Gateway trả 200 khi Identity healthy', async (t) => {
 
     res.end(JSON.stringify({
       service: 'identity',
-      status: 'healthy',
+      status: 'ready',
     }));
   });
 
@@ -58,7 +58,7 @@ test('Gateway trả 200 khi Identity healthy', async (t) => {
   const body = await response.json();
 
   // Assert: Gateway gọi đúng endpoint của Identity và trả đúng kết quả.
-  assert.equal(receivedPath, '/health');
+  assert.equal(receivedPath, '/ready');
   assert.equal(response.status, 200);
 
   assert.deepEqual(body, {
