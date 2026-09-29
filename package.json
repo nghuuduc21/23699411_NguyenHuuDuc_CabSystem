@@ -9,7 +9,8 @@
     "test": "node --test",
     "test:gateway": "node --test tests/gateway.test.js",
     "dev:identity": "node --env-file=.env --watch services/identity/src/server.js",
-    "start:identity": "node --env-file=.env services/identity/src/server.js"
+    "start:identity": "node --env-file=.env services/identity/src/server.js",
+    "migrate:identity": "node --env-file=.env services/identity/src/migrate.js"
   },
   "repository": {
     "type": "git",
