@@ -2,6 +2,8 @@
 
 > Tuần 1 · Giai đoạn 0. Cập nhật: 2026-09-30.
 > Cột **Trạng thái** phản ánh code tại thời điểm viết: ✅ xong · 🟡 một phần · ❌ chưa có.
+>
+> **Lưu ý (2026-10-01):** project được xây lại từ đầu trên nhánh `rebuild/agent-workflow`. Cột Trạng thái và Demo dưới đây mô tả **bản cũ** (nhánh `codex/customer-registration`); trên nhánh mới, mọi mục đều bắt đầu từ ❌.
 
 ## 1. Cấu trúc phiếu chấm
 

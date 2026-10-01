@@ -6,8 +6,8 @@
 
 | File | Ai đọc | Chứa gì |
 |---|---|---|
-| `CLAUDE.md` | Claude Code và cả 3 agent, tự nạp mỗi phiên | Tài liệu nguồn, quy tắc kiến trúc theo yêu cầu giảng viên, quyết định nghiệp vụ đã chốt, trạng thái code, quy ước code |
-| `.claude/agents/ba-agent.md` | Agent BA | Viết đặc tả vào `docs/specs/`, giữ `srs.md` ↔ DDD ↔ API document nhất quán |
+| `CLAUDE.md` | Claude Code và cả 3 agent, tự nạp mỗi phiên | Trạng thái, danh mục tài liệu, quy tắc kiến trúc theo yêu cầu giảng viên, quyết định nghiệp vụ đã chốt, quy ước code |
+| `.claude/agents/ba-agent.md` | Agent BA | Thiết kế tổng thể vào `docs/design/`, đặc tả từng mục chấm vào `docs/specs/` |
 | `.claude/agents/dev-agent.md` | Agent Dev | Code theo đặc tả: proto, service, migration, Docker, Kafka |
 | `.claude/agents/test-agent.md` | Agent Test | Viết và chạy test, Postman, báo cáo |
 
@@ -25,7 +25,7 @@ Phần dưới frontmatter là lời hướng dẫn riêng của agent đó.
 
 **Phân quyền giữa các agent** (ai được ghi vào đâu):
 
-| | `srs.md`, DDD, `API document/`, `docs/specs/` | `proto/`, `services/`, `compose.yaml` | `tests/`, `postman/`, `docs/test-reports/` | Chạy lệnh |
+| | `srs.md`, `docs/design/`, `docs/specs/` | `proto/`, `services/`, `compose.yaml` | `tests/`, `postman/`, `docs/test-reports/` | Chạy lệnh |
 |---|---|---|---|---|
 | ba-agent | ✅ | ❌ | ❌ | ❌ (không có Bash) |
 | dev-agent | ❌ | ✅ | ❌ | ✅ |
@@ -84,9 +84,9 @@ Mỗi vòng là một lượt BA → Dev → Test. Làm theo thứ tự vì vòn
 
 | Vòng | Nội dung | Mục chấm | Service |
 |---|---|---|---|
-| 1 | Rà kiến trúc: bảng "đường giao tiếp ↔ nghiệp vụ", danh sách topic Kafka kèm publisher/subscriber và lý do; vẽ lại sơ đồ | 3, 4 | Toàn hệ thống (chỉ BA) |
-| 2 | Hạ tầng: `package.json` + Dockerfile riêng từng service, Compose đủ container, Kafka + Kafka UI, `/ready` ở Gateway, chỉ Gateway mở cổng | 1, 2, 5, 6, 7, 8 | Gateway, Identity |
-| 3 | Đăng nhập, cấp JWT; Gateway kiểm tra chữ ký token | 9, 10, 25, 27 | Identity, Gateway |
+| 1 | **Thiết kế lại từ nghiệp vụ:** bounded context, service, bảng "đường giao tiếp ↔ nghiệp vụ", topic Kafka, database và kiểu dữ liệu, API | 1, 3, 4 | Toàn hệ thống (chỉ BA) |
+| 2 | Dựng khung: Gateway và service đầu tiên, mỗi service `package.json` + Dockerfile riêng, Compose, Kafka + Kafka UI, ba endpoint health, chỉ Gateway mở cổng | 1, 2, 5, 6, 7, 8 | Gateway, Identity |
+| 3 | Đăng ký, đăng nhập, cấp JWT; Gateway kiểm tra chữ ký token | 9, 10, 25, 27 | Identity, Gateway |
 | 4 | Phân quyền theo role, rate limit; xem khách hàng theo mã | 11, 28, 29 | Gateway, Identity |
 | 5 | Tài xế: đăng ký (OTP), Admin duyệt, Online/Offline, xem tài xế, tài xế trong 1 km | 21, 22, 23, 12, 13 | Fleet |
 | 6 | Đặt xe, ghép tài xế, tài xế nhận chuyến, danh sách booking | 15, 16, 14 | Booking, Dispatch, Notification |
@@ -95,14 +95,35 @@ Mỗi vòng là một lượt BA → Dev → Test. Làm theo thứ tự vì vòn
 | 9 | Đánh giá chuyến | 20 | Rating |
 | 10 | Mã hóa dữ liệu nhạy cảm, chống XSS; rà lại cả 30 mục | 24, 26 | Mọi service |
 
-### Prompt cho vòng 1 (chỉ BA, chưa code)
+### Vòng 1: thiết kế lại (chỉ BA, chưa code)
+
+Chạy lần lượt bốn prompt. Sau mỗi prompt, đọc file BA viết và tự trả lời "vì sao" trước khi chạy prompt kế.
 
 ```
-Dùng ba-agent rà lại kiến trúc giao tiếp của toàn hệ thống theo quy tắc trong CLAUDE.md.
-Viết docs/specs/00-kien-truc-giao-tiep.md gồm: bảng mọi lời gọi gRPC và mọi event Kafka,
-mỗi dòng ghi bên gửi, bên nhận, đồng bộ hay bất đồng bộ, và FR/BRULE/NFR cần nó;
-loại bỏ những đường không có lý do nghiệp vụ; cập nhật mục 10 của tài liệu DDD cho khớp.
+Dùng ba-agent thiết kế bounded context cho hệ thống từ srs.md và phiếu chấm,
+ghi vào docs/design/01-bounded-contexts.md.
 ```
+
+```
+Dùng ba-agent thiết kế kiến trúc giao tiếp dựa trên docs/design/01-bounded-contexts.md,
+ghi vào docs/design/02-kien-truc-giao-tiep.md. Mỗi đường giao tiếp phải có lý do nghiệp vụ.
+```
+
+```
+Dùng ba-agent thiết kế dữ liệu cho từng service, ghi vào docs/design/03-du-lieu.md.
+Giải thích vì sao chọn loại database và từng kiểu dữ liệu.
+```
+
+```
+Dùng ba-agent thiết kế API REST của Gateway cho đủ 30 mục chấm, ghi vào docs/design/04-api.md.
+```
+
+**Tự kiểm tra sau vòng 1:**
+
+- Với mỗi mũi tên trong sơ đồ, bạn nói được nghiệp vụ nào cần nó.
+- Với mỗi topic Kafka, bạn nói được ai phát, ai nghe, vì sao không gọi trực tiếp.
+- Với mỗi service, bạn nói được vì sao dùng loại database đó.
+- Mang bộ thiết kế này hỏi giảng viên trước khi sang vòng 2.
 
 ### Prompt cho vòng 3 (ví dụ một vòng đầy đủ)
 

@@ -15,15 +15,15 @@ Bạn là QA Engineer của Cab Booking System. Bạn chứng minh bằng test c
 
 ## Phạm vi được ghi
 
-`tests/`, `postman/`, `docs/test-reports/`.
-**Không sửa `services/`, `proto/`, `compose.yaml`, `docs/specs/`.** Phát hiện lỗi thì ghi vào báo cáo để dev-agent sửa.
+`tests/`, `services/*/tests/`, `postman/`, `docs/test-reports/`.
+**Không sửa `services/*/src/`, `proto/`, `compose.yaml`, `docs/design/`, `docs/specs/`.** Phát hiện lỗi thì ghi vào báo cáo để dev-agent sửa.
 
 ## Quy tắc
 
 1. Mỗi tiêu chí chấp nhận có ít nhất một test; tên test ghi mã AC hoặc số mục chấm.
-2. Ba tầng test, theo cách `tests/` đang làm:
+2. Ba tầng test:
    - **Unit:** logic nghiệp vụ với dependency giả, không cần database.
-   - **Integration:** Gateway + gRPC server thật với dependency giả (như `tests/gateway-identity.test.js`).
+   - **Integration:** Gateway + gRPC server thật với dependency giả.
    - **End-to-end:** hệ thống chạy bằng `docker compose`, gọi REST vào Gateway.
 3. Luôn test đường lỗi của phần việc: thiếu dữ liệu (400), sai kiểu (400), trùng (409), không tìm thấy (404), thiếu token (401), token bị sửa chữ ký (401), sai role (403), service phía sau không sẵn sàng (503).
 4. Kiểm tra cả điều không được xảy ra: response không chứa `password_hash`; gọi thẳng cổng của service từ máy host phải thất bại.

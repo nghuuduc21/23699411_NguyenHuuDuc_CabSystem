@@ -1,6 +1,8 @@
 # Buổi 2 — Nghiệp vụ & truy vết yêu cầu
 
 > Tuần 1 · Giai đoạn 1. Nguồn: `srs.md`, `API document/*.yml`, phiếu chấm.
+>
+> **Lưu ý (2026-10-01):** `API document/` và tài liệu DDD cũ đã bỏ khi xây lại từ đầu. Cột API và Service trong bảng truy vết là **đề xuất tham khảo**; thiết kế chính thức nằm ở `docs/design/` do ba-agent viết.
 > Ký hiệu: **⁺** = bổ sung trong buổi này. FR35–FR39, UC27–UC30 đã thêm vào `srs.md` (2026-10-01); các API có ⁺ còn chờ buổi rà API.
 
 ## 1. Bài toán trong ba câu
