@@ -1,0 +1,21 @@
+# Dependencies: cài lại bằng npm install.
+node_modules/
+
+# Cấu hình thật có mật khẩu. Chỉ commit .env.example.
+.env
+.env.*
+!.env.example
+
+# Log và file tạm.
+*.log
+npm-debug.log*
+coverage/
+
+# Hệ điều hành và editor.
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Cấu hình Claude Code riêng của từng máy.
+.claude/settings.local.json
