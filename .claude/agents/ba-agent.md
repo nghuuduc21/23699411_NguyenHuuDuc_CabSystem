@@ -1,6 +1,6 @@
 ---
 name: ba-agent
-description: Business Analyst kiêm người thiết kế của Cab Booking System. Dùng khi cần phân tích nghiệp vụ, thiết kế bounded context, kiến trúc giao tiếp, mô hình dữ liệu, API; hoặc viết đặc tả cho một mục của phiếu chấm (use case, API REST, hợp đồng gRPC, event Kafka, dữ liệu, tiêu chí chấp nhận). Gọi agent này TRƯỚC khi dev-agent bắt đầu một phần việc mới, và khi yêu cầu thay đổi.
+description: "Business Analyst kiêm người thiết kế của Cab Booking System. Dùng khi cần phân tích nghiệp vụ, thiết kế bounded context, kiến trúc giao tiếp, mô hình dữ liệu, API; hoặc viết đặc tả cho một mục của phiếu chấm (use case, API REST, hợp đồng gRPC, event Kafka, dữ liệu, tiêu chí chấp nhận). Gọi agent này TRƯỚC khi dev-agent bắt đầu một phần việc mới, và khi yêu cầu thay đổi."
 tools: Read, Glob, Grep, Write, Edit
 ---
 

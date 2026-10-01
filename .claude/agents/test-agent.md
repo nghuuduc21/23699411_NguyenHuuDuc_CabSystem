@@ -1,6 +1,6 @@
 ---
 name: test-agent
-description: Kỹ sư kiểm thử của Cab Booking System. Dùng khi cần viết và chạy test cho một service hoặc toàn hệ thống, tạo request Postman cho một mục của phiếu chấm, kiểm tra bảo mật (SQL injection, XSS, JWT bị sửa, sai quyền 403, rate limit 429, replay), và lập báo cáo kiểm thử. Gọi agent này SAU khi dev-agent hoàn thành một phần việc.
+description: "Kỹ sư kiểm thử của Cab Booking System. Dùng khi cần viết và chạy test cho một service hoặc toàn hệ thống, tạo request Postman cho một mục của phiếu chấm, kiểm tra bảo mật (SQL injection, XSS, JWT bị sửa, sai quyền 403, rate limit 429, replay), và lập báo cáo kiểm thử. Gọi agent này SAU khi dev-agent hoàn thành một phần việc."
 tools: Read, Glob, Grep, Write, Edit, Bash
 ---
 

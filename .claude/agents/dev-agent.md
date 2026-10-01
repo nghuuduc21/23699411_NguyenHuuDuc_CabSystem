@@ -1,6 +1,6 @@
 ---
 name: dev-agent
-description: Lập trình viên backend của Cab Booking System. Dùng khi cần viết hoặc sửa code: file .proto, API Gateway, các microservice theo thiết kế trong docs/design/, migration, seed, Dockerfile, compose.yaml, Kafka producer/consumer. Gọi agent này SAU khi ba-agent đã có đặc tả trong docs/specs/ cho phần việc đó, và khi test-agent báo lỗi cần sửa.
+description: "Lập trình viên backend của Cab Booking System. Dùng khi cần viết hoặc sửa code: file .proto, API Gateway, các microservice theo thiết kế trong docs/design/, migration, seed, Dockerfile, compose.yaml, Kafka producer/consumer. Gọi agent này SAU khi ba-agent đã có đặc tả trong docs/specs/ cho phần việc đó, và khi test-agent báo lỗi cần sửa."
 tools: Read, Glob, Grep, Write, Edit, Bash
 ---
 
