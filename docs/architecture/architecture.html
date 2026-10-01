@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>CAB System – Microservice Architecture</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; font-family: "Segoe UI", Arial, sans-serif; color: #1c2430; }
+  #canvas { position: relative; width: 2400px; height: 1500px; background: #fff; overflow: hidden; }
+  svg#wires { position: absolute; inset: 0; z-index: 1; }
+  .box { position: absolute; z-index: 2; border: 3px solid; border-radius: 14px; padding: 14px 18px; }
+  .box h3 { margin: 0 0 8px; font-size: 25px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  .box h3 .ic { font-size: 34px; line-height: 1; }
+  .box h3 small { font-size: 15px; font-weight: 600; opacity: .7; }
+  .box ul { margin: 0; padding-left: 22px; font-size: 18px; line-height: 1.45; }
+  .db { position: absolute; z-index: 2; border: 2.5px solid; border-radius: 10px; padding: 10px 12px; display: flex; gap: 10px; background: #fff; }
+  .db .cyl { flex: none; width: 44px; }
+  .db b { display: block; font-size: 18px; }
+  .db span { display: block; font-size: 14px; opacity: .8; margin-bottom: 4px; }
+  .db ul { margin: 0; padding-left: 18px; font-size: 15px; line-height: 1.35; }
+  .title { position: absolute; left: 42px; top: 34px; z-index: 2; }
+  .title h1 { margin: 0; font-size: 40px; letter-spacing: .5px; color: #3b2a8f; }
+  .title p { margin: 4px 0 0; font-size: 20px; color: #555; }
+  .legend { position: absolute; left: 1960px; top: 28px; width: 400px; z-index: 2; border: 2px dashed #888; border-radius: 10px; padding: 12px 16px; background: #fff; }
+  .legend h4 { margin: 0 0 8px; font-size: 22px; }
+  .legend div { display: flex; align-items: center; gap: 12px; font-size: 16px; margin: 7px 0; }
+  .legend svg { flex: none; }
+  .footer { position: absolute; left: 42px; right: 42px; top: 1440px; z-index: 2; font-size: 17px; color: #444; text-align: center; }
+  .footer b { color: #3b2a8f; }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <svg id="wires" width="2400" height="1500" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2b6fd6"/></marker>
+      <marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e02424"/></marker>
+      <marker id="black" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#222"/></marker>
+    </defs>
+  </svg>
+
+  <div class="title">
+    <h1>CAB BOOKING SYSTEM</h1>
+    <p>Microservice Architecture Design · DDD · Database-per-Service</p>
+  </div>
+
+  <div class="legend">
+    <h4>Chú thích</h4>
+    <div><svg width="80" height="14"><line x1="4" y1="7" x2="76" y2="7" stroke="#2b6fd6" stroke-width="4" marker-start="url(#blue)" marker-end="url(#blue)"/></svg>REST API (HTTPS/JSON) – Client ↔ Gateway</div>
+    <div><svg width="80" height="14"><line x1="4" y1="7" x2="76" y2="7" stroke="#2b6fd6" stroke-width="4" stroke-dasharray="2 0" marker-start="url(#blue)" marker-end="url(#blue)"/></svg>gRPC (synchronous) qua API Gateway</div>
+    <div><svg width="80" height="14"><line x1="4" y1="7" x2="76" y2="7" stroke="#e02424" stroke-width="4" marker-start="url(#red)" marker-end="url(#red)"/></svg>gRPC (synchronous) giữa các service</div>
+    <div><svg width="80" height="14"><line x1="4" y1="7" x2="76" y2="7" stroke="#e02424" stroke-width="4" stroke-dasharray="10 6" marker-end="url(#red)"/></svg>Kafka (asynchronous) – event</div>
+    <div><svg width="80" height="14"><line x1="4" y1="7" x2="76" y2="7" stroke="#222" stroke-width="3" marker-start="url(#black)" marker-end="url(#black)"/></svg>Kết nối cơ sở dữ liệu</div>
+  </div>
+
+  <div class="box" style="left:820px;top:40px;width:760px;height:130px;background:#e8f2fd;border-color:#4a90d9;text-align:center">
+    <h3 style="justify-content:center;font-size:34px;margin-bottom:6px">Client</h3>
+    <div style="font-size:21px">💻 Customer App &nbsp;·&nbsp; 📱 Driver App &nbsp;·&nbsp; 🖥️ Admin / Operator (Postman)</div>
+  </div>
+
+  <div class="box" style="left:800px;top:270px;width:800px;height:200px;background:#f1ecfd;border-color:#8b5cf6">
+    <h3 style="font-size:32px"><span class="ic">🛡️</span>API Gateway <small>(cổng duy nhất mở ra ngoài)</small></h3>
+    <ul style="columns:2;column-gap:30px;font-size:19px">
+      <li>Xác thực JWT (sai chữ ký → 401)</li>
+      <li>Phân quyền theo role (→ 403)</li>
+      <li>REST → gRPC (định tuyến)</li>
+      <li>Giới hạn tốc độ (→ 429)</li>
+      <li>Ghi log, giám sát</li>
+      <li>/health · /health/services</li>
+    </ul>
+  </div>
+
+  <div class="box" style="left:1740px;top:285px;width:400px;height:170px;background:#fdecec;border-color:#e05252">
+    <h3><span class="ic">🧱</span>Redis <small>(API Gateway DB)</small></h3>
+    <ul>
+      <li>Rate limiting</li>
+      <li>Cache token / danh sách thu hồi</li>
+      <li>Cache dữ liệu</li>
+    </ul>
+  </div>
+
+  <div class="box" id="kafka" style="left:42px;top:1230px;width:2316px;height:180px;background:#f3eefc;border-color:#8b5cf6;display:flex;gap:26px;align-items:center">
+    <svg width="110" height="130" viewBox="0 0 110 130">
+      <g fill="none" stroke="#231f20" stroke-width="9">
+        <circle cx="40" cy="18" r="11"/><circle cx="40" cy="65" r="15"/><circle cx="40" cy="112" r="11"/>
+        <circle cx="90" cy="40" r="11"/><circle cx="90" cy="90" r="11"/>
+        <line x1="40" y1="29" x2="40" y2="50"/><line x1="40" y1="80" x2="40" y2="101"/>
+        <line x1="53" y1="58" x2="80" y2="45"/><line x1="53" y1="72" x2="80" y2="85"/>
+      </g>
+    </svg>
+    <div style="flex:none;width:300px">
+      <h3 style="font-size:32px;margin:0">Kafka</h3>
+      <div style="font-size:21px">(Message Broker)<br>Giao tiếp bất đồng bộ giữa các Bounded Context</div>
+    </div>
+    <ul style="columns:4;column-gap:34px;font-size:19px;flex:1;font-family:Consolas,monospace">
+      <li>account-registered</li><li>booking-created</li><li>driver-offered</li>
+      <li>driver-assigned</li><li>no-driver-found</li><li>driver-status-changed</li>
+      <li>trip-status-changed</li><li>trip-completed</li><li>trip-canceled</li>
+      <li>payment-completed</li><li>payment-failed</li><li>driver-rated</li>
+    </ul>
+  </div>
+
+  <div class="footer">
+    <b>Client → Gateway:</b> REST + JWT &nbsp;|&nbsp; <b>Gateway → Service:</b> gRPC (proto), kèm metadata x-user-id / x-user-role &nbsp;|&nbsp;
+    <b>Service ↔ Service:</b> gRPC khi cần kết quả ngay, Kafka cho domain event &nbsp;|&nbsp;
+    Service không mở cổng ra ngoài · tìm nhau qua tên container (Docker DNS) · mỗi service một CSDL riêng
+  </div>
+</div>
+
+<script>
+const services = [
+  { name: 'Identity Service', ic: '🔐', bg: '#e8f2fd', bd: '#4a90d9',
+    items: ['Đăng ký / đăng nhập', 'Cấp JWT (sub, role)', 'Quản lý tài khoản, vai trò'],
+    db: { kind: 'pg', name: 'PostgreSQL', sub: 'Identity DB', ent: ['Account'] }, kafka: 'pub', rest: true },
+  { name: 'Fleet Service', ic: '🚗', bg: '#e9f8ea', bd: '#3fae4a',
+    items: ['Hồ sơ tài xế & xe', 'Duyệt hồ sơ, Online/Offline', 'Tài xế trong bán kính 1km'],
+    db: { kind: 'pg', name: 'PostgreSQL', sub: 'Fleet DB', ent: ['Driver', 'Vehicle', 'DriverLocation'] }, kafka: 'both', rest: true },
+  { name: 'Dispatch Service', ic: '📡', bg: '#fff6e0', bd: '#e0a100',
+    items: ['Ghép tài xế gần nhất', 'Gửi offer, hết hạn offer', 'Tài xế nhận / từ chối'],
+    db: { kind: 'redis', name: 'Redis', sub: 'Dispatch DB', ent: ['Offer (TTL)'] }, kafka: 'both', rest: true },
+  { name: 'Booking Service', ic: '📝', bg: '#fdecec', bd: '#e05252',
+    items: ['Tạo booking (đặt xe)', 'Trạng thái tìm tài xế', 'Danh sách booking (paging)'],
+    db: { kind: 'pg', name: 'PostgreSQL', sub: 'Booking DB', ent: ['Booking'] }, kafka: 'both', rest: true },
+  { name: 'Trip Service', ic: '🗺️', bg: '#f1ecfd', bd: '#8b5cf6',
+    items: ['Vòng đời chuyến đi', 'Cập nhật vị trí, trạng thái', 'Hủy chuyến (CANCELED)'],
+    db: { kind: 'pg', name: 'PostgreSQL', sub: 'Trip DB', ent: ['Trip', 'TripStatusLog'] }, kafka: 'both', rest: true },
+  { name: 'Payment Service', ic: '💳', bg: '#e3f7f5', bd: '#1aa198',
+    items: ['Thanh toán online', 'Callback từ Payment Provider', 'Idempotency-Key (chống replay)'],
+    db: { kind: 'pg', name: 'PostgreSQL', sub: 'Payment DB', ent: ['Payment', 'IdempotencyKey'] }, kafka: 'both', rest: true },
+  { name: 'Rating Service', ic: '⭐', bg: '#fff3e6', bd: '#f08a24',
+    items: ['Đánh giá chuyến đi', 'Số sao + nhận xét', 'Điểm TB của tài xế'],
+    db: { kind: 'pg', name: 'PostgreSQL', sub: 'Rating DB', ent: ['Rating', 'CompletedTrip'] }, kafka: 'both', rest: true },
+  { name: 'Notification', ic: '🔔', tag: '(nội bộ)', bg: '#f0f1f5', bd: '#6b7280',
+    items: ['Nghe mọi domain event', 'Gửi SMS/Email/Push (giả lập)', 'Lưu lịch sử thông báo'],
+    db: { kind: 'mongo', name: 'MongoDB', sub: 'Notification DB', ent: ['Notification'] }, kafka: 'sub', rest: false },
+];
+
+const W = 250, GAP = 36, GRPC_GAP = 100, SY = 640, SH = 240, DBY = 950, DBW = 206, DBH = 150, KY = 1230;
+const cyl = { pg: '#336791', redis: '#d82c20', mongo: '#13aa52' };
+const canvas = document.getElementById('canvas');
+const svg = document.getElementById('wires');
+const NS = 'http://www.w3.org/2000/svg';
+
+function el(tag, attrs, parent = svg) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  parent.appendChild(e);
+  return e;
+}
+function label(x, y, text, color, size = 17, rotate = 0) {
+  const g = el('g', { transform: `translate(${x},${y}) rotate(${rotate})` });
+  const t = el('text', { x: 0, y: 0, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    'font-size': size, 'font-weight': 700, fill: color, 'font-family': 'Segoe UI, Arial' }, g);
+  t.textContent = text;
+  const b = t.getBBox();
+  const r = el('rect', { x: b.x - 5, y: b.y - 2, width: b.width + 10, height: b.height + 4, fill: '#fff', rx: 4 }, g);
+  g.insertBefore(r, t);
+}
+const line = (x1, y1, x2, y2, color, marker, extra = {}) =>
+  el('line', { x1, y1, x2, y2, stroke: color, 'stroke-width': 4, ...marker, ...extra });
+
+// Client ↔ Gateway, Gateway ↔ Redis
+line(1200, 172, 1200, 268, '#2b6fd6', { 'marker-start': 'url(#blue)', 'marker-end': 'url(#blue)' });
+label(1395, 220, 'REST API (HTTPS/JSON) + JWT', '#2b6fd6', 20);
+line(1602, 370, 1738, 370, '#222', { 'marker-start': 'url(#black)', 'marker-end': 'url(#black)' }, { 'stroke-width': 3 });
+
+let x = 42;
+const restTargets = [];
+services.forEach((s, i) => {
+  const box = document.createElement('div');
+  box.className = 'box';
+  Object.assign(box.style, { left: x + 'px', top: SY + 'px', width: W + 'px', height: SH + 'px', background: s.bg, borderColor: s.bd });
+  box.innerHTML = `<h3 style="font-size:23px"><span class="ic">${s.ic}</span><span>${s.name}${s.tag ? `<br><small>${s.tag}</small>` : ''}</span></h3>
+    <ul style="font-size:17px">${s.items.map(t => `<li>${t}</li>`).join('')}</ul>`;
+  canvas.appendChild(box);
+
+  const db = document.createElement('div');
+  db.className = 'db';
+  Object.assign(db.style, { left: x + 'px', top: DBY + 'px', width: DBW + 'px', height: DBH + 'px', borderColor: s.bd });
+  const c = cyl[s.db.kind];
+  db.innerHTML = `<svg class="cyl" viewBox="0 0 44 56"><ellipse cx="22" cy="10" rx="20" ry="8" fill="${c}"/>
+      <path d="M2 10 v36 a20 8 0 0 0 40 0 v-36 a20 8 0 0 1 -40 0z" fill="${c}" opacity=".85"/>
+      <path d="M2 22 a20 8 0 0 0 40 0 M2 34 a20 8 0 0 0 40 0" stroke="#fff" stroke-width="2" fill="none"/></svg>
+    <div><b>${s.db.name}</b><span>(${s.db.sub})</span><ul>${s.db.ent.map(t => `<li>${t}</li>`).join('')}</ul></div>`;
+  canvas.appendChild(db);
+
+  // Service ↔ DB
+  line(x + DBW / 2, SY + SH + 2, x + DBW / 2, DBY - 2, '#222', { 'marker-start': 'url(#black)', 'marker-end': 'url(#black)' }, { 'stroke-width': 3 });
+
+  // Service ↔ Kafka
+  const kx = x + 224;
+  const m = s.kafka === 'pub' ? { 'marker-end': 'url(#red)' }
+          : s.kafka === 'sub' ? { 'marker-start': 'url(#red)' }
+          : { 'marker-start': 'url(#red)', 'marker-end': 'url(#red)' };
+  line(kx, SY + SH + 2, kx, KY - 2, '#e02424', m, { 'stroke-dasharray': '12 7', 'stroke-width': 3.5 });
+  label(kx + 1, 1085, s.kafka === 'pub' ? 'publish' : s.kafka === 'sub' ? 'consume' : 'pub / sub', '#e02424', 15, -90);
+
+  if (s.rest) restTargets.push(x + W / 2);
+  x += W + (i === 1 ? GRPC_GAP : GAP);
+});
+
+// Gateway ↔ services (gRPC)
+restTargets.forEach((tx, i) => {
+  const gx = 830 + i * (740 / (restTargets.length - 1));
+  line(gx, 472, tx, SY - 2, '#2b6fd6', { 'marker-start': 'url(#blue)', 'marker-end': 'url(#blue)' }, { 'stroke-width': 3.5 });
+  label(gx + (tx - gx) * 0.55, 472 + (SY - 472) * 0.55, 'gRPC', '#2b6fd6', 16);
+});
+
+// Dispatch ↔ Fleet (gRPC)
+const fleetRight = 42 + W + GAP + W;
+line(fleetRight + 2, 740, fleetRight + GRPC_GAP - 2, 740, '#e02424', { 'marker-start': 'url(#red)', 'marker-end': 'url(#red)' });
+label(fleetRight + GRPC_GAP / 2, 712, 'gRPC', '#e02424', 18);
+label(fleetRight + GRPC_GAP / 2, 772, 'FindNearby', '#e02424', 13);
+label(fleetRight + GRPC_GAP / 2, 790, 'Drivers', '#e02424', 13);
+</script>
+</body>
+</html>

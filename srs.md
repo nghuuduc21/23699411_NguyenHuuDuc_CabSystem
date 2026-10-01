@@ -12,7 +12,7 @@ Giá trị của hệ thống tạo ra.
 | Ban giám đốc (Management)  | Định hướng mục tiêu kinh doanh, phê duyệt ngân sách, theo dõi doanh thu, KPI và hiệu quả hệ thống  |
 | Customer – Khách hàng  | Đặt xe, theo dõi chuyến, thanh toán, xem lịch sử và đánh giá tài xế  | 
 | Driver – Tài xế  | Nhận/từ chối chuyến, cập nhật trạng thái, cung cấp vị trí và hoàn thành chuyến  | 
-| Operator – Nhân viên vận hành  | Điều phối, giám sát chuyến, quản lý tài xế và xử lý các trường hợp bất thường  | 
+| Operator – Nhân viên vận hành (vai trò hệ thống: **Admin**)  | Điều phối, giám sát chuyến, quản lý tài xế và xử lý các trường hợp bất thường  | 
 | Customer Service – CSKH  | Tiếp nhận và xử lý khiếu nại, hỗ trợ khách hàng khi có sự cố  | 
 | Kế toán / Finance  | Kiểm tra giao dịch, doanh thu, đối soát và báo cáo tài chính  | 
 | IT / System Administrator  | Quản lý hệ thống, triển khai, giám sát và đảm bảo hệ thống hoạt động ổn định  | 
@@ -39,26 +39,26 @@ Giá trị của hệ thống tạo ra.
 | BA / Development Team     |         4 |        5 | **Rất cao**    |
 | Cơ quan quản lý / pháp lý |         5 |        3 | **Cao**        |
 
-Mục đính của nghiệp là gì ? 
-  BG01:	Tự động hóa quy trình đặt và phân công xe  
-  BG02:	Nâng cao hiệu quả vận hành  
-  BG03:	Giảm thời gian tìm kiếm tài xế  
-  BG04:	Nâng cao trải nghiệm khách hàng  
-  BG05:	Tăng tỷ lệ chuyến xe được hoàn thành  
-  BG06:	Nâng cao hiệu quả quản lý thanh toán  
-  BG07:	Tăng khả năng kiểm soát và minh bạch dữ liệu  
-  BG08:	Nâng cao khả năng giám sát hoạt động kinh doanh  
-  BG09:	Đảm bảo tính ổn định và khả năng mở rộng của hệ thống  
-  BG10:	Tăng khả năng mở rộng dịch vụ trong tương lai  
-  BG11:	Nâng cao tính bảo mật và kiểm soát truy cập  
-  BG12:	Giảm rủi ro vận hành  
+Mục đích nghiệp vụ (danh sách ý tưởng ban đầu, chưa đánh mã):
+  - Tự động hóa quy trình đặt và phân công xe  
+  - Nâng cao hiệu quả vận hành  
+  - Giảm thời gian tìm kiếm tài xế  
+  - Nâng cao trải nghiệm khách hàng  
+  - Tăng tỷ lệ chuyến xe được hoàn thành  
+  - Nâng cao hiệu quả quản lý thanh toán  
+  - Tăng khả năng kiểm soát và minh bạch dữ liệu  
+  - Nâng cao khả năng giám sát hoạt động kinh doanh  
+  - Đảm bảo tính ổn định và khả năng mở rộng của hệ thống  
+  - Tăng khả năng mở rộng dịch vụ trong tương lai  
+  - Nâng cao tính bảo mật và kiểm soát truy cập  
+  - Giảm rủi ro vận hành  
 
-  Business Goal quan trọng nhất  
+  Business Goal chính thức (gộp từ danh sách trên; RTM và các tài liệu khác dùng mã này)  
   BG01: Tự động hóa quy trình đặt và phân công xe.  
   BG02: Nâng cao hiệu quả vận hành.  
   BG03: Nâng cao trải nghiệm khách hàng.  
   BG04: Nâng cao hiệu quả quản lý thanh toán và dữ liệu.  
-  BG05: Đảm bảo khả năng mở rộng và ổn định của hệ thống.  
+  BG05: Đảm bảo khả năng mở rộng, ổn định và bảo mật của hệ thống.  
   BG06: Nâng cao khả năng quản lý, giám sát và ra quyết định dựa trên dữ liệu.  
 
   Bước 4: Xác định phạm vi (Scopes)  
@@ -86,7 +86,7 @@ Business Requirements – CAB System
 | Mã         | Business Requirement                                          | Diễn giải                                                                                                                                                                                           |
 | ---------- | ------------------------------------------------------------- | -------------------|
 | **BR01**   | **Hệ thống cho phép khách hàng đặt xe**                       | Hệ thống cho phép khách hàng nhập điểm đón, điểm đến, lựa chọn loại xe và gửi yêu cầu đặt xe. Sau khi yêu cầu được tạo, hệ thống phải ghi nhận và xử lý yêu cầu đặt xe.                             |
-| **BR02**   | **Hệ thống cho phép tìm và phân công tài xế phù hợp**         | Hệ thống tự động xác định các tài xế phù hợp dựa trên vị trí, trạng thái sẵn sàng và các tiêu chí vận hành. Nếu tài xế được đề xuất từ chối hoặc không phản hồi, hệ thống tiếp tục tìm tài xế khác. |
+| **BR02**   | **Hệ thống cho phép tìm và phân công tài xế phù hợp**         | Hệ thống tự động xác định tài xế phù hợp: đang sẵn sàng, đúng loại xe và gần điểm đón nhất. Nếu tài xế được đề xuất từ chối hoặc không phản hồi, hệ thống tiếp tục tìm tài xế khác. |
 | **BR03**   | **Hệ thống cho phép khách hàng theo dõi chuyến đi**           | Hệ thống cung cấp cho khách hàng thông tin về trạng thái chuyến đi, tài xế đã nhận chuyến, thời gian dự kiến tài xế đến và các trạng thái trong quá trình thực hiện chuyến.                         |
 | **BR04**   | **Hệ thống cho phép khách hàng thanh toán chuyến đi**         | Hệ thống cho phép khách hàng thanh toán chi phí chuyến đi bằng các phương thức được doanh nghiệp hỗ trợ.                                                                                            |
 | **BR04.1** | **Thanh toán bằng tiền mặt**                                  | Khách hàng có thể thanh toán trực tiếp cho tài xế sau khi hoàn thành chuyến đi. Hệ thống ghi nhận trạng thái thanh toán của chuyến.                                                                 |
@@ -111,10 +111,10 @@ Bước 6: Business Process
 | Mã       | Functional Requirement                        | Diễn giải                                                                                                                               |
 | -------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | **FR01** | **Xác định vị trí của khách hàng**            | Hệ thống xác định vị trí hiện tại của khách hàng dựa trên thông tin vị trí được cung cấp hoặc GPS để làm cơ sở xác định điểm đón.       |
-| **FR02** | **Tìm tài xế sẵn có**                         | Hệ thống tìm kiếm các tài xế đang ở trạng thái sẵn sàng nhận chuyến trong khu vực phù hợp với điểm đón của khách hàng.                  |
+| **FR02** | **Tìm tài xế sẵn có**                         | Hệ thống tìm kiếm các tài xế đang ở trạng thái sẵn sàng nhận chuyến trong bán kính tìm kiếm quanh điểm đón của khách hàng (mặc định 1 km). |
 | **FR03** | **Lọc tài xế theo loại xe**                   | Hệ thống lọc danh sách tài xế dựa trên loại xe mà khách hàng đã lựa chọn.                                                               |
 | **FR04** | **Tính khoảng cách từ tài xế đến khách hàng** | Hệ thống xác định khoảng cách giữa vị trí hiện tại của tài xế và điểm đón của khách hàng để hỗ trợ lựa chọn tài xế phù hợp.             |
-| **FR05** | **Xếp hạng tài xế phù hợp**                   | Hệ thống sắp xếp các tài xế theo các tiêu chí nghiệp vụ như khoảng cách, trạng thái và các tiêu chí ưu tiên được doanh nghiệp quy định. |
+| **FR05** | **Xếp hạng tài xế theo khoảng cách**          | Hệ thống sắp xếp các tài xế đã lọc theo khoảng cách đến điểm đón, từ gần đến xa, để chọn tài xế gần nhất trước.                         |
 | **FR06** | **Gửi yêu cầu nhận chuyến cho tài xế**        | Hệ thống gửi thông tin yêu cầu chuyến đến tài xế phù hợp và chờ tài xế phản hồi.                                                        |
 
 
@@ -167,13 +167,22 @@ Bước 6: Business Process
 | **FR33** | **Xem báo cáo hoạt động**    | Hệ thống cung cấp số liệu về chuyến đi, doanh thu, tỷ lệ hoàn thành, tỷ lệ hủy và hiệu quả tài xế. |
 | **FR34** | **Lưu lịch sử và Audit Log** | Hệ thống lưu lịch sử chuyến, giao dịch và các thao tác quan trọng phục vụ tra cứu và kiểm tra.     |
 
+7. Bổ sung theo phiếu chấm
+| Mã       | Functional Requirement                  | Diễn giải                                                                                                             |
+| -------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **FR35** | **Tạo yêu cầu đặt xe**                  | Hệ thống nhận điểm đón, điểm đến, loại xe và phương thức thanh toán; tạo Booking ở trạng thái đang tìm tài xế.         |
+| **FR36** | **Hủy yêu cầu đặt xe / hủy chuyến**     | Khách hàng hủy kèm lý do; hệ thống chuyển trạng thái sang CANCELED và thông báo cho các bên liên quan.                 |
+| **FR37** | **Xem danh sách yêu cầu đặt xe**        | Khách hàng xem danh sách Booking của mình, có giới hạn số dòng (limit) và phân trang (paging).                         |
+| **FR38** | **Bật / tắt trạng thái nhận chuyến**    | Tài xế chuyển Online / Offline; hệ thống ghi nhận và chỉ tìm tài xế đang Online.                                        |
+| **FR39** | **Đăng ký và duyệt hồ sơ tài xế**       | Tài xế xác thực số điện thoại bằng OTP, gửi hồ sơ cá nhân và xe; hồ sơ ở trạng thái chờ duyệt đến khi Admin duyệt hoặc từ chối. |
+
 
 
 | Mã          | Business Rule                                           | Diễn giải                                                                                                          |
 | ----------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | **BRULE01** | Chỉ tài xế sẵn sàng mới được nhận chuyến                | Hệ thống chỉ gửi yêu cầu đặt xe đến tài xế đang ở trạng thái **Available/Ready**.                                  |
 | **BRULE02** | Tài xế phải phù hợp với loại xe                         | Tài xế được đề xuất phải có phương tiện phù hợp với loại xe khách hàng đã lựa chọn.                                |
-| **BRULE03** | Ưu tiên tài xế phù hợp và gần khách hàng                | Hệ thống ưu tiên tài xế dựa trên khoảng cách và các tiêu chí vận hành đã được doanh nghiệp xác định.               |
+| **BRULE03** | Ưu tiên tài xế gần điểm đón nhất                        | Trong các tài xế sẵn sàng và đúng loại xe, hệ thống gửi yêu cầu cho tài xế có khoảng cách đến điểm đón nhỏ nhất trước. |
 | **BRULE04** | Tài xế phải phản hồi trong thời gian quy định           | Tài xế phải chấp nhận hoặc từ chối chuyến trong khoảng thời gian do doanh nghiệp quy định.                         |
 | **BRULE05** | Tài xế từ chối thì hệ thống tìm tài xế khác             | Khi tài xế từ chối, yêu cầu đặt xe không bị hủy mà tiếp tục được gửi đến tài xế phù hợp khác.                      |
 | **BRULE06** | Tài xế không phản hồi thì chuyển sang tài xế khác       | Nếu hết thời gian phản hồi, hệ thống xem tài xế đó là không phản hồi và tiếp tục quá trình tìm kiếm.               |
@@ -259,13 +268,18 @@ Bước 11: Xác định Use Case (UC)
 | **UC24** | Tra cứu giao dịch          | Operator                   |
 | **UC25** | Quản lý phân quyền         | Operator                   |
 | **UC26** | Xem báo cáo hoạt động      | Operator                   |
+| **UC27** | Hủy chuyến                 | Customer                   |
+| **UC28** | Bật / tắt nhận chuyến      | Driver                     |
+| **UC29** | Đăng ký tài xế             | Driver                     |
+| **UC30** | Duyệt hồ sơ tài xế         | Admin                      |
 
 
 Bước 12: Đặc tả Use Case (Use Case Specification)
 
+UC02 – Đăng nhập
 | Thành phần                | Nội dung                                                                                                                                                                                                                              |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Use Case ID**           | UC01                                                                                                                                                                                                                                  |
+| **Use Case ID**           | UC02                                                                                                                                                                                                                                  |
 | **Tên**                   | Đăng nhập                                                                                                                                                                                                                             |
 | **Actor**                 | Customer, Driver, Operator                                                                                                                                                                                                            |
 | **Mục tiêu**              | Cho phép người dùng xác thực để truy cập các chức năng của hệ thống                                                                                                                                                                   |
@@ -275,23 +289,10 @@ Bước 12: Đặc tả Use Case (Use Case Specification)
 | **Main Flow**             | 1. Người dùng nhập số điện thoại/email và mật khẩu. <br> 2. Hệ thống kiểm tra thông tin. <br> 3. Hệ thống xác thực tài khoản. <br> 4. Hệ thống tạo phiên đăng nhập. <br> 5. Người dùng được chuyển đến giao diện phù hợp với vai trò. |
 | **Alternative/Exception** | Thông tin đăng nhập không chính xác → hệ thống thông báo lỗi. <br> Tài khoản bị khóa → từ chối đăng nhập và thông báo cho người dùng.                                                                                                 |
 
-UC01 – Đăng nhập
-| Thành phần                | Nội dung                                                                                                                                                                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Use Case ID**           | UC01                                                                                                                                                                                                                                  |
-| **Tên**                   | Đăng nhập                                                                                                                                                                                                                             |
-| **Actor**                 | Customer, Driver, Operator                                                                                                                                                                                                            |
-| **Mục tiêu**              | Cho phép người dùng xác thực để truy cập các chức năng của hệ thống                                                                                                                                                                   |
-| **Pre-condition**         | Người dùng đã có tài khoản                                                                                                                                                                                                            |
-| **Trigger**               | Người dùng nhập thông tin đăng nhập                                                                                                                                                                                                   |
-| **Post-condition**        | Người dùng đăng nhập thành công và được cấp quyền tương ứng                                                                                                                                                                           |
-| **Main Flow**             | 1. Người dùng nhập số điện thoại/email và mật khẩu. <br> 2. Hệ thống kiểm tra thông tin. <br> 3. Hệ thống xác thực tài khoản. <br> 4. Hệ thống tạo phiên đăng nhập. <br> 5. Người dùng được chuyển đến giao diện phù hợp với vai trò. |
-| **Alternative/Exception** | Thông tin đăng nhập không chính xác → hệ thống thông báo lỗi. <br> Tài khoản bị khóa → từ chối đăng nhập và thông báo cho người dùng.                                                                                                 |
-
-UC02 – Đặt xe
+UC04 – Đặt xe
 | Thành phần           | Nội dung                                                                                                                                                                                                                                         |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Use Case ID**      | UC02                                                                                                                                                                                                                                             |
+| **Use Case ID**      | UC04                                                                                                                                                                                                                                             |
 | **Tên**              | Đặt xe                                                                                                                                                                                                                                           |
 | **Actor**            | Customer                                                                                                                                                                                                                                         |
 | **Mục tiêu**         | Cho phép khách hàng tạo yêu cầu đặt xe                                                                                                                                                                                                           |
@@ -301,10 +302,10 @@ UC02 – Đặt xe
 | **Main Flow**        | 1. Customer nhập/chọn điểm đón. <br> 2. Customer nhập điểm đến. <br> 3. Customer chọn loại xe. <br> 4. Hệ thống kiểm tra thông tin. <br> 5. Customer xác nhận đặt xe. <br> 6. Hệ thống tạo Booking. <br> 7. Hệ thống bắt đầu tìm tài xế phù hợp. |
 | **Alternative Flow** | Customer thay đổi điểm đón/điểm đến trước khi xác nhận → hệ thống cập nhật thông tin.                                                                                                                                                            |
 | **Exception**        | Điểm đón không hợp lệ → thông báo lỗi. <br> Không xác định được vị trí → yêu cầu Customer nhập địa chỉ thủ công. <br> Không có tài xế → thông báo không tìm được tài xế.                                                                         |
-UC03 – Tìm tài xế phù hợp
+UC06 – Tìm tài xế phù hợp
 | Thành phần           | Nội dung                                                                                                                                                                                                                                                                                                                                 |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Use Case ID**      | UC03                                                                                                                                                                                                                                                                                                                                     |
+| **Use Case ID**      | UC06                                                                                                                                                                                                                                                                                                                                     |
 | **Tên**              | Tìm tài xế phù hợp                                                                                                                                                                                                                                                                                                                       |
 | **Actor**            | System                                                                                                                                                                                                                                                                                                                                   |
 | **Supporting Actor** | Map/GPS Provider                                                                                                                                                                                                                                                                                                                         |
@@ -316,10 +317,10 @@ UC03 – Tìm tài xế phù hợp
 | **Alternative Flow** | Tài xế từ chối → hệ thống chọn tài xế tiếp theo. <br> Tài xế không phản hồi → hết thời gian → chọn tài xế tiếp theo.                                                                                                                                                                                                                     |
 | **Exception**        | Không có tài xế phù hợp → cập nhật Booking thành `NO_DRIVER_FOUND` và thông báo Customer.                                                                                                                                                                                                                                                |
 
-UC04 – Theo dõi chuyến đi
+UC10 – Theo dõi chuyến đi
 | Thành phần           | Nội dung                                                                                                                                                                                                                                         |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Use Case ID**      | UC04                                                                                                                                                                                                                                             |
+| **Use Case ID**      | UC10                                                                                                                                                                                                                                             |
 | **Tên**              | Theo dõi chuyến đi                                                                                                                                                                                                                               |
 | **Actor**            | Customer                                                                                                                                                                                                                                         |
 | **Supporting Actor** | Driver                                                                                                                                                                                                                                           |
@@ -329,10 +330,10 @@ UC04 – Theo dõi chuyến đi
 | **Main Flow**        | 1. Hệ thống lấy thông tin chuyến. <br> 2. Hiển thị thông tin tài xế. <br> 3. Hiển thị thông tin phương tiện. <br> 4. Hiển thị trạng thái chuyến. <br> 5. Hiển thị vị trí tài xế. <br> 6. Cập nhật thông tin khi trạng thái hoặc vị trí thay đổi. |
 | **Alternative Flow** | Không nhận được dữ liệu vị trí mới → hiển thị vị trí gần nhất và thông báo dữ liệu có thể chưa được cập nhật.                                                                                                                                    |
 | **Post-condition**   | Customer luôn có thể xem trạng thái mới nhất mà hệ thống nhận được.                                                                                                                                                                              |
-UC05 – Thực hiện chuyến đi
+UC11 – Thực hiện chuyến đi
 | Thành phần        | Nội dung                                                                                                                                                                                                                                                                       |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Use Case ID**   | UC05                                                                                                                                                                                                                                                                           |
+| **Use Case ID**   | UC11                                                                                                                                                                                                                                                                           |
 | **Tên**           | Thực hiện chuyến đi                                                                                                                                                                                                                                                            |
 | **Actor**         | Driver                                                                                                                                                                                                                                                                         |
 | **Mục tiêu**      | Cho phép tài xế thực hiện và cập nhật trạng thái chuyến                                                                                                                                                                                                                        |
@@ -341,10 +342,10 @@ UC05 – Thực hiện chuyến đi
 | **Main Flow**     | 1. Driver nhận chuyến. <br> 2. Driver di chuyển đến điểm đón. <br> 3. Driver cập nhật "Đã đến". <br> 4. Driver đón khách. <br> 5. Driver cập nhật "Đã đón khách". <br> 6. Driver di chuyển đến điểm đến. <br> 7. Driver cập nhật "Hoàn thành". <br> 8. Hệ thống kết thúc Trip. |
 | **Exception**     | Driver gặp sự cố → Operator có thể kiểm tra và hỗ trợ xử lý. <br> Driver mất kết nối → hệ thống tiếp tục duy trì chuyến và xử lý theo chính sách timeout.                                                                                                                      |
 
-UC06 – Thanh toán chuyến đi
+UC14 – Thanh toán chuyến đi
 | Thành phần           | Nội dung                                                                                                                                                                                                                                                                                                                                  |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Use Case ID**      | UC06                                                                                                                                                                                                                                                                                                                                      |
+| **Use Case ID**      | UC14                                                                                                                                                                                                                                                                                                                                      |
 | **Tên**              | Thanh toán chuyến đi                                                                                                                                                                                                                                                                                                                      |
 | **Actor**            | Customer                                                                                                                                                                                                                                                                                                                                  |
 | **Supporting Actor** | Payment Provider                                                                                                                                                                                                                                                                                                                          |
@@ -355,20 +356,20 @@ UC06 – Thanh toán chuyến đi
 | **Exception**        | Thanh toán điện tử thất bại → cập nhật `FAILED` → thông báo Customer → cho phép thanh toán lại theo chính sách.                                                                                                                                                                                                                           |
 | **Post-condition**   | Payment được ghi nhận với trạng thái thành công hoặc thất bại.                                                                                                                                                                                                                                                                            |
 
-UC07 – Đánh giá tài xế
+UC17 – Đánh giá tài xế
 | Thành phần        | Nội dung                                                                                                                                                             |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Use Case ID**   | UC07                                                                                                                                                                 |
+| **Use Case ID**   | UC17                                                                                                                                                                 |
 | **Tên**           | Đánh giá tài xế                                                                                                                                                      |
 | **Actor**         | Customer                                                                                                                                                             |
 | **Pre-condition** | Trip đã hoàn thành                                                                                                                                                   |
 | **Trigger**       | Customer chọn chức năng đánh giá                                                                                                                                     |
 | **Main Flow**     | 1. Customer chọn số điểm đánh giá. <br> 2. Nhập nhận xét nếu muốn. <br> 3. Hệ thống kiểm tra dữ liệu. <br> 4. Lưu Rating. <br> 5. Cập nhật điểm đánh giá của Driver. |
 | **Exception**     | Customer đã đánh giá chuyến → không cho phép tạo đánh giá trùng.                                                                                                     |
-UC08 – Giám sát chuyến đi
+UC22 – Giám sát chuyến đi
 | Thành phần        | Nội dung                                                                                                                                                                                                                                       |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Use Case ID**   | UC08                                                                                                                                                                                                                                           |
+| **Use Case ID**   | UC22                                                                                                                                                                                                                                           |
 | **Tên**           | Giám sát chuyến đi                                                                                                                                                                                                                             |
 | **Actor**         | Operator                                                                                                                                                                                                                                       |
 | **Pre-condition** | Operator đã đăng nhập và có quyền                                                                                                                                                                                                              |
@@ -382,7 +383,7 @@ UC08 – Giám sát chuyến đi
 | **AC02** | Đặt xe             | Không tạo Booking khi thiếu thông tin       |
 | **AC03** | Tìm tài xế         | Chỉ tìm tài xế Available                    |
 | **AC04** | Tìm tài xế         | Lọc đúng loại xe                            |
-| **AC05** | Tìm tài xế         | Ưu tiên theo tiêu chí nghiệp vụ             |
+| **AC05** | Tìm tài xế         | Tài xế gần điểm đón nhất được chọn trước    |
 | **AC06** | Nhận chuyến        | Chấp nhận → gán tài xế                      |
 | **AC07** | Từ chối            | Từ chối → tìm tài xế khác                   |
 | **AC08** | Timeout            | Không phản hồi → tìm tài xế khác            |
@@ -393,26 +394,36 @@ UC08 – Giám sát chuyến đi
 | **AC13** | Payment Failed     | Thông báo và cho phép retry theo chính sách |
 | **AC14** | Rating             | Customer đánh giá sau khi hoàn thành        |
 | **AC15** | Operator           | Operator có quyền xem/giám sát chuyến       |
+| **AC16** | Hủy chuyến         | Chuyến chuyển CANCELED; các bên được báo    |
+| **AC17** | Danh sách booking  | Trả đúng booking của khách, có limit/paging |
+| **AC18** | Nhận chuyến        | Trạng thái Online/Offline được ghi nhận     |
+| **AC19** | Đăng ký tài xế     | Hồ sơ được tạo ở trạng thái chờ duyệt       |
+| **AC20** | Duyệt hồ sơ        | Trạng thái hồ sơ đổi; tài xế nhận kết quả   |
 
 RTM cho CAB System
 | RTM       | Business Goal | Business Requirement      | Functional Requirement                | Business Rule | Use Case          | Acceptance Criteria |
 | --------- | ------------- | ------------------------- | ------------------------------------- | ------------- | ----------------- | ------------------- |
-| **RTM01** | BG01          | BR01 – Đặt xe             | FR01 – Xác định vị trí KH             | RULE01        | UC02 – Đặt xe     | AC01                |
-| **RTM02** | BG01          | BR01 – Đặt xe             | FR02 – Tìm tài xế sẵn có              | RULE01        | UC03 – Tìm tài xế | AC03                |
-| **RTM03** | BG01          | BR02 – Tìm tài xế phù hợp | FR03 – Lọc theo loại xe               | RULE02        | UC03              | AC04                |
-| **RTM04** | BG01          | BR02 – Tìm tài xế phù hợp | FR04 – Tính khoảng cách TX → điểm đón | RULE03        | UC03              | AC05                |
-| **RTM05** | BG01          | BR02 – Tìm tài xế phù hợp | FR06 – Gửi yêu cầu cho TX             | RULE04        | UC03              | AC06                |
-| **RTM06** | BG01          | BR02 – Tìm tài xế phù hợp | FR08 – Xử lý TX từ chối               | RULE05        | UC03              | AC07                |
-| **RTM07** | BG01          | BR02 – Tìm tài xế phù hợp | FR09 – Xử lý TX không phản hồi        | RULE06        | UC03              | AC08                |
-| **RTM08** | BG01          | BR02 – Tìm tài xế phù hợp | FR10 – Thông báo không tìm được TX    | RULE07        | UC03              | AC09                |
-| **RTM09** | BG03          | BR03 – Theo dõi chuyến    | FR12 – Cập nhật trạng thái chuyến     | RULE08        | UC04              | AC10                |
-| **RTM10** | BG03          | BR03 – Theo dõi chuyến    | FR13 – Cập nhật vị trí TX             | RULE03        | UC04              | AC10                |
-| **RTM11** | BG04          | BR04 – Thanh toán         | FR16 – Tính cước                      | RULE08        | UC06              | AC11                |
-| **RTM12** | BG04          | BR04 – Thanh toán         | FR17 – Thanh toán tiền mặt            | RULE09        | UC06              | AC11                |
-| **RTM13** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử             | RULE09        | UC06              | AC12                |
-| **RTM14** | BG04          | BR04 – Thanh toán         | FR19 – Xử lý thanh toán thất bại      | RULE10        | UC06              | AC13                |
-| **RTM15** | BG03          | BR11 – Đánh giá tài xế    | FR25 – Đánh giá tài xế                | RULE11        | UC07              | AC14                |
-| **RTM16** | BG02          | BR09 – Quản lý chuyến     | FR30 – Giám sát chuyến                | RULE12        | UC08              | AC15                |
+| **RTM01** | BG01          | BR01 – Đặt xe             | FR01 – Xác định vị trí KH             | BRULE01        | UC04 – Đặt xe     | AC01                |
+| **RTM02** | BG01          | BR02 – Tìm tài xế phù hợp | FR02 – Tìm tài xế sẵn có              | BRULE01        | UC06 – Tìm tài xế | AC03                |
+| **RTM03** | BG01          | BR02 – Tìm tài xế phù hợp | FR03 – Lọc theo loại xe               | BRULE02        | UC06              | AC04                |
+| **RTM04** | BG01          | BR02 – Tìm tài xế phù hợp | FR04 – Tính khoảng cách TX → điểm đón | BRULE03        | UC06              | AC05                |
+| **RTM05** | BG01          | BR02 – Tìm tài xế phù hợp | FR06 – Gửi yêu cầu cho TX             | BRULE04        | UC06              | AC06                |
+| **RTM06** | BG01          | BR02 – Tìm tài xế phù hợp | FR08 – Xử lý TX từ chối               | BRULE05        | UC06              | AC07                |
+| **RTM07** | BG01          | BR02 – Tìm tài xế phù hợp | FR09 – Xử lý TX không phản hồi        | BRULE06        | UC06              | AC08                |
+| **RTM08** | BG01          | BR02 – Tìm tài xế phù hợp | FR10 – Thông báo không tìm được TX    | BRULE07        | UC06              | AC09                |
+| **RTM09** | BG03          | BR03 – Theo dõi chuyến    | FR12 – Cập nhật trạng thái chuyến     | BRULE08        | UC10              | AC10                |
+| **RTM10** | BG03          | BR03 – Theo dõi chuyến    | FR13 – Cập nhật vị trí TX             | BRULE03        | UC10              | AC10                |
+| **RTM11** | BG04          | BR04 – Thanh toán         | FR16 – Tính cước                      | BRULE08        | UC14              | AC11                |
+| **RTM12** | BG04          | BR04 – Thanh toán         | FR17 – Thanh toán tiền mặt            | BRULE09        | UC14              | AC11                |
+| **RTM13** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử             | BRULE09        | UC14              | AC12                |
+| **RTM14** | BG04          | BR04 – Thanh toán         | FR19 – Xử lý thanh toán thất bại      | BRULE10        | UC14              | AC13                |
+| **RTM15** | BG03          | BR11 – Đánh giá tài xế    | FR25 – Đánh giá tài xế                | BRULE11        | UC17              | AC14                |
+| **RTM16** | BG02          | BR09 – Quản lý chuyến     | FR30 – Giám sát chuyến                | BRULE12        | UC22              | AC15                |
+| **RTM17** | BG01          | BR01 – Đặt xe             | FR35 – Tạo yêu cầu đặt xe             | —              | UC04              | AC01, AC02          |
+| **RTM18** | BG03          | BR01 – Đặt xe             | FR36 – Hủy yêu cầu / hủy chuyến       | —              | UC27              | AC16                |
+| **RTM19** | BG03          | BR03 – Theo dõi chuyến    | FR37 – Xem danh sách booking          | —              | UC18              | AC17                |
+| **RTM20** | BG01          | BR06 – Trạng thái tài xế  | FR38 – Bật / tắt nhận chuyến          | BRULE01        | UC28              | AC18                |
+| **RTM21** | BG02          | BR08 – Tài xế, phương tiện | FR39 – Đăng ký và duyệt hồ sơ tài xế | BRULE12        | UC29, UC30        | AC19, AC20          |
 
 
 ```mermaid
