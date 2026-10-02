@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>CAB System – Bounded Context / Database View</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; font-family: "Segoe UI", Arial, sans-serif; color: #1c2430; }
+  #canvas { width: 2800px; padding: 22px 28px 26px; background: #fff; }
+  h1 { margin: 0 0 4px; text-align: center; font-size: 44px; color: #1f2b6c; }
+  .sub { text-align: center; font-size: 20px; color: #444; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+  .ctx { border: 3px dashed; border-radius: 16px; padding: 12px 14px 14px; }
+  .ctx > h2 { margin: 0; font-size: 25px; display: flex; align-items: center; gap: 10px; }
+  .ctx > h2 .ic { font-size: 34px; line-height: 1; }
+  .ctx > .meta { font-size: 16px; margin: 2px 0 10px 44px; color: #333; }
+  .ctx > .meta b { font-family: Consolas, monospace; }
+  .tables { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+  table { border-collapse: collapse; background: #fff; border: 2.5px solid; border-radius: 6px; flex: 1 1 0; min-width: 0; }
+  caption { caption-side: top; font-weight: 700; font-size: 17px; padding: 5px 8px; color: #111; border: 2.5px solid; border-bottom: none; border-radius: 6px 6px 0 0; font-family: Consolas, monospace; letter-spacing: .3px; }
+  td { font-size: 14.5px; padding: 3px 7px; border-top: 1px solid #d9dde3; white-space: nowrap; }
+  td.k { width: 46px; font-weight: 700; font-size: 12.5px; color: #111; }
+  td.c { font-family: Consolas, monospace; font-weight: 600; }
+  td.t { font-family: Consolas, monospace; color: #444; text-align: right; }
+  td.c small { font-family: "Segoe UI", Arial, sans-serif; font-weight: 400; color: #b45309; font-size: 12.5px; margin-left: 6px; }
+  tr.enc td.c { color: #7c1d6f; }
+  .rel { font-size: 15px; margin: 9px 0 0 4px; color: #333; }
+  .rel code { font-family: Consolas, monospace; font-weight: 600; }
+  .legend { margin-top: 16px; border: 2px dashed #777; border-radius: 10px; padding: 10px 18px; font-size: 16.5px; display: flex; flex-wrap: wrap; gap: 6px 34px; }
+  .legend b { font-size: 14px; display: inline-block; min-width: 30px; }
+  .legend span.enc { color: #7c1d6f; font-family: Consolas, monospace; font-weight: 600; }
+  .legend span.ref { color: #b45309; }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <h1>CAB System – Bounded Context / Database View</h1>
+  <div class="sub">8 bounded context · mỗi context một service và một database riêng · khóa chính UUID · tiền là số nguyên (đồng)</div>
+  <div class="grid" id="grid"></div>
+  <div class="legend">
+    <div><b>PK</b> khóa chính</div>
+    <div><b>FK</b> khóa ngoại trong cùng database</div>
+    <div><b>UK</b> ràng buộc duy nhất (UNIQUE)</div>
+    <div><span class="ref">→ service</span>: ID của service khác, <b style="min-width:0;font-size:16.5px">không có khóa ngoại</b></div>
+    <div><span class="enc">cột_enc</span>: dữ liệu mã hóa AES-256-GCM · <span class="enc">cột_bidx</span>: chỉ mục để tra cứu dữ liệu đã mã hóa</div>
+    <div>Mọi bảng có <code>created_at timestamptz</code>; bảng có sửa thêm <code>updated_at</code></div>
+    <div>Bảng kỹ thuật không vẽ: <code>schema_migrations</code> (mọi database PostgreSQL), <code>outbox</code> (driver, booking, trip, payment)</div>
+  </div>
+</div>
+
+<script>
+// Mỗi cột: [khóa, tên, kiểu, ghi chú tham chiếu service khác]
+const contexts = [
+  { n: 1, name: 'Identity & Access', ic: '🔐', svc: 'auth-service', db: 'PostgreSQL · auth-db', span: 4, bg: '#e8f2fd', bd: '#4a90d9',
+    rel: '<code>accounts</code> là tài khoản chung cho ba vai trò. OTP gắn theo số điện thoại (đăng ký tài xế).',
+    tables: [
+      { t: 'accounts', hd: '#f9c5c5', cols: [
+        ['PK', 'account_id', 'uuid'], ['', 'phone_enc', 'bytea'], ['UK', 'phone_bidx', 'bytea'],
+        ['', 'email_enc', 'bytea'], ['UK', 'email_bidx', 'bytea'], ['', 'password_hash', 'text'],
+        ['', 'role', 'text'], ['', 'status', 'text']] },
+      { t: 'otp_verifications', hd: '#d9c5f9', cols: [
+        ['PK', 'otp_id', 'uuid'], ['', 'phone_bidx', 'bytea'], ['', 'otp_hash', 'bytea'], ['', 'purpose', 'text'],
+        ['', 'expires_at', 'timestamptz'], ['', 'attempt_count', 'smallint'], ['', 'consumed_at', 'timestamptz']] },
+    ] },
+  { n: 2, name: 'Customer', ic: '👥', svc: 'customer-service', db: 'PostgreSQL · customer-db', span: 2, bg: '#e9f8ea', bd: '#3fae4a',
+    rel: '<code>customer_id</code> = <code>account_id</code>.',
+    tables: [
+      { t: 'customer_profiles', hd: '#f9c5c5', cols: [
+        ['PK', 'customer_id', 'uuid', 'auth'], ['', 'full_name_enc', 'bytea'], ['', 'phone_enc', 'bytea'], ['', 'date_of_birth_enc', 'bytea']] },
+    ] },
+  { n: 3, name: 'Driver & Vehicle', ic: '🚗', svc: 'driver-service', db: 'PostgreSQL · driver-db', span: 6, bg: '#fff6e0', bd: '#e0a100',
+    rel: '<code>drivers</code> 1 — 1 <code>vehicles</code> · <code>vehicle_types</code> 1 — n <code>vehicles</code> · <code>driver_id</code> = <code>account_id</code>. Tìm tài xế trong 1 km: tính khoảng cách trên <code>current_lat</code>, <code>current_lng</code>.',
+    tables: [
+      { t: 'drivers', hd: '#f9c5c5', cols: [
+        ['PK', 'driver_id', 'uuid', 'auth'], ['', 'full_name', 'text'], ['', 'license_number_enc', 'bytea'], ['UK', 'license_number_bidx', 'bytea'],
+        ['', 'approval_status', 'text'], ['', 'reviewed_by', 'uuid', 'auth'], ['', 'reviewed_at', 'timestamptz'], ['', 'reject_reason', 'text'],
+        ['', 'availability', 'text'], ['', 'current_booking_id', 'uuid', 'booking'],
+        ['', 'current_lat, current_lng', 'double precision'], ['', 'location_updated_at', 'timestamptz']] },
+      { t: 'vehicles', hd: '#f9e3a8', cols: [
+        ['PK', 'vehicle_id', 'uuid'], ['FK UK', 'driver_id', 'uuid'], ['FK', 'vehicle_type', 'text'],
+        ['UK', 'license_plate', 'text'], ['', 'brand, model, color', 'text']] },
+      { t: 'vehicle_types', hd: '#d9c5f9', cols: [
+        ['PK', 'code', 'text'], ['', 'name', 'text'], ['', 'seats', 'smallint']] },
+    ] },
+  { n: 4, name: 'Booking', ic: '📝', svc: 'booking-service', db: 'PostgreSQL · booking-db', span: 7, bg: '#fdecec', bd: '#e05252',
+    rel: '<code>bookings</code> 1 — n <code>driver_offers</code> · <code>bookings</code> 1 — 0..1 <code>driver_assignments</code>. Ghép tài xế nằm trong context này.',
+    tables: [
+      { t: 'bookings', hd: '#f9c5c5', cols: [
+        ['PK', 'booking_id', 'uuid'], ['', 'customer_id', 'uuid', 'customer'], ['', 'vehicle_type', 'text'],
+        ['', 'pickup_lat, pickup_lng', 'double precision'], ['', 'pickup_address', 'text'],
+        ['', 'destination_lat, destination_lng', 'double precision'], ['', 'destination_address', 'text'],
+        ['', 'payment_method', 'text'], ['', 'estimated_distance_m', 'integer'], ['', 'fare_amount', 'integer'],
+        ['UK', 'payment_id', 'uuid', 'payment'], ['', 'status', 'text'], ['', 'cancel_reason', 'text'],
+        ['', 'canceled_by', 'text'], ['', 'canceled_at', 'timestamptz']] },
+      { t: 'driver_offers', hd: '#f9e3a8', cols: [
+        ['PK', 'offer_id', 'uuid'], ['FK', 'booking_id', 'uuid'], ['', 'driver_id', 'uuid', 'driver'], ['', 'distance_m', 'integer'],
+        ['', 'status', 'text'], ['', 'expires_at', 'timestamptz'], ['', 'responded_at', 'timestamptz']] },
+      { t: 'driver_assignments', hd: '#bcd9f7', cols: [
+        ['PK', 'assignment_id', 'uuid'], ['FK UK', 'booking_id', 'uuid'], ['FK UK', 'offer_id', 'uuid'],
+        ['', 'driver_id', 'uuid', 'driver'], ['UK', 'trip_id', 'uuid', 'trip'], ['', 'assigned_at', 'timestamptz']] },
+    ] },
+  { n: 5, name: 'Trip', ic: '🗺️', svc: 'trip-service', db: 'PostgreSQL · trip-db', span: 5, bg: '#f1ecfd', bd: '#8b5cf6',
+    rel: '<code>trips</code> 1 — n <code>trip_status_history</code>. Trip giữ bản chụp của booking (tọa độ, phương thức, cước).',
+    tables: [
+      { t: 'trips', hd: '#bfe8c2', cols: [
+        ['PK', 'trip_id', 'uuid'], ['UK', 'booking_id', 'uuid', 'booking'], ['', 'customer_id', 'uuid', 'customer'], ['', 'driver_id', 'uuid', 'driver'],
+        ['', 'vehicle_type', 'text'], ['', 'pickup_lat, pickup_lng', 'double precision'], ['', 'destination_lat, destination_lng', 'double precision'],
+        ['', 'pickup_address, destination_address', 'text'], ['', 'payment_method', 'text'], ['', 'fare_amount', 'integer'],
+        ['', 'status', 'text'], ['', 'started_at, ended_at', 'timestamptz'], ['', 'cancel_reason', 'text'], ['', 'canceled_by', 'text']] },
+      { t: 'trip_status_history', hd: '#bcd9f7', cols: [
+        ['PK', 'history_id', 'uuid'], ['FK', 'trip_id', 'uuid'], ['', 'from_status', 'text'], ['', 'to_status', 'text'],
+        ['', 'changed_by', 'uuid', 'auth'], ['', 'changed_by_role', 'text'], ['', 'reason', 'text'], ['', 'changed_at', 'timestamptz']] },
+    ] },
+  { n: 6, name: 'Fare & Payment', ic: '💳', svc: 'payment-service', db: 'PostgreSQL · payment-db', span: 12, bg: '#e3f7f5', bd: '#1aa198',
+    rel: '<code>fares</code> 1 — 1 <code>payments</code> · <code>payments</code> 1 — n <code>payment_transactions</code> (mỗi lần thu, mỗi lần hoàn). Cước và thanh toán gắn với <code>booking_id</code> vì trả trước, lúc đó chưa có chuyến.',
+    tables: [
+      { t: 'fare_rates', hd: '#d9c5f9', cols: [
+        ['PK', 'vehicle_type', 'text'], ['', 'base_fare', 'integer'], ['', 'per_km_rate', 'integer'], ['', 'min_fare', 'integer']] },
+      { t: 'fares', hd: '#f9c5c5', cols: [
+        ['PK', 'fare_id', 'uuid'], ['UK', 'booking_id', 'uuid', 'booking'], ['', 'vehicle_type', 'text'], ['', 'distance_m', 'integer'],
+        ['', 'base_fare, per_km_rate, min_fare', 'integer'], ['', 'total_amount', 'integer'], ['', 'calculated_at', 'timestamptz']] },
+      { t: 'payments', hd: '#d9c5f9', cols: [
+        ['PK', 'payment_id', 'uuid'], ['UK', 'booking_id', 'uuid', 'booking'], ['FK UK', 'fare_id', 'uuid'], ['', 'customer_id', 'uuid', 'customer'],
+        ['', 'method', 'text'], ['', 'amount', 'integer'], ['', 'status', 'text'], ['', 'status_reason', 'text'],
+        ['', 'expires_at', 'timestamptz'], ['', 'paid_at, refunded_at', 'timestamptz']] },
+      { t: 'payment_transactions', hd: '#f9e3a8', cols: [
+        ['PK', 'transaction_id', 'uuid'], ['FK', 'payment_id', 'uuid'], ['', 'type', 'text'], ['', 'attempt_no', 'smallint'],
+        ['UK', 'provider_transaction_id', 'text'], ['', 'amount', 'integer'], ['', 'status', 'text'],
+        ['', 'callback_response', 'jsonb'], ['', 'processed_at', 'timestamptz']] },
+      { t: 'idempotency_keys', hd: '#bcd9f7', cols: [
+        ['PK', 'account_id', 'uuid', 'auth'], ['PK', 'idempotency_key', 'text'], ['', 'request_hash', 'text'], ['', 'response', 'jsonb']] },
+    ] },
+  { n: 7, name: 'Notification', ic: '🔔', svc: 'notification-service', db: 'MongoDB · notification-db', span: 3, bg: '#f0f1f5', bd: '#6b7280',
+    rel: 'Collection. UNIQUE (<code>event_id</code>, <code>recipient_id</code>) chặn tạo trùng khi Kafka giao lặp.',
+    tables: [
+      { t: 'notifications', hd: '#f9c5c5', cols: [
+        ['PK', '_id', 'string (UUID)'], ['UK', 'event_id', 'string (UUID)'], ['UK', 'recipient_id', 'string (UUID)', 'auth'],
+        ['', 'type', 'string'], ['', 'title, body', 'string'], ['', 'data', 'object'], ['', 'status', 'string'], ['', 'created_at', 'date']] },
+    ] },
+  { n: 8, name: 'Rating', ic: '⭐', svc: 'rating-service', db: 'PostgreSQL · rating-db', span: 5, bg: '#fff3e6', bd: '#f08a24',
+    rel: 'Mỗi chuyến một đánh giá (UNIQUE <code>trip_id</code>). <code>driver_ratings</code> giữ tổng để tính điểm trung bình.',
+    tables: [
+      { t: 'ratings', hd: '#f9c5c5', cols: [
+        ['PK', 'rating_id', 'uuid'], ['UK', 'trip_id', 'uuid', 'trip'], ['', 'customer_id', 'uuid', 'customer'], ['', 'driver_id', 'uuid', 'driver'],
+        ['', 'score', 'smallint (1–5)'], ['', 'comment', 'text']] },
+      { t: 'driver_ratings', hd: '#bfe8c2', cols: [
+        ['PK', 'driver_id', 'uuid', 'driver'], ['', 'rating_count', 'integer'], ['', 'rating_sum', 'integer']] },
+    ] },
+  { n: '', name: 'API Gateway', ic: '🛡️', svc: 'gateway', db: 'Redis (không phải bounded context nghiệp vụ)', span: 4, bg: '#fdecec', bd: '#e05252',
+    rel: 'Key tự hết hạn. Redis không lưu dữ liệu nghiệp vụ.',
+    tables: [
+      { t: 'Redis keys', hd: '#f9c5c5', cols: [
+        ['', 'rl:ip:{ip}:{cửa sổ}', 'bộ đếm rate limit'], ['', 'rl:acc:{account_id}:{cửa sổ}', 'bộ đếm rate limit'],
+        ['', 'revoked:{jti}', 'token đã đăng xuất']] },
+    ] },
+];
+
+const grid = document.getElementById('grid');
+for (const c of contexts) {
+  const d = document.createElement('div');
+  d.className = 'ctx';
+  d.style.gridColumn = 'span ' + c.span;
+  d.style.background = c.bg;
+  d.style.borderColor = c.bd;
+  const tables = c.tables.map(t => `
+    <table style="border-color:${c.bd}">
+      <caption style="background:${t.hd};border-color:${c.bd}">${t.t}</caption>
+      ${t.cols.map(([k, n, ty, ref]) => `<tr class="${/_enc|_bidx|_hash/.test(n) ? 'enc' : ''}">
+        <td class="k">${k}</td><td class="c">${n}${ref ? `<small>→ ${ref}</small>` : ''}</td><td class="t">${ty}</td></tr>`).join('')}
+    </table>`).join('');
+  d.innerHTML = `<h2><span class="ic">${c.ic}</span>${c.n ? c.n + '. ' : ''}${c.name}${c.n ? ' Bounded Context' : ''}</h2>
+    <div class="meta"><b>${c.svc}</b> · ${c.db}</div>
+    <div class="tables">${tables}</div>
+    <div class="rel">${c.rel}</div>`;
+  grid.appendChild(d);
+}
+document.title = 'H=' + Math.ceil(document.getElementById('canvas').getBoundingClientRect().height);
+</script>
+</body>
+</html>
