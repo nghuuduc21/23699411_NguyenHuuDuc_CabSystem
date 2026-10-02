@@ -138,7 +138,7 @@ Bước 6: Business Process
 4. Tính cước và thanh toán
 | Mã       | Functional Requirement        | Diễn giải                                                                                                                                             |
 | -------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **FR16** | **Tính cước cố định khi đặt xe** | Khi tạo yêu cầu đặt xe, hệ thống tính cước cố định từ loại xe và khoảng cách điểm đón → điểm đến. Cước này áp dụng cho cả tiền mặt và thanh toán điện tử, không đổi sau khi đặt. |
+| **FR16** | **Tính cước cố định khi đặt xe** | Khi tạo yêu cầu đặt xe, hệ thống tính cước một lần: cước = giá mở cửa + đơn giá mỗi km × quãng đường ước tính, theo loại xe; quãng đường ước tính = khoảng cách đường thẳng điểm đón → điểm đến × 1,3; làm tròn lên 1.000 đ và không thấp hơn cước tối thiểu của loại xe. Áp dụng cho cả tiền mặt và thanh toán điện tử, không đổi sau khi đặt. |
 | **FR17** | **Xử lý thanh toán tiền mặt** | Khách hàng trả tiền mặt cho tài xế khi chuyến hoàn thành; hệ thống ghi nhận chuyến đã được thanh toán bằng tiền mặt.                                  |
 | **FR18** | **Xử lý thanh toán điện tử**  | Với thanh toán điện tử, khách hàng thanh toán trước: hệ thống gửi yêu cầu đến nhà cung cấp bên ngoài, nhận kết quả giao dịch, và chỉ tìm tài xế khi thanh toán thành công. |
 | **FR19** | **Xử lý thanh toán thất bại** | Hệ thống thông báo kết quả thất bại và cho phép thực hiện lại theo chính sách của doanh nghiệp.                                                       |
@@ -176,7 +176,8 @@ Bước 6: Business Process
 | **FR38** | **Bật / tắt trạng thái nhận chuyến**    | Tài xế chuyển Online / Offline; hệ thống ghi nhận và chỉ tìm tài xế đang Online.                                        |
 | **FR39** | **Đăng ký và duyệt hồ sơ tài xế**       | Tài xế xác thực số điện thoại bằng OTP, gửi hồ sơ cá nhân và xe; hồ sơ ở trạng thái chờ duyệt đến khi Admin duyệt hoặc từ chối. |
 | **FR40** | **Hoàn tiền**                           | Với thanh toán điện tử đã thành công, hệ thống hoàn đủ tiền khi chuyến không được thực hiện: khách hủy, không tìm được tài xế, hoặc tài xế hủy chuyến đã nhận. |
-| **FR41** | **Tài xế hủy chuyến đã nhận**           | Tài xế đã chấp nhận chuyến có thể hủy trước khi chuyến bắt đầu; hệ thống chuyển chuyến sang CANCELED và thông báo cho khách hàng. |
+| **FR41** | **Tài xế hủy chuyến đã nhận**           | Tài xế đã chấp nhận chuyến có thể hủy trước khi chuyến bắt đầu; hệ thống chuyển chuyến sang CANCELED, thông báo cho khách hàng và không tự tìm tài xế khác (khách hàng đặt lại). |
+| **FR42** | **Đăng xuất**                           | Người dùng đăng xuất; token đang dùng bị thu hồi và không dùng được nữa. |
 
 
 
@@ -198,11 +199,14 @@ Bước 6: Business Process
 | **BRULE14** | Hoàn đủ tiền khi chuyến không được thực hiện            | Hoàn tiền trong bốn trường hợp: khách hủy trước khi có tài xế; khách hủy sau khi đã có tài xế; không tìm được tài xế; tài xế hủy chuyến đã nhận. |
 | **BRULE15** | Không hoàn tiền trong hai trường hợp                    | Chuyến đã hoàn thành thì không hoàn tiền. Tài xế từ chối lời mời nhận chuyến thì không hoàn tiền; hệ thống tìm tài xế khác (BRULE05). |
 | **BRULE16** | Chỉ hủy được trước khi chuyến bắt đầu                   | Khách hàng và tài xế chỉ hủy được khi chuyến chưa bắt đầu (chưa đón khách).                                        |
+| **BRULE17** | Thanh toán điện tử có hạn chờ và giới hạn số lần thử    | Khách hàng có tối đa 10 phút và 3 lần thử để thanh toán. Hết hạn hoặc hết lượt mà chưa thành công thì yêu cầu đặt xe bị hủy. |
 
 
 2. Exception – Các trường hợp ngoại lệ
 
 
+
+Bảng dưới là mô hình khái niệm ban đầu. Thiết kế dữ liệu chính thức (một tài khoản dùng chung cho ba vai trò, khóa chính, kiểu dữ liệu, chia theo service) nằm ở `docs/design/03-du-lieu.md`.
 
 | Entity             | Thuộc tính chính                                                                                                                                                                                 | Mô tả                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
@@ -210,11 +214,11 @@ Bước 6: Business Process
 | **Driver**         | `driver_id` (PK), `full_name`, `phone`, `email`, `password_hash`, `license_number`, `rating`, `status`, `current_latitude`, `current_longitude`, `created_at`                                    | Lưu thông tin tài xế và trạng thái hoạt động |
 | **Vehicle**        | `vehicle_id` (PK), `driver_id` (FK), `vehicle_type_id` (FK), `license_plate`, `brand`, `model`, `color`, `status`                                                                                | Thông tin phương tiện của tài xế             |
 | **VehicleType**    | `vehicle_type_id` (PK), `name`, `description`, `capacity`, `status`                                                                                                                              | Loại xe: Sedan, SUV, 4 chỗ, 7 chỗ...         |
-| **Booking**        | `booking_id` (PK), `customer_id` (FK), `vehicle_type_id` (FK), `pickup_lat`, `pickup_lng`, `pickup_address`, `destination_lat`, `destination_lng`, `destination_address`, `status`, `created_at` | Yêu cầu đặt xe của khách hàng                |
-| **Trip**           | `trip_id` (PK), `booking_id` (FK), `driver_id` (FK), `start_time`, `end_time`, `status`, `distance`, `duration`, `fare_amount`                                                                   | Chuyến đi thực tế sau khi có tài xế          |
+| **Booking**        | `booking_id` (PK), `customer_id` (FK), `vehicle_type_id` (FK), `pickup_lat`, `pickup_lng`, `pickup_address`, `destination_lat`, `destination_lng`, `destination_address`, `payment_method`, `fare_amount`, `status`, `cancel_reason`, `created_at` | Yêu cầu đặt xe của khách hàng                |
+| **Trip**           | `trip_id` (PK), `booking_id` (FK), `driver_id` (FK), `start_time`, `end_time`, `status`, `cancel_reason` | Chuyến đi thực tế sau khi có tài xế          |
 | **DriverLocation** | `location_id` (PK), `driver_id` (FK), `latitude`, `longitude`, `recorded_at`                                                                                                                     | Lưu lịch sử vị trí tài xế                    |
-| **Fare**           | `fare_id` (PK), `trip_id` (FK), `base_fare`, `distance_fare`, `time_fare`, `extra_fee`, `total_amount`, `calculated_at`                                                                          | Thông tin tính cước                          |
-| **Payment**        | `payment_id` (PK), `trip_id` (FK), `payment_method`, `amount`, `status`, `transaction_id`, `paid_at`                                                                                             | Thông tin thanh toán                         |
+| **Fare**           | `fare_id` (PK), `booking_id` (FK), `base_fare`, `per_km_rate`, `distance_km`, `total_amount`, `calculated_at` | Cước cố định tính khi đặt xe                 |
+| **Payment**        | `payment_id` (PK), `booking_id` (FK), `payment_method`, `amount`, `status`, `transaction_id`, `paid_at`, `refunded_at` | Thông tin thanh toán và hoàn tiền            |
 | **Rating**         | `rating_id` (PK), `trip_id` (FK), `customer_id` (FK), `driver_id` (FK), `score`, `comment`, `created_at`                                                                                         | Đánh giá tài xế sau chuyến                   |
 | **Notification**   | `notification_id` (PK), `user_id`, `type`, `title`, `content`, `status`, `created_at`                                                                                                            | Thông báo cho người dùng                     |
 | **Admin/Operator** | `operator_id` (PK), `full_name`, `email`, `password_hash`, `role_id`, `status`                                                                                                                   | Nhân viên vận hành                           |
@@ -280,6 +284,7 @@ Bước 11: Xác định Use Case (UC)
 | **UC30** | Duyệt hồ sơ tài xế         | Admin                      |
 | **UC31** | Hoàn tiền                  | System, Payment Provider   |
 | **UC32** | Tài xế hủy chuyến đã nhận  | Driver                     |
+| **UC33** | Đăng xuất                  | Customer, Driver, Admin    |
 
 
 Bước 12: Đặc tả Use Case (Use Case Specification)
@@ -306,10 +311,10 @@ UC04 – Đặt xe
 | **Mục tiêu**         | Cho phép khách hàng tạo yêu cầu đặt xe                                                                                                                                                                                                           |
 | **Pre-condition**    | Khách hàng đã đăng nhập                                                                                                                                                                                                                          |
 | **Trigger**          | Khách hàng chọn chức năng "Đặt xe"                                                                                                                                                                                                               |
-| **Post-condition**   | Yêu cầu đặt xe được tạo và chuyển sang quá trình tìm tài xế                                                                                                                                                                                      |
-| **Main Flow**        | 1. Customer nhập/chọn điểm đón. <br> 2. Customer nhập điểm đến. <br> 3. Customer chọn loại xe. <br> 4. Hệ thống kiểm tra thông tin. <br> 5. Customer xác nhận đặt xe. <br> 6. Hệ thống tạo Booking. <br> 7. Hệ thống bắt đầu tìm tài xế phù hợp. |
+| **Post-condition**   | Yêu cầu đặt xe được tạo kèm cước cố định. Tiền mặt: chuyển sang tìm tài xế. Điện tử: chờ thanh toán; thanh toán thành công mới chuyển sang tìm tài xế (BRULE13). |
+| **Main Flow**        | 1. Customer nhập/chọn điểm đón. <br> 2. Customer nhập điểm đến. <br> 3. Customer chọn loại xe. <br> 4. Customer chọn phương thức thanh toán (tiền mặt hoặc điện tử). <br> 5. Hệ thống kiểm tra thông tin và tính cước cố định (FR16). <br> 6. Customer xác nhận đặt xe. <br> 7. Hệ thống tạo Booking. <br> 8. Tiền mặt: hệ thống bắt đầu tìm tài xế. Điện tử: Customer thanh toán trước (UC14), thành công thì hệ thống bắt đầu tìm tài xế. |
 | **Alternative Flow** | Customer thay đổi điểm đón/điểm đến trước khi xác nhận → hệ thống cập nhật thông tin.                                                                                                                                                            |
-| **Exception**        | Điểm đón không hợp lệ → thông báo lỗi. <br> Không xác định được vị trí → yêu cầu Customer nhập địa chỉ thủ công. <br> Không có tài xế → thông báo không tìm được tài xế.                                                                         |
+| **Exception**        | Điểm đón không hợp lệ → thông báo lỗi. <br> Không xác định được vị trí → yêu cầu Customer nhập địa chỉ thủ công. <br> Quá hạn hoặc hết lượt thanh toán (BRULE17) → hủy Booking. <br> Không có tài xế → thông báo không tìm được tài xế và hoàn tiền nếu đã thanh toán (BRULE14). |
 UC06 – Tìm tài xế phù hợp
 | Thành phần           | Nội dung                                                                                                                                                                                                                                                                                                                                 |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -318,12 +323,12 @@ UC06 – Tìm tài xế phù hợp
 | **Actor**            | System                                                                                                                                                                                                                                                                                                                                   |
 | **Supporting Actor** | Map/GPS Provider                                                                                                                                                                                                                                                                                                                         |
 | **Mục tiêu**         | Tìm tài xế phù hợp nhất cho yêu cầu đặt xe                                                                                                                                                                                                                                                                                               |
-| **Pre-condition**    | Booking đã được tạo                                                                                                                                                                                                                                                                                                                      |
+| **Pre-condition**    | Booking đã được tạo; với thanh toán điện tử, giao dịch đã thành công (BRULE13) |
 | **Trigger**          | Hệ thống nhận yêu cầu tìm tài xế                                                                                                                                                                                                                                                                                                         |
 | **Post-condition**   | Một tài xế được phân công hoặc hệ thống thông báo không tìm được tài xế                                                                                                                                                                                                                                                                  |
-| **Main Flow**        | 1. Hệ thống lấy vị trí điểm đón. <br> 2. Tìm các tài xế đang sẵn sàng. <br> 3. Lọc theo loại xe. <br> 4. Tính khoảng cách từ tài xế đến điểm đón. <br> 5. Xếp hạng tài xế theo tiêu chí nghiệp vụ. <br> 6. Gửi yêu cầu cho tài xế phù hợp nhất. <br> 7. Chờ tài xế phản hồi. <br> 8. Nếu tài xế chấp nhận → xác nhận tài xế cho Booking. |
+| **Main Flow**        | 1. Hệ thống lấy vị trí điểm đón. <br> 2. Tìm các tài xế đang sẵn sàng. <br> 3. Lọc theo loại xe. <br> 4. Tính khoảng cách từ tài xế đến điểm đón. <br> 5. Xếp tài xế theo khoảng cách, gần nhất trước (BRULE03). <br> 6. Gửi yêu cầu cho tài xế gần nhất. <br> 7. Chờ tài xế phản hồi. <br> 8. Nếu tài xế chấp nhận → xác nhận tài xế cho Booking. |
 | **Alternative Flow** | Tài xế từ chối → hệ thống chọn tài xế tiếp theo. <br> Tài xế không phản hồi → hết thời gian → chọn tài xế tiếp theo.                                                                                                                                                                                                                     |
-| **Exception**        | Không có tài xế phù hợp → cập nhật Booking thành `NO_DRIVER_FOUND` và thông báo Customer.                                                                                                                                                                                                                                                |
+| **Exception**        | Không có tài xế phù hợp → cập nhật Booking thành `NO_DRIVER_FOUND` và thông báo Customer; hoàn tiền nếu đã thanh toán điện tử (BRULE14).                                                                                                                                                                                                                                                |
 
 UC10 – Theo dõi chuyến đi
 | Thành phần           | Nội dung                                                                                                                                                                                                                                         |
@@ -358,11 +363,11 @@ UC14 – Thanh toán chuyến đi
 | **Actor**            | Customer                                                                                                                                                                                                                                                                                                                                  |
 | **Supporting Actor** | Payment Provider                                                                                                                                                                                                                                                                                                                          |
 | **Mục tiêu**         | Cho phép Customer thanh toán chi phí chuyến                                                                                                                                                                                                                                                                                               |
-| **Pre-condition**    | Trip đã hoàn thành và hệ thống đã tính cước                                                                                                                                                                                                                                                                                               |
-| **Trigger**          | Customer thực hiện thanh toán                                                                                                                                                                                                                                                                                                             |
-| **Main Flow**        | 1. Hệ thống hiển thị số tiền phải trả. <br> 2. Customer chọn phương thức thanh toán. <br> 3. Nếu tiền mặt → hệ thống ghi nhận thanh toán. <br> 4. Nếu điện tử → hệ thống chuyển yêu cầu đến Payment Provider. <br> 5. Payment Provider trả kết quả. <br> 6. Hệ thống cập nhật trạng thái Payment. <br> 7. Thông báo kết quả cho Customer. |
-| **Exception**        | Thanh toán điện tử thất bại → cập nhật `FAILED` → thông báo Customer → cho phép thanh toán lại theo chính sách.                                                                                                                                                                                                                           |
-| **Post-condition**   | Payment được ghi nhận với trạng thái thành công hoặc thất bại.                                                                                                                                                                                                                                                                            |
+| **Pre-condition**    | Điện tử: Booking đã được tạo, đã có cước cố định và đang chờ thanh toán. Tiền mặt: Trip đã hoàn thành. |
+| **Trigger**          | Điện tử: Customer thực hiện thanh toán ngay sau khi đặt xe. Tiền mặt: Trip chuyển sang hoàn thành. |
+| **Main Flow**        | Điện tử (trả trước): <br> 1. Hệ thống hiển thị cước cố định. <br> 2. Customer thực hiện thanh toán. <br> 3. Hệ thống chuyển yêu cầu đến Payment Provider. <br> 4. Payment Provider trả kết quả (callback). <br> 5. Hệ thống cập nhật Payment thành COMPLETED và bắt đầu tìm tài xế. <br> 6. Thông báo kết quả cho Customer. <br> Tiền mặt: <br> 1. Trip hoàn thành. <br> 2. Customer trả tiền mặt cho tài xế. <br> 3. Hệ thống ghi nhận Payment COMPLETED. |
+| **Exception**        | Thanh toán điện tử thất bại → cập nhật `FAILED` → thông báo Customer → cho phép thanh toán lại trong hạn 10 phút, tối đa 3 lần (BRULE17). Hết hạn hoặc hết lượt → hủy Booking. |
+| **Post-condition**   | Payment được ghi nhận thành công hoặc thất bại. Payment thành công có thể chuyển sang hoàn tiền theo BRULE14 (UC31). |
 
 UC17 – Đánh giá tài xế
 | Thành phần        | Nội dung                                                                                                                                                             |
@@ -411,6 +416,8 @@ UC22 – Giám sát chuyến đi
 | **AC22** | Hoàn tiền          | Hoàn đủ tiền trong bốn trường hợp của BRULE14 |
 | **AC23** | Không hoàn tiền    | Chuyến hoàn thành, hoặc tài xế từ chối lời mời: không hoàn |
 | **AC24** | Tài xế hủy         | Chuyến chuyển CANCELED; khách được báo và được hoàn tiền |
+| **AC25** | Hạn thanh toán     | Quá 10 phút hoặc 3 lần thử thất bại: booking bị hủy |
+| **AC26** | Tính cước          | Cước đúng công thức FR16 và không đổi sau khi đặt |
 
 RTM cho CAB System
 | RTM       | Business Goal | Business Requirement      | Functional Requirement                | Business Rule | Use Case          | Acceptance Criteria |
@@ -425,7 +432,7 @@ RTM cho CAB System
 | **RTM08** | BG01          | BR02 – Tìm tài xế phù hợp | FR10 – Thông báo không tìm được TX    | BRULE07        | UC06              | AC09                |
 | **RTM09** | BG03          | BR03 – Theo dõi chuyến    | FR12 – Cập nhật trạng thái chuyến     | BRULE08        | UC10              | AC10                |
 | **RTM10** | BG03          | BR03 – Theo dõi chuyến    | FR13 – Cập nhật vị trí TX             | BRULE03        | UC10              | AC10                |
-| **RTM11** | BG04          | BR04 – Thanh toán         | FR16 – Tính cước                      | BRULE08        | UC13              | AC01                |
+| **RTM11** | BG04          | BR04 – Thanh toán         | FR16 – Tính cước                      | BRULE08        | UC13              | AC26                |
 | **RTM12** | BG04          | BR04 – Thanh toán         | FR17 – Thanh toán tiền mặt            | BRULE09        | UC14              | AC11                |
 | **RTM13** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử             | BRULE09        | UC14              | AC12                |
 | **RTM14** | BG04          | BR04 – Thanh toán         | FR19 – Xử lý thanh toán thất bại      | BRULE10        | UC14              | AC13                |
@@ -439,6 +446,8 @@ RTM cho CAB System
 | **RTM22** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử trả trước   | BRULE13        | UC14              | AC21                |
 | **RTM23** | BG04          | BR04 – Thanh toán         | FR40 – Hoàn tiền                      | BRULE14, BRULE15 | UC31            | AC22, AC23          |
 | **RTM24** | BG03          | BR07 – Tài xế thực hiện chuyến | FR41 – Tài xế hủy chuyến đã nhận | BRULE16        | UC32              | AC24                |
+| **RTM25** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử trả trước   | BRULE17        | UC14, UC15        | AC25                |
+| **RTM26** | BG05          | BR05 – Thông tin khách hàng | FR42 – Đăng xuất                    | —              | UC33              | —                   |
 
 
 ```mermaid
@@ -451,7 +460,9 @@ flowchart TD
     U -->|Tiền mặt| E[Hệ thống tìm tài xế phù hợp]
     U -->|Điện tử| X[Khách hàng thanh toán trước qua Payment Provider]
     X --> Y{Thanh toán thành công?}
-    Y -->|Không| AA[Thông báo thanh toán thất bại, cho phép thử lại] --> X
+    Y -->|Không| AA{Còn hạn 10 phút và còn lượt thử?}
+    AA -->|Có| X
+    AA -->|Không| AB[Hủy yêu cầu đặt xe, thông báo khách hàng] --> Z
     Y -->|Có| E
 
     E --> F{Có tài xế phù hợp?}

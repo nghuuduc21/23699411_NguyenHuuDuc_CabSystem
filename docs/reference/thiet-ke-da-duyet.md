@@ -18,7 +18,7 @@ Thiết kế trong ảnh có **10 service**. Giảng viên nhận xét là hơi 
 | 5 | Trip Management (Ride/Trip) | `trip-service` | |
 | 6 | Fare & Payment | `payment-service` | |
 | 7 | Notification | `notification-service` | |
-| 8 | Rating & Review | `review-service` | Mục chấm 20: "Review được lưu và liên kết với chuyến đi". Sinh viên đã xác nhận |
+| 8 | Rating | `rating-service` (ảnh ghi `review-service`; sinh viên đổi tên) | Mục chấm 20: "Review được lưu và liên kết với chuyến đi". Sinh viên đã xác nhận |
 
 Bỏ khỏi phạm vi: `report-service` (Reporting) và `audit-service` (Audit).
 

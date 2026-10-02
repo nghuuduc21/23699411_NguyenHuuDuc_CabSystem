@@ -13,7 +13,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 
 | Cần biết | Xem | Trạng thái |
 |---|---|---|
-| Nghiệp vụ: BG01–06, BR, FR01–FR41, BRULE01–16, NFR01–16, UC01–UC32, AC, RTM | `srs.md` | Có, đã rà |
+| Nghiệp vụ: BG01–06, BR, FR01–FR42, BRULE01–17, NFR01–16, UC01–UC33, AC01–AC26, RTM01–RTM26 | `srs.md` | Có, đã rà |
 | 30 mục phiếu chấm | `docs/study/00-ban-do-phieu-cham.md` | Có |
 | Truy vết yêu cầu → mục chấm; quyết định nghiệp vụ đã chốt | `docs/study/01-nghiep-vu-va-truy-vet.md` | Có |
 | Thiết kế tham chiếu đã được giảng viên duyệt (kiến trúc, bảng) và điều chỉnh của giảng viên | `docs/reference/thiet-ke-da-duyet.md` + hai ảnh cùng thư mục | Có |
@@ -63,8 +63,9 @@ Không có service riêng cho ghép tài xế (dispatch), báo cáo (report) và
 | Vai trò | `customer`, `driver`, `admin` (SRS gọi là Operator) |
 | Đăng ký | Đăng ký tài khoản công khai chỉ tạo `customer`. Tài xế đăng ký theo luồng riêng: OTP → hồ sơ chờ duyệt → Admin duyệt (FR39) |
 | Ghép tài xế | Tài xế đang sẵn sàng, đúng loại xe, trong bán kính 1 km, gần điểm đón nhất được hỏi trước (BRULE01–03) |
-| Cước | **Cước cố định**, tính một lần khi đặt xe từ loại xe và khoảng cách điểm đón → điểm đến; áp dụng cho cả hai phương thức (FR16, BRULE08) |
-| Thanh toán | Khách chọn phương thức khi đặt xe. **Điện tử: trả trước**, thanh toán thành công rồi hệ thống mới tìm tài xế (BRULE13). **Tiền mặt:** trả cho tài xế khi chuyến hoàn thành, hệ thống ghi nhận (FR17) |
+| Cước | **Cước cố định**, tính một lần khi đặt xe, áp dụng cho cả hai phương thức (FR16, BRULE08). Công thức: `cước = giá mở cửa + đơn giá mỗi km × quãng đường ước tính`; `quãng đường ước tính = khoảng cách đường thẳng × 1,3`; làm tròn lên 1.000 đ; không thấp hơn cước tối thiểu. Không tính theo thời gian, không có giá giờ cao điểm, không có phí hủy |
+| Loại xe và bảng giá (số minh họa) | Xe máy: mở cửa 10.000 đ, 5.000 đ/km, tối thiểu 15.000 đ. Ô tô 4 chỗ: 20.000 đ, 12.000 đ/km, tối thiểu 30.000 đ. Ô tô 7 chỗ: 25.000 đ, 15.000 đ/km, tối thiểu 40.000 đ |
+| Thanh toán | Khách chọn phương thức khi đặt xe. **Điện tử: trả trước**, thanh toán thành công rồi hệ thống mới tìm tài xế (BRULE13); khách có tối đa 10 phút và 3 lần thử, quá thì booking bị hủy (BRULE17). **Tiền mặt:** trả cho tài xế khi chuyến hoàn thành, hệ thống ghi nhận (FR17) |
 | Hoàn tiền | Hoàn đủ khi chuyến không được thực hiện: khách hủy trước khi có tài xế; khách hủy sau khi có tài xế; không tìm được tài xế; tài xế hủy chuyến đã nhận (BRULE14). **Không hoàn** khi chuyến đã hoàn thành, và khi tài xế chỉ từ chối lời mời (BRULE15) |
 | "COMPLETED" ở mục chấm 19 | Là trạng thái của **giao dịch thanh toán** (Payment), không phải của chuyến |
 | Hủy và từ chối | Chỉ hủy được **trước khi chuyến bắt đầu** (BRULE16). **Khách hàng** hủy kèm lý do: trước khi có tài xế thì hủy Booking, sau khi có tài xế thì hủy Trip (mục chấm 18). **Tài xế từ chối lời mời** (FR08): không hủy gì, hệ thống hỏi tài xế kế tiếp. **Tài xế hủy chuyến đã nhận** (FR41): Trip chuyển CANCELED, khách được hoàn tiền; hệ thống không tự tìm tài xế khác, khách đặt lại |
@@ -77,10 +78,23 @@ Không có service riêng cho ghép tài xế (dispatch), báo cáo (report) và
 | Tài xế nhận chuyến | `booking-service` gọi gRPC đồng bộ `CreateTrip` sang `trip-service` | Tài xế nhận xong phải có ngay mã chuyến để cập nhật trạng thái (mục chấm 16 → 17). Một lần nhận chuyến mà không có Trip là vô nghĩa, nên Booking được phép chờ và lỗi theo Trip. Đúng nguyên tắc đồng bộ là mặc định | Trip lỗi thì tài xế không nhận được chuyến |
 | Đặt xe → cước và thanh toán | `booking-service` gọi gRPC đồng bộ sang `payment-service` để tính cước cố định và tạo thanh toán | Booking phải trả ngay cho khách số tiền và mã thanh toán | Payment lỗi thì không đặt được xe. Đây là hệ quả của trả trước và là đánh đổi so với NFR05; cần nêu khi trình bày |
 | Kết quả thanh toán, hoàn tiền | Payment phát event Kafka; Booking nghe kết quả thanh toán để bắt đầu tìm tài xế. Payment nghe event hủy và không tìm được tài xế để hoàn tiền | Tiền đã trừ thì Payment phải ghi nhận xong dù Booking đang lỗi; việc hủy phải thành công dù Payment đang lỗi (NFR05); nhiều bên cùng nghe | Có khoảng trễ ngắn giữa thanh toán xong và bắt đầu tìm tài xế |
+| Tính cước | `booking-service` tính quãng đường ước tính từ tọa độ rồi gửi số km và loại xe cho `payment-service`; `payment-service` giữ bảng giá, tính cước và lưu từng thành phần của cước | Booking có tọa độ; quy tắc giá thuộc context Fare & Payment, đổi giá chỉ sửa một nơi. Lưu từng thành phần để giải thích được con số cuối | Hai service cùng tham gia một phép tính |
+| Redis dừng | Gateway vẫn cho request đi qua và ghi log cảnh báo | Hệ thống không dừng chỉ vì thiếu bộ đếm rate limit | Trong lúc Redis dừng không có rate limit, và token đã đăng xuất tạm dùng lại được |
+| Đăng xuất | Gateway xử lý: ghi mã của token vào danh sách thu hồi trong Redis, tự hết hạn cùng lúc với token (FR42) | Gateway là nơi kiểm tra token ở mọi request nên tra danh sách tại chỗ, không phải gọi sang Auth | Phụ thuộc Redis |
 | Khóa chính | UUID (kiểu `uuid` của PostgreSQL, sinh bằng `gen_random_uuid()`) | Mỗi service tự sinh ID không cần nơi cấp số chung; ID không đoán được nên khó dò dữ liệu người khác; ID đi qua event và service khác vẫn duy nhất | Dài, khó đọc khi demo; index lớn hơn INT. Khác thiết kế tham chiếu (dùng INT) |
 | Phân quyền | Ba role cố định trong cột `role`; **không có bảng PERMISSION** | Phiếu chấm chỉ kiểm tra theo role (mục 28); quyền không đổi lúc chạy | Thêm quyền mới phải sửa code Gateway |
 | Lỗi sai trạng thái | gRPC `FAILED_PRECONDITION` → HTTP 409 | Thao tác hợp lệ nhưng sai thời điểm (ví dụ hoàn thành chuyến chưa bắt đầu, mục chấm 17) là lỗi của request, không phải lỗi hạ tầng | — |
 | Hệ thống ngoài | Bản đồ, cổng thanh toán, kênh gửi thông báo đều **giả lập**, đặt sau một lớp adapter | Demo không phụ thuộc mạng, tài khoản và khóa API bên ngoài; adapter giữ được NFR13 (đổi sang nhà cung cấp thật không sửa nghiệp vụ) | Không chứng minh được tích hợp thật |
+
+## Ràng buộc khi chấm
+
+Mỗi mục chấm chỉ có khoảng **30 giây** để thực hiện trên Postman. Vì vậy:
+
+- Luồng thành công không có bước nào phải chờ: mọi thao tác phản hồi ngay, event Kafka được xử lý trong khoảng một giây.
+- Mọi giới hạn thời gian (hạn chờ thanh toán, hạn tài xế trả lời lời mời, cửa sổ rate limit) là **giới hạn trên** và đọc từ biến môi trường, để chỉnh ngắn lại khi cần demo trường hợp hết hạn.
+- Cổng thanh toán giả lập gửi callback ngay sau khi nhận yêu cầu thanh toán.
+- Dữ liệu cần có sẵn (tài khoản, tài xế đã duyệt và đang Online, booking mẫu) được tạo bằng seed, không tạo tay lúc chấm.
+- Postman collection chia thư mục theo số mục chấm; script của request tự lưu token và các ID vào biến để request sau dùng luôn.
 
 ## Cấu trúc thư mục mục tiêu
 

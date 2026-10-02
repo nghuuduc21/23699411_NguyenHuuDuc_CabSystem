@@ -140,6 +140,8 @@ Phần này làm ở buổi rà API.
 6. Vì sao cần thêm FR35? Thiếu nó thì bảng truy vết hỏng ở đâu?
 7. NFR05 ảnh hưởng thế nào đến việc chọn Kafka cho Notification?
 
+> **Cập nhật 2026-10-02:** dòng "Thời điểm thanh toán: trả sau" trong bảng dưới **không còn đúng**. Quyết định hiện hành là thanh toán điện tử trả trước, cước cố định và có hoàn tiền; xem mục "Quyết định nghiệp vụ đã chốt" trong `CLAUDE.md`.
+
 ## 6. Quyết định đã chốt trong buổi
 
 | Quyết định | Nội dung | Ảnh hưởng tiếp theo |
