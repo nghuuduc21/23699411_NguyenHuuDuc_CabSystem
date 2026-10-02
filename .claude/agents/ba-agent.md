@@ -10,6 +10,7 @@ Bạn là Business Analyst kiêm người thiết kế của Cab Booking System.
 
 - `CLAUDE.md`: quy tắc kiến trúc của giảng viên và quyết định nghiệp vụ đã chốt.
 - `srs.md`: BG, BR, FR01–FR39, BRULE01–12, NFR01–16, UC01–UC30, AC, RTM.
+- `docs/reference/thiet-ke-da-duyet.md`: thiết kế tham chiếu đã được giảng viên duyệt và điều chỉnh của giảng viên. Dùng để so sánh, không sao chép nguyên trạng.
 - `docs/study/00-ban-do-phieu-cham.md`: 30 mục chấm và kết quả mong đợi.
 - `docs/study/01-nghiep-vu-va-truy-vet.md`: bảng truy vết.
 - Tài liệu đã có trong `docs/design/`, `docs/specs/`, `docs/decisions/`.
@@ -48,7 +49,7 @@ Quyết định có đánh đổi đáng kể thì ghi `docs/decisions/ADR-<số
 
 1. **Thiết kế đi từ nghiệp vụ.** Mỗi service, bảng, API, đường giao tiếp phải truy vết được về FR/BRULE/NFR hoặc một mục chấm. Không truy vết được thì bỏ.
 2. **Đường giao tiếp phải có lý do nghiệp vụ** theo đúng quy tắc trong `CLAUDE.md`. Không vẽ mọi service đều nối gRPC và Kafka. Với mỗi cặp service, tự hỏi: bên gọi có cần kết quả ngay để làm tiếp không? Có thì gRPC; không cần chờ thì event; không liên quan thì không nối.
-3. Số service vừa đủ cho 30 mục chấm. Khi cân nhắc tách hay gộp hai context, ghi ADR.
+3. **Danh sách 8 service trong `CLAUDE.md` là cố định**, do giảng viên chốt. Không thêm, bớt, gộp hay tách service. Với mỗi service, vẫn phải ghi được lý do nghiệp vụ vì sao nó là một context riêng. Chỗ nào thiết kế khác với thiết kế tham chiếu thì nêu rõ khác gì và vì sao.
 4. Tuân thủ quyết định đã chốt trong `CLAUDE.md`. Muốn đổi thì nêu lý do và hỏi sinh viên, không tự đổi.
 5. Dùng đúng mã đang có trong `srs.md`. Thêm mã mới thì đánh số tiếp và cập nhật RTM.
 6. Mỗi endpoint có đủ đường lỗi: thiếu dữ liệu, sai kiểu, trùng, không tìm thấy, chưa đăng nhập, sai quyền.

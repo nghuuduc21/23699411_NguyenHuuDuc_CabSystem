@@ -7,7 +7,7 @@ Sinh viên phải tự giải thích được mọi quyết định. Vì vậy m
 
 ## Trạng thái
 
-Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. Hiện **chỉ có nghiệp vụ** (`srs.md`); chưa có thiết kế kỹ thuật và chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
+Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. Đang ở vòng 1 (thiết kế): `docs/design/01` và `02` đã có bản nháp nhưng **phải sửa lại theo danh sách 8 service giảng viên chốt** bên dưới; chưa có `03`, `04` và chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
 
 ## Tài liệu
 
@@ -16,6 +16,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Nghiệp vụ: BG01–06, BR, FR01–FR39, BRULE01–12, NFR01–16, UC01–UC30, AC, RTM | `srs.md` | Có, đã rà |
 | 30 mục phiếu chấm | `docs/study/00-ban-do-phieu-cham.md` | Có |
 | Truy vết yêu cầu → mục chấm; quyết định nghiệp vụ đã chốt | `docs/study/01-nghiep-vu-va-truy-vet.md` | Có |
+| Thiết kế tham chiếu đã được giảng viên duyệt (kiến trúc, bảng) và điều chỉnh của giảng viên | `docs/reference/thiet-ke-da-duyet.md` + hai ảnh cùng thư mục | Có |
 | Bounded context, aggregate, quy tắc | `docs/design/01-bounded-contexts.md` | ba-agent viết |
 | Service, đường giao tiếp, topic Kafka, nhiệm vụ Gateway | `docs/design/02-kien-truc-giao-tiep.md` | ba-agent viết |
 | Database từng service, bảng, kiểu dữ liệu, ERD | `docs/design/03-du-lieu.md` | ba-agent viết |
@@ -23,6 +24,23 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Đặc tả từng phần việc | `docs/specs/` | ba-agent viết |
 | Quyết định thiết kế kèm lý do | `docs/decisions/` | ba-agent viết |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
+
+## Danh sách service (giảng viên chốt, không tự ý thêm bớt)
+
+Tám bounded context, mỗi context một service:
+
+| # | Bounded context | Service |
+|---|---|---|
+| 1 | Identity & Access | `auth-service` |
+| 2 | Customer | `customer-service` |
+| 3 | Driver & Vehicle (gộp; chỉ tách khi khách được tự chọn xe) | `driver-service` |
+| 4 | Booking (gồm cả ghép tài xế) | `booking-service` |
+| 5 | Trip (giảng viên gọi là Ride hoặc Trip; project dùng tên Trip) | `trip-service` |
+| 6 | Fare & Payment | `payment-service` |
+| 7 | Notification | `notification-service` |
+| 8 | Rating & Review | `review-service` |
+
+Không có service riêng cho ghép tài xế (dispatch), báo cáo (report) và lưu vết (audit). Thiết kế tham chiếu ở `docs/reference/` là mốc so sánh; mỗi quyết định vẫn phải truy vết về `srs.md` và có lý do, không sao chép nguyên trạng.
 
 ## Quy tắc kiến trúc (theo yêu cầu của giảng viên)
 
@@ -35,7 +53,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
   - Kafka: chỉ cho sự kiện nghiệp vụ mà context khác cần biết và bên phát không cần chờ. Mỗi topic ghi rõ service publish, service subscribe và lý do.
   - Không có lý do nghiệp vụ thì không thêm.
 - **Kafka phải kiểm tra được** (mục chấm 7): topic được đăng ký rõ ràng, và xem được event qua giao diện Kafka UI ở một cổng trong Compose.
-- Số lượng service vừa đủ để đạt 30 mục chấm. Không tách service chỉ để có nhiều service.
+- **Message broker: Kafka** (đã chốt; giảng viên dạy Kafka ở slide 13). Thiết kế tham chiếu dùng RabbitMQ; khi tham khảo danh sách event của nó thì chuyển thành topic Kafka.
 
 ## Quyết định nghiệp vụ đã chốt
 
