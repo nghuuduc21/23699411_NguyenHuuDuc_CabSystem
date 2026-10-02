@@ -1,7 +1,8 @@
 # 01 — Bounded context của Cab Booking System
 
 > Vòng 1 (chỉ BA), bản sửa 2026-10-02 lần 3: theo **8 service giảng viên chốt** và các quyết định mới trong `CLAUDE.md` (đổi tên `rating-service`; đồng bộ là mặc định; thanh toán trả trước với cước cố định; hoàn tiền; hủy; Redis ở Gateway).
-> Nguồn sự thật: `srs.md` (FR01–FR41, BRULE01–16, UC01–UC32, AC01–AC24) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
+> Đồng bộ 2026-10-02 lần 4 (cùng lúc viết file 03, 04): công thức cước và ai tính quãng đường; hạn thanh toán 10 phút / 3 lần (BRULE17); đăng xuất (FR42, UC33); đóng Q10 (một phần), Q11, Q16, Q21, Q37. Chỉ sửa các dòng bị ảnh hưởng.
+> Nguồn sự thật: `srs.md` (FR01–FR42, BRULE01–17, UC01–UC33, AC01–AC26) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
 > File này trả lời: **chia hệ thống thành những phần nào, mỗi phần sở hữu gì, vì sao**. gRPC hay Kafka cho từng quan hệ: file 02. Loại database, schema: file 03.
 > Tên trạng thái viết HOA là **đề xuất**, trừ các tên đã có trong SRS và `CLAUDE.md` (`NO_DRIVER_FOUND`, `CANCELED`, `FAILED`, `COMPLETED`, Online/Offline, "chờ duyệt"). Tên chính thức chốt ở spec.
 
@@ -77,7 +78,8 @@ Một câu: **Booking là "khách muốn đi, đã biết giá, hệ thống đa
 
 | Điểm | Nội dung |
 |---|---|
-| Ai tính cước | **Payment**: bảng giá thuộc context Fare & Payment (BR12). Booking chỉ **giữ số tiền** đã tính để hiện cho khách |
+| Ai tính cước | **Payment**: giữ bảng giá, áp công thức FR16 và lưu từng thành phần của cước (BR12). **Booking** tính quãng đường ước tính từ tọa độ (đường thẳng × 1,3) rồi gửi quãng đường và loại xe cho Payment; Booking chỉ **giữ số tiền** đã tính để hiện cho khách (`CLAUDE.md` — đã chốt) |
+| Hạn thanh toán | **Payment** giữ hạn 10 phút và đếm tối đa 3 lần thử (BRULE17). Quá hạn hoặc hết lượt: Payment hủy bỏ thanh toán và báo ra; **Booking** tự chuyển sang `CANCELED` khi nghe tin đó (file 03 mục 8.5) |
 | Lúc nào | Một lần, khi tạo Booking; không đổi sau đó (FR16, BRULE08) |
 | Thanh toán gắn với gì | Gắn với **`booking_id`**, không phải `trip_id`: lúc khách trả trước, Trip chưa tồn tại |
 | Ai quyết định "được tìm tài xế" | Booking. Tiền mặt: tìm ngay. Điện tử: chỉ khi biết thanh toán đã thành công (BRULE13) |
@@ -219,7 +221,7 @@ Cặp **không có quan hệ**: Customer với mọi context trừ Auth; Auth v�
 | Ngôn ngữ chung | **Hồ sơ tài xế**. **Trạng thái duyệt**: chờ duyệt / đã duyệt / bị từ chối. **Trạng thái nhận chuyến**: Offline, Online (= Available/Ready của BRULE01), bận. **Vehicle**, **VehicleType**. **Vị trí hiện tại**. **Giữ chỗ**: chuyển Online → bận cho đúng một `booking_id` |
 | Aggregate gốc | **Driver** (gồm Vehicle, trạng thái duyệt, trạng thái nhận chuyến, vị trí hiện tại); **VehicleType** (danh mục) |
 | FR / UC | FR28, FR29, FR38, FR39; FR02, FR03, FR04 (thực hiện truy vấn); FR13 / UC12, UC20, UC21, UC28, UC29, UC30 |
-| Mục chấm | 12, 13, 21, 22, 23; 24 (số giấy phép, số điện thoại) |
+| Mục chấm | 12, 13, 21, 22, 23; 24 (số giấy phép; số điện thoại của tài xế chỉ nằm ở Auth — file 03) |
 
 | # | Quy tắc | Nguồn |
 |---|---|---|
@@ -229,7 +231,7 @@ Cặp **không có quan hệ**: Customer với mọi context trừ Auth; Auth v�
 | D4 | Hồ sơ mới tạo luôn ở trạng thái chờ duyệt | FR39, AC19 |
 | D5 | Chỉ `admin` được duyệt / từ chối; chỉ hồ sơ đang chờ duyệt mới duyệt / từ chối được | BRULE12, FR39, AC20 |
 | D6 | Chỉ tài xế đã được duyệt mới bật Online được | **Suy ra** từ FR39 + BRULE01 — Q10 |
-| D7 | Biển số xe không trùng | FR29 — **suy đoán**, chốt ở file 03 |
+| D7 | Biển số xe không trùng | FR29 — **suy đoán**; file 03 đặt UNIQUE trên `vehicles.license_plate` |
 | D8 | **Một tài xế tại một thời điểm chỉ bị giữ cho nhiều nhất một booking.** Giữ chỗ chỉ thành công khi tài xế đang Online và không bận; giữ lặp cho cùng `booking_id` trả kết quả như lần đầu | BRULE01, NFR14 |
 | D9 | Tài xế chỉ rảnh lại khi chuyến của **đúng** booking đang giữ hoàn thành hoặc bị hủy (kể cả do chính tài xế hủy), hoặc khi Booking nhả chỗ vì không tạo được chuyến | BRULE01, FR41 |
 
@@ -253,7 +255,7 @@ stateDiagram-v2
   [*] --> PENDING_PAYMENT: đặt xe, điện tử
   [*] --> SEARCHING: đặt xe, tiền mặt
   PENDING_PAYMENT --> SEARCHING: thanh toán thành công
-  PENDING_PAYMENT --> CANCELED: khách hủy
+  PENDING_PAYMENT --> CANCELED: khách hủy, hoặc quá hạn / hết lượt thanh toán
   SEARCHING --> DRIVER_ASSIGNED: tài xế nhận, Trip đã tạo
   SEARCHING --> NO_DRIVER_FOUND: hết ứng viên
   SEARCHING --> CANCELED: khách hủy
@@ -278,7 +280,8 @@ stateDiagram-v2
 | `PENDING_PAYMENT` → `SEARCHING` | FR18, BRULE13, AC21 |
 | `SEARCHING` → `DRIVER_ASSIGNED` | FR07, FR11, AC06 |
 | `SEARCHING` → `NO_DRIVER_FOUND` | FR10, BRULE07, AC09 |
-| → `CANCELED` | FR36, BRULE16, AC16 |
+| → `CANCELED` (khách hủy) | FR36, BRULE16, AC16 |
+| `PENDING_PAYMENT` → `CANCELED` (hệ thống hủy) | BRULE17, AC25 |
 
 | # | Quy tắc | Nguồn |
 |---|---|---|
@@ -297,12 +300,13 @@ stateDiagram-v2
 | B13 | Hủy phải kèm lý do; chỉ khách của booking hủy được; chỉ hủy được Booking đang chờ thanh toán hoặc đang tìm. Đã phân công thì phải hủy **chuyến** (Trip) | FR36, BRULE16, AC16 |
 | B14 | Khách chỉ thấy booking của chính mình; danh sách có limit và paging | FR37, AC17, NFR08 |
 | B15 | Chỉ tạo Booking khi Payment đã trả về cước và mã thanh toán. Booking giữ số tiền đó, **không sửa** | FR16, BRULE08; ADR-009 |
-| B16 | Booking điện tử chỉ được đưa vào tìm tài xế khi biết thanh toán đã thành công. Thanh toán thất bại thì Booking vẫn chờ, khách thanh toán lại | BRULE13, FR18, FR19, AC21 |
+| B16 | Booking điện tử chỉ được đưa vào tìm tài xế khi biết thanh toán đã thành công. Thanh toán thất bại thì Booking vẫn chờ, khách thanh toán lại trong hạn và số lượt còn lại | BRULE13, BRULE17, FR18, FR19, AC21 |
+| B18 | Booking đang chờ thanh toán chuyển `CANCELED` (người hủy: hệ thống) khi Payment báo đã quá hạn 10 phút hoặc hết 3 lần thử; khách được báo | BRULE17, AC25 |
 | B17 | Chỉ xác nhận phân công khi Trip đã được tạo và trả về mã chuyến; câu trả lời cho tài xế kèm mã chuyến | FR07, FR11, mục 16 → 17; ADR-008 |
 
 B12 là lợi ích trực tiếp của việc đưa ghép tài xế vào Booking: Booking, Offer và Assignment nằm trong một database nên tranh chấp hủy — nhận được giải quyết bằng khóa một dòng.
 
-Chưa có con số: thời hạn trả lời Offer (Q12); thời hạn chờ thanh toán (Q37).
+Chưa có con số: thời hạn trả lời Offer (Q12) — là giới hạn trên, đọc từ biến môi trường (`CLAUDE.md`). Thời hạn chờ thanh toán đã chốt: 10 phút, 3 lần thử (BRULE17).
 
 ### 6.5 Trip — Chuyến đi (core)
 
@@ -378,10 +382,10 @@ stateDiagram-v2
 
 | # | Quy tắc | Nguồn |
 |---|---|---|
-| M1 | Cước tính **một lần** khi tạo thanh toán cho booking, từ loại xe và khoảng cách điểm đón → điểm đến; không đổi sau đó; áp dụng cho cả hai phương thức. Mỗi `booking_id` một Payment; yêu cầu tạo lặp trả lại Payment cũ | FR16, BRULE08, NFR14 |
+| M1 | Cước tính **một lần** khi tạo thanh toán cho booking, từ loại xe và quãng đường ước tính do Booking gửi sang: `giá mở cửa + đơn giá mỗi km × quãng đường`, làm tròn lên 1.000 đ, không thấp hơn cước tối thiểu; từng thành phần được lưu lại; không đổi sau đó; áp dụng cho cả hai phương thức. Mỗi `booking_id` một Payment; yêu cầu tạo lặp trả lại Payment cũ | FR16, BRULE08, NFR14 |
 | M2 | Không lưu thông tin thẻ / tài khoản; chỉ lưu mã giao dịch của Provider | BRULE09, NFR09, FR20 |
 | M3 | Giao dịch thất bại vẫn phải được lưu với trạng thái `FAILED` và khách được báo | BRULE10, FR19, AC13 |
-| M4 | Thất bại thì được thanh toán lại theo chính sách | FR19, UC15, AC13 — Q37 |
+| M4 | Thất bại thì được thanh toán lại, trong hạn 10 phút kể từ lúc tạo và tối đa 3 lần thử | FR19, BRULE17, UC15, AC13, AC25 |
 | M5 | Cùng một yêu cầu / callback gửi lại thì trả đúng kết quả cũ, không thu tiền lần hai | Mục 30, NFR14 — SRS chưa có FR/BRULE riêng (Q10) |
 | M6 | Một booking chỉ có nhiều nhất một lần thu thành công | NFR14 |
 | M7 | Phương thức thanh toán lấy theo lựa chọn lúc đặt xe | FR35, `CLAUDE.md` |
@@ -389,7 +393,8 @@ stateDiagram-v2
 | M9 | Không hoàn khi chuyến đã hoàn thành, và khi tài xế chỉ từ chối lời mời | BRULE15, AC23 |
 | M10 | Tiền mặt: chuyển `COMPLETED` khi chuyến hoàn thành; chuyến không thực hiện thì `CANCELED` | FR17, AC11 |
 | M11 | Kết quả "thành công" đến **sau khi** thanh toán đã bị hủy bỏ (khách hủy trong lúc đang trả): vẫn ghi nhận rồi hoàn ngay | BRULE14, NFR14 — **suy ra**, chi tiết ở spec mục 19 |
-| M12 | Mỗi lần Payment sang `COMPLETED`, `FAILED` hoặc `REFUNDED` đều được báo ra ngoài | FR24, BRULE10, BRULE13 |
+| M12 | Mỗi lần Payment sang `COMPLETED`, `FAILED` hoặc `REFUNDED` đều được báo ra ngoài; `CANCELED` được báo ra khi lý do là quá hạn hoặc hết lượt (M13) | FR24, BRULE10, BRULE13, BRULE17 |
+| M13 | Thanh toán điện tử quá hạn, hoặc lần thử cuối thất bại, thì chuyển `CANCELED` kèm lý do; lần thử thất bại vẫn được lưu. Từ đó không nhận lần thử mới | BRULE17, BRULE10, AC25 |
 
 Fare và Payment chung một context và một aggregate: cước tính xong là thanh toán được tạo ngay trong cùng một thao tác. Payment Provider là hệ thống ngoài, **giả lập sau một lớp adapter** (`CLAUDE.md`).
 
@@ -428,7 +433,7 @@ Fare và Payment chung một context và một aggregate: cước tính xong là
 | V1 | Chỉ đánh giá chuyến đã hoàn thành | BRULE11, AC14 |
 | V2 | Chỉ khách của chính chuyến đó được đánh giá | BRULE11 |
 | V3 | Mỗi chuyến chỉ một đánh giá | Exception của UC17 |
-| V4 | Điểm nằm trong thang cho phép | UC17 bước 3 — thang 1–5 là **suy đoán**, chốt ở spec mục 20 |
+| V4 | Điểm nằm trong thang cho phép | UC17 bước 3 — thang 1–5 là **suy đoán**; file 03 đặt CHECK 1–5, xác nhận ở spec mục 20 |
 | V5 | Lưu Rating và cập nhật điểm trung bình của tài xế trong cùng một giao dịch | UC17 bước 4–5, NFR14 |
 
 ## 7. Context → microservice
@@ -473,7 +478,7 @@ Giảng viên đã bỏ `report-service` và `audit-service`. **Phiếu chấm k
 
 ## 8. Kiểm tra độ phủ
 
-### 8.1 FR01–FR41
+### 8.1 FR01–FR42
 
 | FR | Context chính | Tham gia | Ghi chú |
 |---|---|---|---|
@@ -518,8 +523,9 @@ Giảng viên đã bỏ `report-service` và `audit-service`. **Phiếu chấm k
 | FR39 Đăng ký và duyệt hồ sơ tài xế | Driver | Auth (OTP, tài khoản), Notification | Mục 21, 22 |
 | FR40 Hoàn tiền | Payment | Booking, Trip (báo sự việc), Notification | |
 | FR41 Tài xế hủy chuyến đã nhận | Trip | Driver (rảnh lại), Payment (hoàn tiền), Notification | |
+| FR42 Đăng xuất | **Gateway** (không phải context) | Redis; Auth cấp token có mã định danh để thu hồi | `CLAUDE.md` — đã chốt; file 04 API A06 |
 
-Kết quả: 39/41 FR có context chính. **FR33 không gán; FR34 gán một phần.** Cả hai ngoài 30 mục chấm.
+Kết quả: 39/42 FR có context chính; FR42 do Gateway xử lý. **FR33 không gán; FR34 gán một phần.** Cả hai ngoài 30 mục chấm.
 
 ### 8.2 30 mục chấm
 
@@ -565,14 +571,14 @@ Kết quả: **30/30 mục có nơi nhận.** Mỗi service trong 8 service gán
 | 17 (đúng trình tự) — T2 | FR12 | BRULE về thứ tự trạng thái |
 | 29 (rate limit) | Không NFR nào nói về giới hạn tần suất | NFR mới |
 | 30 (replay thanh toán) — M5 | NFR14 | BRULE / FR về chống xử lý lặp |
-| Đăng xuất, thu hồi token (Redis ở Gateway) | `CLAUDE.md`; NFR06 | FR và UC "Đăng xuất" |
-| Thời hạn chờ thanh toán, số lần thanh toán lại | FR19 ("theo chính sách") | BRULE nêu con số |
+| Đăng xuất, thu hồi token (Redis ở Gateway) | **FR42, UC33** (đã thêm vào `srs.md`) | AC cho FR42 (RTM26 đang để trống) |
+| Thời hạn chờ thanh toán, số lần thanh toán lại | **BRULE17, AC25** (đã thêm vào `srs.md`) | Đủ |
 | 24, 26 | NFR08, NFR16 | Đủ ở mức NFR; chưa có AC |
 | 6, 7, 8 | Quy tắc kiến trúc trong `CLAUDE.md` | Không cần FR (hạ tầng) |
 | "Chỉ tài xế đã duyệt mới Online" — D6 | Suy ra từ FR39 | BRULE mới |
 | "Một tài xế chỉ bị giữ cho một booking" — D8 | BRULE01, NFR14 | Có thể ghi rõ thành BRULE mới |
 
-BA không sửa `srs.md` trong vòng này; xem Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE17, NFR17, FR42, UC33** (BRULE13–16 đã được dùng).
+BA không sửa `srs.md` trong vòng này; xem Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE18, NFR17, FR43, UC34, AC27** (BRULE17, FR42, UC33, AC26 đã được dùng).
 
 ## 9. Câu hỏi còn mở
 
@@ -591,6 +597,10 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q29 | Hủy là hai thao tác hay một? | Hai: hủy Booking (chưa có tài xế), hủy Trip (đã có tài xế) | `CLAUDE.md` |
 | Q30 | Có bảng PERMISSION không? | Không; ba role cố định | `CLAUDE.md` |
 | Q31 | Khóa chính INT hay UUID? | UUID | `CLAUDE.md` |
+| Q37 | Booking chờ thanh toán được bao lâu, thanh toán lại mấy lần? | 10 phút, tối đa 3 lần thử; quá thì booking bị hủy | `srs.md` BRULE17, AC25; `CLAUDE.md` |
+| Q16 | Bảng Entity trong `srs.md` chưa khớp thiết kế | Sinh viên đã sửa Booking, Trip, Fare, Payment theo trả trước và thêm dòng dẫn sang file 03. Phần còn khác (`password_hash` ở ba bảng, bảng Role, lịch sử vị trí): file 03 câu Q46 | `srs.md` |
+| Q10 (một phần) | Thêm mã mới vào `srs.md`? | Đã thêm FR42, UC33, BRULE17, AC25, AC26. **Còn thiếu** mã cho: trình tự trạng thái chuyến (mục 17), rate limit (mục 29), chống xử lý lặp (mục 30), D6, D8 — vẫn mở ở 9.2 | `srs.md` |
+| Q11 (BA đóng, chưa xác nhận) | ETA và lịch sử vị trí làm đến đâu? | Chỉ lưu vị trí hiện tại của tài xế; không có bảng lịch sử | File 03 mục 5.2 |
 
 ### 9.2 Còn mở
 
@@ -602,13 +612,11 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q5 | Tài xế nhận Offer bằng cách nào khi không có push thật? | (a) Tài xế gọi API xem Offer đang chờ, kèm thông báo; (b) chỉ qua thông báo | (a) | SV |
 | Q8 | Tài khoản `admin` tạo bằng cách nào? | (a) Seed sẵn; (b) API đổi role | (a) | SV |
 | Q9 | Mục 11, 12: role nào được xem hồ sơ của người khác? | (a) Chỉ chính chủ và `admin`; (b) tài xế xem được khách của chuyến mình và ngược lại | (a) | SV |
-| Q10 | Có thêm mã mới vào `srs.md` cho các dòng ở 8.3 không? | (a) Thêm BRULE17…, NFR17, FR42, UC33 và cập nhật RTM; (b) giữ nguyên | (a); BA thêm khi được đồng ý | SV |
-| Q11 | FR15 (ETA) và lịch sử vị trí làm đến đâu? | (a) ETA = khoảng cách / tốc độ trung bình; chỉ lưu vị trí hiện tại; (b) lưu cả lịch sử | (a) | SV |
-| Q12 | Thời hạn tài xế trả lời Offer là bao lâu? | 15–30 giây | Biến cấu hình, đặt ngắn khi demo | SV |
-| Q16 | Bảng Entity trong `srs.md` chưa khớp thiết kế: `password_hash` nằm ở cả Customer, Driver, Operator (thiết kế đưa về Account); Payment và Fare gắn `trip_id` (trả trước thì phải gắn `booking_id`); Booking thiếu phương thức thanh toán và cước; còn bảng Role riêng. Có sửa SRS không? | (a) Sửa SRS; (b) giữ, ghi chú dẫn sang file 03 | (a), làm cùng file 03 | SV |
+| Q10 | Có thêm mã mới vào `srs.md` cho các dòng **còn thiếu** ở 8.3 không (mục 17, 29, 30, D6, D8; AC cho FR42)? | (a) Thêm BRULE18…, NFR17, AC27 và cập nhật RTM; (b) giữ nguyên | (a); BA thêm khi được đồng ý | SV |
+| Q11 | FR15 (ETA) tính thế nào? (Phần lịch sử vị trí đã đóng ở 9.1) | (a) ETA = khoảng cách / tốc độ trung bình; (b) không làm | (a), làm sau 30 mục | SV |
+| Q12 | Thời hạn tài xế trả lời Offer là bao lâu? | 15–30 giây | Biến môi trường `OFFER_TIMEOUT_SECONDS`, mặc định đề xuất 20 giây (file 03 mục 13) | SV |
 | Q27 | Booking có cần biết kết cục của Trip để danh sách booking (mục 14) hiện trạng thái cuối không? Rõ nhất khi tài xế hủy chuyến: Booking vẫn ghi `DRIVER_ASSIGNED` | (a) Không: client xem chuyến qua API của Trip; (b) Booking nghe sự kiện của Trip | (a) — bớt một đường nối. Chọn (b) thì `booking-service` thêm một subscribe | SV |
 | Q28 | Điểm trung bình của tài xế nằm ở đâu? | (a) Ở Rating; (b) Rating gọi Driver ghi điểm vào hồ sơ | (a) — không yêu cầu nào buộc Driver biết điểm (BRULE03 chỉ xét khoảng cách) | SV |
 | Q32 | FR30 (admin giám sát chuyến) có làm không khi phiếu chấm không yêu cầu? | (a) Làm tối thiểu ở `trip-service` sau khi xong 30 mục; (b) không làm | (a) | SV |
-| Q37 | Booking chờ thanh toán được bao lâu? Thanh toán lại tối đa mấy lần? Sơ đồ trong SRS cho thử lại vô hạn | (a) Có thời hạn (ví dụ 10 phút): quá hạn hệ thống tự hủy Booking; tối đa 3 lần; (b) không giới hạn, khách tự hủy | (a) — tránh Booking treo mãi; cần thêm BRULE | SV |
 | Q44 | Mục 15 và mục 19 demo theo thứ tự nào? Với trả trước, booking điện tử phải qua callback rồi mới có offer | (a) Mục 15, 16, 17 dùng booking tiền mặt; mục 19, 30 dùng một booking điện tử riêng; (b) một booking điện tử cho cả chuỗi, chạy mục 19 xen giữa mục 15 | (a) | GV |
 | Q45 | FR31: `admin` can thiệp chuyến lỗi **sau khi đã đón khách** thì làm gì, có hoàn tiền không? BRULE14, BRULE16 không nói | (a) Ngoài phạm vi; (b) thêm trạng thái và quy tắc hoàn tiền riêng | (a) | SV |

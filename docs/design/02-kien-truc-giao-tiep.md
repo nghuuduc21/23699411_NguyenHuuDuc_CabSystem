@@ -6,6 +6,7 @@
 >
 > **Đã chốt (`CLAUDE.md`):** 8 service; Kafka + Kafka UI; Redis ở Gateway, không Nginx; Auth → Customer đồng bộ; Booking → Trip `CreateTrip` đồng bộ; Booking → Payment đồng bộ để tính cước và tạo thanh toán; kết quả thanh toán và hoàn tiền đi bằng event; UUID; `FAILED_PRECONDITION` → 409; ba hệ thống ngoài giả lập sau adapter.
 > **Chưa chốt:** chỗ ghi **[GĐ-n]** là *giả định tạm*, liệt kê ở mục 11.
+> **Đồng bộ 2026-10-02 lần 4** (cùng lúc viết file 03, 04): Booking tính quãng đường, Payment tính cước (đóng Q38, GĐ-13); hạn thanh toán BRULE17 → K6 có thêm `CANCELED`; Redis dừng thì cho qua (đóng Q39); đăng xuất ở Gateway theo FR42 (đóng Q40); tìm tài xế bằng Haversine (ADR-011). Chỉ sửa các dòng bị ảnh hưởng.
 
 ## 1. Tóm tắt
 
@@ -78,7 +79,7 @@ Trả lời nhận xét "không phải service nào cũng giao tiếp cả đồ
 | # | Nhiệm vụ | Làm gì | Truy vết |
 |---|---|---|---|
 | 1 | Authentication | Kiểm tra chữ ký và hạn của JWT **tại chỗ**, không gọi `auth-service` mỗi request; rồi tra Redis xem token đã bị thu hồi chưa. Sai → 401 | NFR06, mục 27 |
-| 2 | Thu hồi token | Đăng xuất: ghi mã token vào Redis, tự hết hạn cùng lúc với token | NFR06; `CLAUDE.md` — Q40 |
+| 2 | Thu hồi token | Đăng xuất: Gateway tự ghi mã token (`jti`) vào Redis, tự hết hạn cùng lúc với token; không gọi `auth-service` | **FR42, UC33**, NFR06; `CLAUDE.md` — đã chốt |
 | 3 | Authorization | So role trong token với role mà route cho phép. Sai → 403 | BRULE12, NFR07, FR32, mục 28 |
 | 4 | Rate limiting | Đếm request trong Redis theo IP (route công khai) hoặc theo tài khoản. Vượt → 429 | Mục 29 |
 | 5 | Routing | Đổi REST/JSON → gRPC; đổi gRPC status → HTTP theo bảng trong `CLAUDE.md` (gồm `FAILED_PRECONDITION` → 409) | Mục 3, 4, 8 |
@@ -86,7 +87,9 @@ Trả lời nhận xét "không phải service nào cũng giao tiếp cả đồ
 | 7 | Health | `/health`, `/ready` (gồm cả Redis), `/health/services` (hỏi health của cả 8 service qua gRPC) | Mục 6 |
 | 8 | Kiểm tra hình thức đầu vào | Thiếu trường, sai kiểu → 400 trước khi gọi service | Mục 25, 26 |
 
-Vì sao Redis mà không đếm trong bộ nhớ Gateway: bộ đếm và danh sách thu hồi phải **còn sau khi Gateway khởi động lại** và **dùng chung** nếu chạy nhiều bản Gateway; Redis có sẵn lệnh tăng số kèm hạn tự xóa. Chi tiết: ADR-010.
+Vì sao Redis mà không đếm trong bộ nhớ Gateway: bộ đếm và danh sách thu hồi phải **còn sau khi Gateway khởi động lại** và **dùng chung** nếu chạy nhiều bản Gateway; Redis có sẵn lệnh tăng số kèm hạn tự xóa. Chi tiết: ADR-010. Key và thời gian sống: file 03 mục 12.
+
+**Redis dừng (đã chốt):** Gateway vẫn cho request đi qua và ghi log cảnh báo. Trong lúc đó không có rate limit và token đã đăng xuất tạm dùng lại được.
 
 Gateway **không** làm:
 
@@ -181,7 +184,7 @@ Vì sao tài xế gửi vị trí là gRPC qua Gateway mà **không** phát lên
 | S1 | `auth-service` → `customer-service` | `CreateProfile(account_id, họ tên, …)` trong lúc đăng ký khách | Đăng ký chỉ coi là xong khi đã có hồ sơ (A8, C1); mục 11 phải chạy ngay sau mục 9 | FR26, FR27; mục 9, 11 | Auth không tạo tài khoản, trả 503. Đăng nhập và các chức năng khác không bị ảnh hưởng. ADR-004 |
 | S2 | `booking-service` → `driver-service` | `FindNearbyDrivers(tọa độ, loại xe, bán kính, limit)` — gọi lại ở mỗi vòng ghép | Không có danh sách ứng viên **mới nhất** thì không gửi Offer được | FR02–FR05, BRULE01–03, NFR02; mục 15 | Bộ ghép thử lại vài lần; vẫn lỗi thì kết luận `NO_DRIVER_FOUND` (K3) để booking không treo và khách được hoàn tiền (Q24) |
 | S3 | `booking-service` → `driver-service` | `ReserveDriver(driver_id, booking_id)` khi tài xế bấm nhận; `ReleaseDriver(driver_id, booking_id)` để nhả chỗ khi không tạo được chuyến | Chỉ được xác nhận phân công khi tài xế **còn rảnh** (B11, D8); tài xế đang chờ câu trả lời | BRULE01, FR07, AC06, NFR14; mục 16 | Booking trả 503 cho tài xế, Offer vẫn chờ đến hết hạn; tài xế bấm lại được vì `ReserveDriver` gọi lặp cho kết quả như cũ |
-| S4 | `booking-service` → `payment-service` | `CreatePayment(booking_id, customer_id, loại xe, quãng đường, phương thức)` → `payment_id`, số tiền, trạng thái, thông tin để thanh toán | Booking phải trả **ngay** cho khách số tiền và mã thanh toán (B15) | FR16, FR35, BRULE08; mục 15, 19 | Booking trả 503, **không tạo booking** — đánh đổi so với NFR05 (mục 4.6, ADR-009). Gọi lặp cùng `booking_id` trả Payment cũ |
+| S4 | `booking-service` → `payment-service` | `CreatePayment(booking_id, customer_id, loại xe, quãng đường ước tính tính bằng mét, phương thức)` → `payment_id`, số tiền, trạng thái, hạn thanh toán. Booking tính quãng đường; Payment áp bảng giá (đã chốt) | Booking phải trả **ngay** cho khách số tiền và mã thanh toán (B15) | FR16, FR35, BRULE08; mục 15, 19 | Booking trả 503, **không tạo booking** — đánh đổi so với NFR05 (mục 4.6, ADR-009). Gọi lặp cùng `booking_id` trả Payment cũ |
 | S5 | `booking-service` → `trip-service` | `CreateTrip(bản chụp booking + driver_id)` → `trip_id` | Tài xế nhận xong phải có ngay mã chuyến để cập nhật trạng thái; nhận chuyến mà không có Trip là vô nghĩa (B17) | FR07, FR11, FR12; mục 16 → 17 | Booking trả 503 cho tài xế; Booking vẫn `SEARCHING`, Offer vẫn chờ; tài xế bấm lại. Offer hết hạn mà chưa phân công: Booking gọi `ReleaseDriver`. ADR-008, Q35 |
 | S6 | `trip-service` → `driver-service` | `GetDriverSummary(driver_id)`: tên, biển số, loại xe, vị trí hiện tại | Khách mở màn hình theo dõi chuyến, cần dữ liệu ngay; vị trí là dữ liệu sống nên không sao chép sẵn được | FR13, FR14, FR15, UC10 | Trip vẫn trả thông tin chuyến, bỏ trống phần tài xế / vị trí kèm cờ "chưa cập nhật" (luồng thay thế của UC10) |
 | S7 | `rating-service` → `trip-service` | `GetTripForRating(trip_id)`: trạng thái, `customer_id`, `driver_id` | Chưa biết chuyến đã hoàn thành và thuộc về khách này thì không được nhận đánh giá | BRULE11, FR25, AC14; mục 20 | Rating trả 503; khách đánh giá lại sau |
@@ -212,11 +215,11 @@ Không có đường mạng nào đi ra ngoài Compose. Mỗi adapter là một 
 
 | Hệ thống ngoài | Adapter nằm ở | Dùng cho | Giả lập bằng |
 |---|---|---|---|
-| Payment Provider | `payment-service` | Tạo yêu cầu thu (FR18); hoàn tiền (FR40) | Trả kết quả ngay trong tiến trình; callback do Postman gửi (C2) |
-| Map / GPS Provider | `booking-service` **[GĐ-13]** | Quãng đường điểm đón → điểm đến để tính cước (FR16) | Công thức khoảng cách đường thẳng |
+| Payment Provider | `payment-service` | Tạo yêu cầu thu (FR18); hoàn tiền (FR40) | Trả mã giao dịch ngay trong tiến trình; callback do Postman gửi **ngay sau đó**, không có bước chờ (C2; file 04 mục 2.6, Q50) |
+| Map / GPS Provider | `booking-service` (đã chốt) | Quãng đường ước tính điểm đón → điểm đến để tính cước (FR16) | Khoảng cách đường thẳng (Haversine) × 1,3 |
 | Notification Provider | `notification-service` | Gửi tin (FR21–FR24) | Chỉ lưu thông báo để xem trong ứng dụng |
 
-Khoảng cách tài xế → điểm đón (FR04) do `driver-service` tính bằng truy vấn không gian trong database của nó, không qua adapter.
+Khoảng cách tài xế → điểm đón (FR04) do `driver-service` tính bằng công thức Haversine ngay trong truy vấn SQL của nó (không dùng PostGIS — ADR-011), không qua adapter.
 
 ### 4.6 Một service dừng thì cái gì dừng theo (NFR05)
 
@@ -278,9 +281,9 @@ Kafka giao message **ít nhất một lần**, nên mọi consumer phải chịu
 | K1 | `booking.created` | `booking-service` | **Notification**: báo khách "đã nhận yêu cầu" | **L2**: Notification lỗi không được làm hỏng đặt xe (NFR05) | FR21, FR35 | `booking_id` | `booking_id`, `customer_id`, `vehicle_type`, `payment_method`, `status` | Mục 6.4 |
 | K2 | `booking.offer-created` | `booking-service` | **Notification**: báo tài xế có lời mời | **L1**: bộ ghép chạy nền, không ai chờ. **L2** | FR06, UC07, UC16; mục 15 | `booking_id` | `offer_id`, `booking_id`, `driver_id`, `expires_at` | Mục 6.4 |
 | K3 | `booking.no-driver-found` | `booking-service` | **Payment**: hoàn tiền nếu đã thu, hủy bỏ nếu chưa. **Notification**: báo khách | **L1**: do tiến trình nền kết luận. **L2**: kết luận không được kẹt vì Payment. **L3**: hai bên cần | FR10, FR40, BRULE07, BRULE14, AC09, AC22 | `booking_id` | `booking_id`, `customer_id`, `offers_tried` | Payment: xét theo trạng thái Payment (M8) |
-| K4 | `booking.canceled` | `booking-service` | **Payment**: hoàn tiền nếu đã thu, hủy bỏ nếu chưa. **Notification**: báo khách; báo tài xế đang giữ Offer chờ | **L2**: hủy phải thành công dù Payment lỗi (NFR05). **L3** | FR36, FR40, BRULE14, AC16, AC22; mục 18 | `booking_id` | `booking_id`, `customer_id`, `canceled_by`, `previous_status`, `pending_offer_driver_id` (có thể rỗng) | Payment: như K3 |
+| K4 | `booking.canceled` | `booking-service` | **Payment**: hoàn tiền nếu đã thu, hủy bỏ nếu chưa. **Notification**: báo khách; báo tài xế đang giữ Offer chờ | **L2**: hủy phải thành công dù Payment lỗi (NFR05). **L3** | FR36, FR40, BRULE14, BRULE17, AC16, AC22, AC25; mục 18 | `booking_id` | `booking_id`, `customer_id`, `canceled_by` (`customer` / `system`), `previous_status`, `pending_offer_driver_id` (có thể rỗng) | Payment: như K3. Khi Booking bị hủy do BRULE17, Payment đã `CANCELED` từ trước nên bỏ qua |
 | K5 | `trip.status-changed` | `trip-service` | **Driver**: `COMPLETED` / `CANCELED` → tài xế rảnh lại. **Payment**: `COMPLETED` → ghi nhận tiền mặt; `CANCELED` → hoàn tiền hoặc hủy bỏ. **Notification**: báo khách và tài xế, gồm cả trạng thái đầu "tài xế đã nhận chuyến" | **L2**: kết thúc hay hủy chuyến không được lỗi theo Payment, Driver, Notification (NFR05). **L3**: ba bên cần | FR12, FR17, FR22, FR23, FR36, FR40, FR41, BRULE01, BRULE14, BRULE15, AC16, AC24; mục 16, 17, 18 | `trip_id` | `trip_id`, `booking_id`, `customer_id`, `driver_id`, `status`, `previous_status`; khi hủy thêm `canceled_by` | Driver: chỉ nhả nếu `booking_id` khớp booking đang giữ (D9). Payment: xét theo trạng thái Payment |
-| K6 | `payment.status-changed` | `payment-service` | **Booking**: `COMPLETED` và Booking đang chờ thanh toán → chuyển sang tìm tài xế. **Notification**: báo khách thành công / thất bại / đã hoàn tiền | **L1**: kết quả đến từ Provider lúc không biết trước. **L2**: tiền đã thu thì phải ghi xong dù Booking lỗi. **L3** | FR18, FR19, FR24, FR40, BRULE10, BRULE13, AC12, AC13, AC21, AC22; mục 19 | `booking_id` | `payment_id`, `booking_id`, `customer_id`, `method`, `amount`, `status` (`COMPLETED` / `FAILED` / `REFUNDED`), `previous_status` | Booking: chỉ đổi khi đang `PENDING_PAYMENT`, còn lại bỏ qua |
+| K6 | `payment.status-changed` | `payment-service` | **Booking**: `COMPLETED` và Booking đang chờ thanh toán → chuyển sang tìm tài xế; `CANCELED` (quá hạn / hết lượt) và Booking đang chờ thanh toán → Booking `CANCELED`, phát K4. **Notification**: báo khách thành công / thất bại / đã hoàn tiền | **L1**: kết quả đến từ Provider, hoặc do tiến trình nền hết hạn kết luận, lúc không biết trước. **L2**: tiền đã thu thì phải ghi xong dù Booking lỗi. **L3** | FR18, FR19, FR24, FR40, BRULE10, BRULE13, BRULE17, AC12, AC13, AC21, AC22, AC25; mục 19 | `booking_id` | `payment_id`, `booking_id`, `customer_id`, `method`, `amount`, `status` (`COMPLETED` / `FAILED` / `REFUNDED` / `CANCELED`), `previous_status`, `reason` (khi `CANCELED`: `PAYMENT_EXPIRED` / `ATTEMPTS_EXHAUSTED`) | Booking: chỉ đổi khi đang `PENDING_PAYMENT`, còn lại bỏ qua |
 | K7 | `driver.application-reviewed` | `driver-service` | **Notification**: báo tài xế kết quả duyệt | **L2**: duyệt hồ sơ không được lỗi theo Notification | FR39, AC20; mục 22 | `driver_id` | `driver_id`, `result` (duyệt / từ chối) | Mục 6.4 |
 
 Năm điều cần giải thích được:
@@ -292,6 +295,7 @@ Năm điều cần giải thích được:
 | **Tài xế từ chối lời mời không có event** | Không context nào khác cần biết: Booking tự hỏi người kế tiếp. Vì Payment không được báo nên không thể hoàn tiền nhầm (BRULE15) |
 | Hoàn tiền nghe **ba** nguồn (K3, K4, K5) | Đúng bốn trường hợp của BRULE14: không tìm được tài xế (K3); khách hủy khi chưa có tài xế (K4); khách hủy sau khi có tài xế và tài xế hủy (K5 với `status = CANCELED`) |
 | K6 dùng key `booking_id` | Payment gắn với booking (lúc trả trước chưa có Trip). `FAILED` → `COMPLETED` → `REFUNDED` của cùng một booking phải đến đúng thứ tự |
+| K6 chỉ mang `CANCELED` khi lý do là **quá hạn hoặc hết lượt** (BRULE17) | Đó là trường hợp duy nhất Payment tự hủy bỏ mà Booking chưa biết. Khi Payment hủy bỏ vì nhận K3 / K4 / K5 thì chính Booking hoặc Trip là bên báo tin, không cần báo ngược lại |
 
 ### 6.3 Phát event không được mất
 
@@ -414,6 +418,8 @@ sequenceDiagram
 
 Booking **tiền mặt**: giống đến bước lưu Booking, nhưng lưu thẳng `SEARCHING` và bộ ghép chạy ngay; không có đoạn callback. Callback **thất bại**: Payment `FAILED`, phát K6 (`FAILED`), Notification báo khách, Booking vẫn `PENDING_PAYMENT`; khách thanh toán lại (FR19).
 
+Chi tiết sơ đồ chưa vẽ: trước callback, khách gọi API "thực hiện thanh toán" kèm khóa chống lặp (file 04 A31) — mỗi lần gọi là một lần thử. **Quá 10 phút hoặc lần thử thứ 3 thất bại (BRULE17):** Payment → `CANCELED`, phát K6 (`CANCELED` kèm lý do); Booking đang `PENDING_PAYMENT` → `CANCELED` (người hủy: hệ thống), phát K4; Notification báo khách. Hạn và số lần đọc từ biến môi trường (file 03 mục 13).
+
 ### 8.3 Ghép tài xế → nhận chuyến → tạo Trip (mục 15, 16) — [GĐ-2]
 
 ```mermaid
@@ -513,6 +519,7 @@ sequenceDiagram
 | Tình huống | Client gọi | Service xử lý | Thay đổi | Event | Hoàn tiền? |
 |---|---|---|---|---|---|
 | Khách hủy khi chờ thanh toán hoặc đang tìm tài xế | Hủy booking | `booking-service` | Booking → `CANCELED`; Offer đang chờ → `VOIDED` | K4 | Có, nếu đã trả (BRULE14) |
+| Quá hạn 10 phút hoặc hết 3 lần thử thanh toán | — (hệ thống) | `payment-service`, rồi `booking-service` | Payment → `CANCELED`; Booking → `CANCELED` | K6 (`CANCELED`), rồi K4 | Không có gì để hoàn: chưa thu tiền (BRULE17) |
 | Không tìm được tài xế | — (hệ thống) | `booking-service` | Booking → `NO_DRIVER_FOUND` | K3 | Có, nếu đã trả (BRULE14) |
 | Tài xế **từ chối** lời mời | Từ chối Offer | `booking-service` | Offer → `REJECTED`; hỏi người kế tiếp | Không có | **Không** (BRULE15) |
 | Khách hủy sau khi có tài xế, trước khi đón | Hủy chuyến | `trip-service` | Trip → `CANCELED` | K5 | Có (BRULE14) |
@@ -677,6 +684,7 @@ Thiết kế tham chiếu (`docs/reference/thiet-ke-da-duyet.md`) đã được 
 | GĐ-7 | Không Nginx, không Redis | **Đổi**: không Nginx, **có Redis** | `CLAUDE.md`; ADR-010 |
 | GĐ-10 | Bàn giao Booking → Trip bằng event | **Đổi**: gRPC `CreateTrip` | `CLAUDE.md`; ADR-008 |
 | GĐ-12 | Rating hỏi Trip bằng gRPC | Giữ. BA đóng vì khớp nguyên tắc đồng bộ là mặc định; **chưa có xác nhận riêng** cho đường này | Nguyên tắc trong `CLAUDE.md`; ADR-007 |
+| GĐ-13 | Booking tính quãng đường rồi gửi cho Payment | Chốt đúng như giả định | `CLAUDE.md` dòng "Tính cước" |
 
 ### 11.2 Còn hiệu lực
 
@@ -688,15 +696,14 @@ Nếu câu trả lời khác giả định, sửa đúng các dòng ở cột cu
 | GĐ-4 | Q4 | Tài xế chờ duyệt đăng nhập được; Driver chặn bật Online | Không đăng nhập được | Cặp Auth–Driver thành có nối; R2, G1, G3 đổi |
 | GĐ-6 | Q20 | Outbox cho mọi service phát event | Gửi Kafka ngay sau khi ghi database | Mục 6.3; file 03 bớt bảng outbox; chấp nhận rủi ro trong bảng 6.3 |
 | GĐ-8 | Q19 | JWT ký bất đối xứng | Khóa bí mật dùng chung | Mục 2.2; không đổi đường giao tiếp |
-| GĐ-9 | Q21 | `customer_id` và `driver_id` chính là `account_id` | Mỗi hồ sơ có mã riêng | Booking, Trip, Payment, Rating, Notification phải hỏi Customer / Driver để đổi mã → thêm lời gọi gRPC |
+| GĐ-9 | Q21 — file 03 đã thiết kế theo giả định này (BA chọn, chờ sinh viên xác nhận) | `customer_id` và `driver_id` chính là `account_id` | Mỗi hồ sơ có mã riêng | Booking, Trip, Payment, Rating, Notification phải hỏi Customer / Driver để đổi mã → thêm lời gọi gRPC |
 | GĐ-9b | Q27 | Booking không nghe kết cục của Trip | Booking ghi trạng thái cuối | K5 thêm subscriber `booking-service`; mục 9; file 01 thêm trạng thái Booking |
 | GĐ-11 | Q28 | Điểm trung bình tài xế thuộc Rating, không báo cho Driver | Rating gọi gRPC sang Driver để ghi điểm | Thêm S8 rating → driver; mục 9 bỏ dòng Driver – Rating |
-| GĐ-13 | Q38 | Booking tính quãng đường (adapter bản đồ) rồi gửi cho Payment | Booking gửi tọa độ, Payment tự tính | S4 đổi tham số; adapter bản đồ chuyển sang `payment-service` |
 | GĐ-14 | Q41 | Driver nghe K5 để trả tài xế về rảnh | Trip gọi gRPC `ReleaseDriver` | K5 bớt subscriber Driver; thêm lời gọi trip → driver; hoàn thành chuyến phụ thuộc Driver |
 
 ## 12. Câu hỏi còn mở
 
-Q1–Q16, Q27–Q32, Q37, Q44, Q45 ở file 01.
+Q1–Q16, Q27–Q32, Q44, Q45 ở file 01. Q46–Q49 ở file 03. Q50–Q55 ở file 04.
 
 ### 12.1 Đã đóng
 
@@ -709,6 +716,10 @@ Q1–Q16, Q27–Q32, Q37, Q44, Q45 ở file 01.
 | Q33 | Bàn giao Booking → Trip bằng event hay gRPC? | gRPC `CreateTrip` | `CLAUDE.md`; ADR-008 |
 | Q34 | Rating kiểm tra BRULE11 bằng gRPC hay nghe event? | gRPC. BA đóng theo nguyên tắc đồng bộ là mặc định; chưa có xác nhận riêng | Nguyên tắc trong `CLAUDE.md`; ADR-007 |
 | Q36 | Lỗi sai trạng thái trả mã gì? | `FAILED_PRECONDITION` → 409 | `CLAUDE.md` |
+| Q38 | Quãng đường để tính cước do ai tính? | Booking tính từ tọa độ (đường thẳng × 1,3), gửi quãng đường và loại xe; Payment giữ bảng giá và tính cước | `CLAUDE.md` dòng "Tính cước"; FR16 |
+| Q39 | Redis dừng thì Gateway làm gì? | Cho request đi qua, ghi log cảnh báo | `CLAUDE.md` dòng "Redis dừng". Còn mở phần `/ready` trả gì: file 04 quyết định P5 |
+| Q40 | Đăng xuất có làm không, xử lý ở đâu? | Có (FR42, UC33). Gateway tự xử lý bằng danh sách thu hồi trong Redis | `CLAUDE.md` dòng "Đăng xuất"; `srs.md` |
+| Q21 (BA đóng, chưa xác nhận) | `customer_id`, `driver_id` có trùng `account_id` không? | Trùng: khóa chính của hồ sơ chính là `account_id` | File 03 mục 4.1, 5.2, quyết định D1 |
 
 ### 12.2 Còn mở
 
@@ -716,14 +727,10 @@ Q1–Q16, Q27–Q32, Q37, Q44, Q45 ở file 01.
 |---|---|---|---|---|
 | Q19 | JWT ký bằng gì? | (a) Bất đối xứng: Gateway không tự tạo token được; (b) khóa chung: đơn giản hơn | (a) | SV |
 | Q20 | Chống mất event bằng outbox hay gửi thẳng? | ADR-005 | Outbox | SV |
-| Q21 | `customer_id`, `driver_id` có trùng `account_id` không? | (a) Trùng; (b) mã riêng | (a) — không phát sinh lời gọi đổi mã. Chốt ở file 03 | SV |
 | Q22 | Kafka UI không có đăng nhập. Chấp nhận cho môi trường học tập không? | (a) Chấp nhận, event chỉ chứa ID và số tiền; (b) bật đăng nhập | (a) | SV |
 | Q24 | `driver-service` không trả lời khi Booking hỏi (S2): thử lại mấy lần rồi kết luận không tìm được? | 3 lần / chờ đến khi có lại | 3 lần rồi phát K3 (khách được hoàn tiền) | SV |
 | Q25 | Deadline bao nhiêu? Đặt xe và nhận chuyến đi qua 2–3 service nối tiếp | Là biến cấu hình | Service → service 1 giây; Gateway → service 3 giây. NFR01 (≤ 2 giây) tính cho điều kiện bình thường, khi đó mỗi lời gọi chỉ vài chục mili giây | SV |
 | Q35 | Nhận chuyến chạm ba service. Lỗi giữa chừng thì sao? (a) đã giữ chỗ nhưng chưa tạo Trip; (b) đã tạo Trip nhưng Booking chưa kịp ghi phân công | Xem ADR-008 | Tài xế bấm lại (S3, S5 lặp lại được). Offer hết hạn mà chưa phân công: Booking hỏi Trip theo `booking_id` — đã có Trip thì ghi nốt phân công, chưa có thì `ReleaseDriver` và hỏi người kế tiếp. Chi tiết ở spec mục 16 | SV |
-| Q38 | Quãng đường để tính cước do ai tính? | (a) Booking tính bằng adapter bản đồ, gửi số km; (b) Booking gửi tọa độ, Payment tính | (a) — điểm đón, điểm đến là dữ liệu của Booking; Payment chỉ áp bảng giá | SV |
-| Q39 | Redis dừng thì Gateway làm gì? | (a) Cho qua cả hai việc; (b) từ chối mọi request (503); (c) rate limit cho qua, kiểm tra thu hồi thì từ chối | (a) cho môi trường học tập, ghi log cảnh báo, `/ready` báo chưa sẵn sàng. Đánh đổi: token đã đăng xuất dùng lại được trong lúc Redis dừng | SV |
-| Q40 | Đăng xuất chưa có FR / UC trong `srs.md`. Có làm không, xử lý ở đâu? | (a) Gateway tự xử lý (ghi Redis), không gọi `auth-service`; (b) Gateway gọi `auth-service`, Auth ghi Redis | (a) — Redis chỉ Gateway dùng. Cần thêm FR / UC (Q10) | SV |
 | Q41 | Trả tài xế về rảnh: Driver nghe K5 hay Trip gọi gRPC? Nguyên tắc nói đồng bộ là mặc định | (a) Nghe K5; (b) gRPC `ReleaseDriver` | (a) — topic K5 đằng nào cũng có (Payment, Notification cần); thêm gRPC là nối hai kiểu cho một việc và làm "hoàn thành chuyến" lỗi theo Driver | GV |
 | Q42 | Adapter hoàn tiền báo lỗi thì sao? | (a) Giữ `COMPLETED`, thử lại ở lần đọc event sau; (b) thêm trạng thái "đang hoàn" | (a); giả lập nên hiếm khi xảy ra. Chi tiết ở spec | SV |
 | Q43 | OTP gửi cho tài xế bằng cách nào khi kênh gửi là giả lập? | (a) `auth-service` có adapter riêng, môi trường demo trả OTP trong response hoặc log; (b) Auth gọi Notification | (a) — không thêm đường Auth – Notification | SV |

@@ -7,7 +7,7 @@ Sinh viên phải tự giải thích được mọi quyết định. Vì vậy m
 
 ## Trạng thái
 
-Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. Đang ở vòng 1 (thiết kế): `docs/design/01` và `02` đã theo 8 service nhưng viết **trước** các quyết định kỹ thuật chốt sau đó (bên dưới) (đổi tên `rating-service`, đồng bộ là mặc định, Redis ở Gateway, thanh toán trả trước và hoàn tiền), nên cần rà lại; chưa có `03`, `04` và chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
+Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã có đủ bốn file** `docs/design/01`–`04` và ADR-001 đến ADR-012; sinh viên chưa rà hết và chưa hỏi giảng viên. Chưa có đặc tả trong `docs/specs/` và chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
 
 ## Tài liệu
 
@@ -17,12 +17,12 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | 30 mục phiếu chấm | `docs/study/00-ban-do-phieu-cham.md` | Có |
 | Truy vết yêu cầu → mục chấm; quyết định nghiệp vụ đã chốt | `docs/study/01-nghiep-vu-va-truy-vet.md` | Có |
 | Thiết kế tham chiếu đã được giảng viên duyệt (kiến trúc, bảng) và điều chỉnh của giảng viên | `docs/reference/thiet-ke-da-duyet.md` + hai ảnh cùng thư mục | Có |
-| Bounded context, aggregate, quy tắc | `docs/design/01-bounded-contexts.md` | ba-agent viết |
-| Service, đường giao tiếp, topic Kafka, nhiệm vụ Gateway | `docs/design/02-kien-truc-giao-tiep.md` | ba-agent viết |
-| Database từng service, bảng, kiểu dữ liệu, ERD | `docs/design/03-du-lieu.md` | ba-agent viết |
-| API REST của Gateway | `docs/design/04-api.md` | ba-agent viết |
-| Đặc tả từng phần việc | `docs/specs/` | ba-agent viết |
-| Quyết định thiết kế kèm lý do | `docs/decisions/` | ba-agent viết |
+| Bounded context, aggregate, quy tắc | `docs/design/01-bounded-contexts.md` | Có |
+| Service, đường giao tiếp, topic Kafka, nhiệm vụ Gateway | `docs/design/02-kien-truc-giao-tiep.md` | Có |
+| Database từng service, bảng, kiểu dữ liệu, ERD, seed, mã hóa | `docs/design/03-du-lieu.md` | Có |
+| API REST của Gateway, ma trận phân quyền, chuỗi request từng mục chấm | `docs/design/04-api.md` | Có |
+| Đặc tả từng phần việc | `docs/specs/` | Chưa có |
+| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-012 |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
 
 ## Danh sách service (giảng viên chốt, không tự ý thêm bớt)
@@ -78,7 +78,8 @@ Không có service riêng cho ghép tài xế (dispatch), báo cáo (report) và
 | Tài xế nhận chuyến | `booking-service` gọi gRPC đồng bộ `CreateTrip` sang `trip-service` | Tài xế nhận xong phải có ngay mã chuyến để cập nhật trạng thái (mục chấm 16 → 17). Một lần nhận chuyến mà không có Trip là vô nghĩa, nên Booking được phép chờ và lỗi theo Trip. Đúng nguyên tắc đồng bộ là mặc định | Trip lỗi thì tài xế không nhận được chuyến |
 | Đặt xe → cước và thanh toán | `booking-service` gọi gRPC đồng bộ sang `payment-service` để tính cước cố định và tạo thanh toán | Booking phải trả ngay cho khách số tiền và mã thanh toán | Payment lỗi thì không đặt được xe. Đây là hệ quả của trả trước và là đánh đổi so với NFR05; cần nêu khi trình bày |
 | Kết quả thanh toán, hoàn tiền | Payment phát event Kafka; Booking nghe kết quả thanh toán để bắt đầu tìm tài xế. Payment nghe event hủy và không tìm được tài xế để hoàn tiền | Tiền đã trừ thì Payment phải ghi nhận xong dù Booking đang lỗi; việc hủy phải thành công dù Payment đang lỗi (NFR05); nhiều bên cùng nghe | Có khoảng trễ ngắn giữa thanh toán xong và bắt đầu tìm tài xế |
-| Tính cước | `booking-service` tính quãng đường ước tính từ tọa độ rồi gửi số km và loại xe cho `payment-service`; `payment-service` giữ bảng giá, tính cước và lưu từng thành phần của cước | Booking có tọa độ; quy tắc giá thuộc context Fare & Payment, đổi giá chỉ sửa một nơi. Lưu từng thành phần để giải thích được con số cuối | Hai service cùng tham gia một phép tính |
+| Trả tài xế về rảnh sau chuyến | `driver-service` nghe topic `trip.status-changed` (Kafka), không dùng gRPC | Chuyến kết thúc ngoài đời thật thì phải được ghi nhận dù `driver-service` đang lỗi; sự kiện này đã có Payment và Notification cùng nghe. Khác với tài xế nhận chuyến (gRPC): ở đó bên gọi nên lỗi theo bên nhận | Tài xế được trả về rảnh chậm khoảng một giây |
+| Tính cước | `booking-service` tính quãng đường ước tính từ tọa độ rồi gửi quãng đường (số nguyên, đơn vị mét) và loại xe cho `payment-service`; `payment-service` giữ bảng giá, tính cước và lưu từng thành phần của cước | Booking có tọa độ; quy tắc giá thuộc context Fare & Payment, đổi giá chỉ sửa một nơi. Lưu từng thành phần để giải thích được con số cuối | Hai service cùng tham gia một phép tính |
 | Redis dừng | Gateway vẫn cho request đi qua và ghi log cảnh báo | Hệ thống không dừng chỉ vì thiếu bộ đếm rate limit | Trong lúc Redis dừng không có rate limit, và token đã đăng xuất tạm dùng lại được |
 | Đăng xuất | Gateway xử lý: ghi mã của token vào danh sách thu hồi trong Redis, tự hết hạn cùng lúc với token (FR42) | Gateway là nơi kiểm tra token ở mọi request nên tra danh sách tại chỗ, không phải gọi sang Auth | Phụ thuộc Redis |
 | Khóa chính | UUID (kiểu `uuid` của PostgreSQL, sinh bằng `gen_random_uuid()`) | Mỗi service tự sinh ID không cần nơi cấp số chung; ID không đoán được nên khó dò dữ liệu người khác; ID đi qua event và service khác vẫn duy nhất | Dài, khó đọc khi demo; index lớn hơn INT. Khác thiết kế tham chiếu (dùng INT) |

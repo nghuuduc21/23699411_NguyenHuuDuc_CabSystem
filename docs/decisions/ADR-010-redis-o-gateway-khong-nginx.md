@@ -1,6 +1,6 @@
 # ADR-010 — Redis ở Gateway cho rate limit và token đã thu hồi; không đặt Nginx
 
-- Ngày: 2026-10-02. Trạng thái: **Đã chấp nhận** — ghi trong `CLAUDE.md`, mục "Quy tắc kiến trúc". Đóng Q17, Q18 và giả định GĐ-7. Cách xử lý khi Redis dừng và việc đăng xuất còn mở (Q39, Q40).
+- Ngày: 2026-10-02. Trạng thái: **Đã chấp nhận** — ghi trong `CLAUDE.md`, mục "Quy tắc kiến trúc". Đóng Q17, Q18 và giả định GĐ-7. Sửa 2026-10-02 lần 4: cách xử lý khi Redis dừng và việc đăng xuất **đã chốt** trong `CLAUDE.md` (dòng "Redis dừng", "Đăng xuất") và `srs.md` (FR42, UC33) — đóng Q39, Q40.
 - Liên quan: `docs/design/02-kien-truc-giao-tiep.md` mục 2.1, 2.2, G10; NFR04, NFR06; mục chấm 3, 6, 27, 29.
 
 ## Bối cảnh
@@ -38,8 +38,9 @@ Chỉ Gateway kết nối Redis. Redis không có `ports` trong Compose.
 ## Đánh đổi
 
 - Thêm một container phải vận hành và một phụ thuộc cho mọi request có token.
-- **Redis dừng** thì phải chọn: cho qua (mất rate limit, token đã đăng xuất dùng lại được) hay từ chối (mọi request có token trả 503). Đề xuất cho môi trường học tập: cho qua, ghi log cảnh báo, `/ready` báo chưa sẵn sàng (Q39).
-- `srs.md` chưa có FR / UC "Đăng xuất" và chưa có NFR về giới hạn tần suất (Q10, Q40).
+- **Redis dừng (đã chốt):** Gateway cho request đi qua và ghi log cảnh báo — hệ thống không dừng chỉ vì thiếu bộ đếm. Đánh đổi: trong lúc đó không có rate limit và token đã đăng xuất tạm dùng lại được. Phương án không chọn: từ chối mọi request có token (503). `/ready` trả 503 khi Redis dừng là đề xuất của BA, chưa chốt (file 04, quyết định P5).
+- **Đăng xuất (đã chốt, FR42 / UC33):** Gateway tự xử lý, không gọi `auth-service`, vì Gateway là nơi kiểm tra token ở mọi request và là thành phần duy nhất dùng Redis. Key, kiểu và thời gian sống: file 03 mục 12; API: file 04 A06.
+- `srs.md` vẫn chưa có NFR về giới hạn tần suất cho mục chấm 29, và FR42 chưa có AC (Q10).
 - Khác thiết kế tham chiếu: không dùng Redis cho session và cache dữ liệu.
 
 ## Câu trả lời mẫu khi vấn đáp

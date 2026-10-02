@@ -39,7 +39,8 @@ Chọn **C** cho cả bốn service phát event.
 ## Đánh đổi
 
 - Mỗi service phát event thêm một bảng `outbox` (file 03) và một vòng lặp nền — bốn lần cùng một đoạn code.
-- Event đến trễ hơn một nhịp quét (đề xuất dưới 1 giây). Nhịp này cộng vào khoảng trễ giữa "thanh toán xong" và "bắt đầu tìm tài xế".
+- Event đến trễ hơn một nhịp gửi. Sửa 2026-10-02 lần 4 theo "Ràng buộc khi chấm" trong `CLAUDE.md` (event phải được xử lý trong khoảng một giây): tiến trình gửi được **đánh thức ngay sau khi giao dịch commit**; quét định kỳ (`OUTBOX_POLL_INTERVAL_MS`, đề xuất 200 ms) chỉ là lưới an toàn cho event còn sót. Chuỗi dài nhất là callback → `payment.status-changed` → Booking → `booking.offer-created` (hai nhịp). Cấu trúc bảng `outbox`: file 03 mục 11.3.
+- Thêm một event mang tiền kể từ BRULE17: `payment.status-changed` (`CANCELED` do quá hạn / hết lượt); mất thì Booking chờ thanh toán mãi.
 - Nhiều thứ hơn để sinh viên phải giải thích.
 
 ## Phương án rút gọn nếu thiếu thời gian
