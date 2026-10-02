@@ -1,6 +1,6 @@
 # ADR-003 — Giữ Dispatch là service riêng, không gộp vào `ride-service`
 
-- Ngày: 2026-10-01. Trạng thái: **Đề xuất** — đây là quyết định dễ bị hỏi nhất, nên xác nhận với giảng viên (câu hỏi Q15).
+- Ngày: 2026-10-01. Trạng thái: **Bị thay thế** bởi ADR-006 (2026-10-02). Giảng viên chốt không có service riêng cho ghép tài xế: phần này nằm trong `booking-service` (tức phương án A dưới đây, với Booking thay cho Ride). Nội dung dưới đây giữ lại để biết phương án đã từng xét; **không còn hiệu lực**.
 - Liên quan: `docs/design/01-bounded-contexts.md` mục 5.5, 6.1; FR02–FR10, FR35; BRULE01–07; NFR02, NFR05, NFR12, NFR14; mục chấm 15, 16.
 
 ## Bối cảnh

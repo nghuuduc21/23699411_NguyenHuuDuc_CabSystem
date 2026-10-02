@@ -1,6 +1,6 @@
 # ADR-002 — Gộp Booking, Trip và Rating vào một `ride-service`
 
-- Ngày: 2026-10-01. Trạng thái: **Đề xuất**, chờ sinh viên xác nhận.
+- Ngày: 2026-10-01. Trạng thái: **Bị thay thế** bởi ADR-006 (2026-10-02). Giảng viên chốt 8 service: Booking, Trip và Rating & Review là ba service riêng. Nội dung dưới đây giữ lại để biết phương án đã từng xét; **không còn hiệu lực**.
 - Liên quan: `docs/design/01-bounded-contexts.md` mục 5.4, 5.7, 6.1; FR07, FR11, FR12, FR25, FR35–FR37; BRULE08, BRULE11; NFR14; mục chấm 14–18, 20.
 
 ## Bối cảnh

@@ -1,6 +1,6 @@
 # ADR-004 — Đăng ký khách hàng: Auth gọi đồng bộ sang Customer
 
-- Ngày: 2026-10-02. Trạng thái: **Đề xuất — giả định tạm GĐ-1**, chờ câu trả lời Q3 (nên hỏi giảng viên).
+- Ngày: 2026-10-02. Trạng thái: **Đề xuất — giả định tạm GĐ-1**, chờ câu trả lời Q3 (nên hỏi giảng viên). Rà lại 2026-10-02 sau khi chốt 8 service: còn đúng, không đổi nội dung. Lưu ý khi hỏi: thiết kế tham chiếu đã duyệt **không vẽ** đường Auth → Customer và cũng để hai service này ngoài message broker; đường S1 là điểm thiết kế này thêm vào (file 02, mục 10.1).
 - Liên quan: `docs/design/02-kien-truc-giao-tiep.md` đường S1, mục 8.1; ADR-001; FR26, FR27; NFR05, NFR14; mục chấm 9, 11.
 
 ## Bối cảnh
@@ -35,4 +35,4 @@ Chọn **B**.
 
 ## Điều kiện xem lại
 
-Nếu giảng viên muốn cặp Auth — Customer minh họa giao tiếp bất đồng bộ (bài mẫu của thầy có đúng cặp này) thì chuyển sang A và chấp nhận hồ sơ có độ trễ; khi đó sửa các dòng ghi ở GĐ-1, mục 10 của file 02.
+Nếu giảng viên muốn cặp Auth — Customer minh họa giao tiếp bất đồng bộ (bài mẫu của thầy có đúng cặp này) thì chuyển sang A và chấp nhận hồ sơ có độ trễ; khi đó sửa các dòng ghi ở GĐ-1, mục 11 của file 02.

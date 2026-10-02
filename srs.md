@@ -90,7 +90,7 @@ Business Requirements – CAB System
 | **BR03**   | **Hệ thống cho phép khách hàng theo dõi chuyến đi**           | Hệ thống cung cấp cho khách hàng thông tin về trạng thái chuyến đi, tài xế đã nhận chuyến, thời gian dự kiến tài xế đến và các trạng thái trong quá trình thực hiện chuyến.                         |
 | **BR04**   | **Hệ thống cho phép khách hàng thanh toán chuyến đi**         | Hệ thống cho phép khách hàng thanh toán chi phí chuyến đi bằng các phương thức được doanh nghiệp hỗ trợ.                                                                                            |
 | **BR04.1** | **Thanh toán bằng tiền mặt**                                  | Khách hàng có thể thanh toán trực tiếp cho tài xế sau khi hoàn thành chuyến đi. Hệ thống ghi nhận trạng thái thanh toán của chuyến.                                                                 |
-| **BR04.2** | **Thanh toán điện tử**                                        | Khách hàng có thể thanh toán thông qua nhà cung cấp thanh toán bên ngoài. Hệ thống không lưu trực tiếp thông tin nhạy cảm của thẻ hoặc tài khoản thanh toán.                                        |
+| **BR04.2** | **Thanh toán điện tử (trả trước)**                            | Khách hàng thanh toán trước qua nhà cung cấp thanh toán bên ngoài, trước khi hệ thống tìm tài xế. Nếu chuyến không được thực hiện, hệ thống hoàn lại tiền. Hệ thống không lưu trực tiếp thông tin nhạy cảm của thẻ hoặc tài khoản thanh toán. |
 | **BR05**   | **Hệ thống cho phép quản lý thông tin khách hàng**            | Khách hàng có thể đăng ký, đăng nhập và cập nhật thông tin cá nhân. Hệ thống phải xác thực khách hàng trước khi sử dụng các chức năng yêu cầu tài khoản.                                            |
 | **BR06**   | **Hệ thống cho phép tài xế quản lý trạng thái hoạt động**     | Tài xế có thể chuyển trạng thái sang sẵn sàng hoặc không sẵn sàng nhận chuyến khi làm việc. Trạng thái này được sử dụng trong quá trình tìm tài xế.                                                 |
 | **BR07**   | **Hệ thống cho phép tài xế tiếp nhận và thực hiện chuyến đi** | Tài xế có thể nhận hoặc từ chối yêu cầu chuyến và cập nhật trạng thái như đã đến điểm đón, đã đón khách, đang di chuyển và hoàn thành chuyến.                                                       |
@@ -138,9 +138,9 @@ Bước 6: Business Process
 4. Tính cước và thanh toán
 | Mã       | Functional Requirement        | Diễn giải                                                                                                                                             |
 | -------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **FR16** | **Tính cước chuyến đi**       | Hệ thống tính số tiền khách hàng phải trả dựa trên loại dịch vụ và các quy tắc tính cước của doanh nghiệp.                                            |
-| **FR17** | **Xử lý thanh toán tiền mặt** | Hệ thống ghi nhận trạng thái khách hàng thanh toán bằng tiền mặt cho chuyến đi.                                                                       |
-| **FR18** | **Xử lý thanh toán điện tử**  | Hệ thống gửi yêu cầu thanh toán đến nhà cung cấp bên ngoài và nhận kết quả giao dịch.                                                                 |
+| **FR16** | **Tính cước cố định khi đặt xe** | Khi tạo yêu cầu đặt xe, hệ thống tính cước cố định từ loại xe và khoảng cách điểm đón → điểm đến. Cước này áp dụng cho cả tiền mặt và thanh toán điện tử, không đổi sau khi đặt. |
+| **FR17** | **Xử lý thanh toán tiền mặt** | Khách hàng trả tiền mặt cho tài xế khi chuyến hoàn thành; hệ thống ghi nhận chuyến đã được thanh toán bằng tiền mặt.                                  |
+| **FR18** | **Xử lý thanh toán điện tử**  | Với thanh toán điện tử, khách hàng thanh toán trước: hệ thống gửi yêu cầu đến nhà cung cấp bên ngoài, nhận kết quả giao dịch, và chỉ tìm tài xế khi thanh toán thành công. |
 | **FR19** | **Xử lý thanh toán thất bại** | Hệ thống thông báo kết quả thất bại và cho phép thực hiện lại theo chính sách của doanh nghiệp.                                                       |
 | **FR20** | **Lưu thông tin giao dịch**   | Hệ thống lưu trạng thái và thông tin cần thiết của giao dịch để phục vụ tra cứu và đối soát, không lưu thông tin nhạy cảm của phương thức thanh toán. |
 
@@ -170,11 +170,13 @@ Bước 6: Business Process
 7. Bổ sung theo phiếu chấm
 | Mã       | Functional Requirement                  | Diễn giải                                                                                                             |
 | -------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **FR35** | **Tạo yêu cầu đặt xe**                  | Hệ thống nhận điểm đón, điểm đến, loại xe và phương thức thanh toán; tạo Booking ở trạng thái đang tìm tài xế.         |
-| **FR36** | **Hủy yêu cầu đặt xe / hủy chuyến**     | Khách hàng hủy kèm lý do; hệ thống chuyển trạng thái sang CANCELED và thông báo cho các bên liên quan.                 |
+| **FR35** | **Tạo yêu cầu đặt xe**                  | Hệ thống nhận điểm đón, điểm đến, loại xe và phương thức thanh toán; tạo Booking kèm cước cố định. Tiền mặt: tìm tài xế ngay. Điện tử: Booking chờ thanh toán thành công rồi mới tìm tài xế. |
+| **FR36** | **Hủy yêu cầu đặt xe / hủy chuyến**     | Khách hàng hủy kèm lý do, trước khi chuyến bắt đầu; hệ thống chuyển trạng thái sang CANCELED và thông báo cho các bên liên quan. |
 | **FR37** | **Xem danh sách yêu cầu đặt xe**        | Khách hàng xem danh sách Booking của mình, có giới hạn số dòng (limit) và phân trang (paging).                         |
 | **FR38** | **Bật / tắt trạng thái nhận chuyến**    | Tài xế chuyển Online / Offline; hệ thống ghi nhận và chỉ tìm tài xế đang Online.                                        |
 | **FR39** | **Đăng ký và duyệt hồ sơ tài xế**       | Tài xế xác thực số điện thoại bằng OTP, gửi hồ sơ cá nhân và xe; hồ sơ ở trạng thái chờ duyệt đến khi Admin duyệt hoặc từ chối. |
+| **FR40** | **Hoàn tiền**                           | Với thanh toán điện tử đã thành công, hệ thống hoàn đủ tiền khi chuyến không được thực hiện: khách hủy, không tìm được tài xế, hoặc tài xế hủy chuyến đã nhận. |
+| **FR41** | **Tài xế hủy chuyến đã nhận**           | Tài xế đã chấp nhận chuyến có thể hủy trước khi chuyến bắt đầu; hệ thống chuyển chuyến sang CANCELED và thông báo cho khách hàng. |
 
 
 
@@ -187,11 +189,15 @@ Bước 6: Business Process
 | **BRULE05** | Tài xế từ chối thì hệ thống tìm tài xế khác             | Khi tài xế từ chối, yêu cầu đặt xe không bị hủy mà tiếp tục được gửi đến tài xế phù hợp khác.                      |
 | **BRULE06** | Tài xế không phản hồi thì chuyển sang tài xế khác       | Nếu hết thời gian phản hồi, hệ thống xem tài xế đó là không phản hồi và tiếp tục quá trình tìm kiếm.               |
 | **BRULE07** | Không tìm được tài xế thì thông báo khách hàng          | Khi hệ thống không còn tài xế phù hợp, khách hàng phải nhận được thông báo rõ ràng.                                |
-| **BRULE08** | Chỉ tính cước khi chuyến hoàn thành                     | Hệ thống xác định cước phải trả sau khi chuyến đi được cập nhật trạng thái hoàn thành.                             |
+| **BRULE08** | Cước cố định được xác định khi đặt xe                   | Cước được tính một lần lúc tạo yêu cầu đặt xe và không đổi sau đó, cho cả tiền mặt và thanh toán điện tử.          |
 | **BRULE09** | Không lưu thông tin thanh toán nhạy cảm                 | Thông tin thẻ/tài khoản thanh toán nhạy cảm được xử lý bởi Payment Provider và không được lưu trực tiếp trong CAB. |
 | **BRULE10** | Thanh toán thất bại phải được ghi nhận                  | Hệ thống phải ghi nhận giao dịch thất bại và thông báo cho khách hàng.                                             |
 | **BRULE11** | Chỉ khách hàng đã hoàn thành chuyến mới được đánh giá   | Chức năng đánh giá chỉ được thực hiện sau khi chuyến đi hoàn thành.                                                |
 | **BRULE12** | Chỉ người có quyền mới được thực hiện thao tác quản trị | Các chức năng nhạy cảm phải được giới hạn theo quyền của nhân viên vận hành.                                       |
+| **BRULE13** | Thanh toán điện tử phải thành công trước khi tìm tài xế | Yêu cầu đặt xe trả bằng thanh toán điện tử chỉ được đưa vào tìm tài xế sau khi giao dịch thành công.               |
+| **BRULE14** | Hoàn đủ tiền khi chuyến không được thực hiện            | Hoàn tiền trong bốn trường hợp: khách hủy trước khi có tài xế; khách hủy sau khi đã có tài xế; không tìm được tài xế; tài xế hủy chuyến đã nhận. |
+| **BRULE15** | Không hoàn tiền trong hai trường hợp                    | Chuyến đã hoàn thành thì không hoàn tiền. Tài xế từ chối lời mời nhận chuyến thì không hoàn tiền; hệ thống tìm tài xế khác (BRULE05). |
+| **BRULE16** | Chỉ hủy được trước khi chuyến bắt đầu                   | Khách hàng và tài xế chỉ hủy được khi chuyến chưa bắt đầu (chưa đón khách).                                        |
 
 
 2. Exception – Các trường hợp ngoại lệ
@@ -272,6 +278,8 @@ Bước 11: Xác định Use Case (UC)
 | **UC28** | Bật / tắt nhận chuyến      | Driver                     |
 | **UC29** | Đăng ký tài xế             | Driver                     |
 | **UC30** | Duyệt hồ sơ tài xế         | Admin                      |
+| **UC31** | Hoàn tiền                  | System, Payment Provider   |
+| **UC32** | Tài xế hủy chuyến đã nhận  | Driver                     |
 
 
 Bước 12: Đặc tả Use Case (Use Case Specification)
@@ -399,6 +407,10 @@ UC22 – Giám sát chuyến đi
 | **AC18** | Nhận chuyến        | Trạng thái Online/Offline được ghi nhận     |
 | **AC19** | Đăng ký tài xế     | Hồ sơ được tạo ở trạng thái chờ duyệt       |
 | **AC20** | Duyệt hồ sơ        | Trạng thái hồ sơ đổi; tài xế nhận kết quả   |
+| **AC21** | Thanh toán trước   | Chỉ tìm tài xế sau khi thanh toán điện tử thành công |
+| **AC22** | Hoàn tiền          | Hoàn đủ tiền trong bốn trường hợp của BRULE14 |
+| **AC23** | Không hoàn tiền    | Chuyến hoàn thành, hoặc tài xế từ chối lời mời: không hoàn |
+| **AC24** | Tài xế hủy         | Chuyến chuyển CANCELED; khách được báo và được hoàn tiền |
 
 RTM cho CAB System
 | RTM       | Business Goal | Business Requirement      | Functional Requirement                | Business Rule | Use Case          | Acceptance Criteria |
@@ -413,7 +425,7 @@ RTM cho CAB System
 | **RTM08** | BG01          | BR02 – Tìm tài xế phù hợp | FR10 – Thông báo không tìm được TX    | BRULE07        | UC06              | AC09                |
 | **RTM09** | BG03          | BR03 – Theo dõi chuyến    | FR12 – Cập nhật trạng thái chuyến     | BRULE08        | UC10              | AC10                |
 | **RTM10** | BG03          | BR03 – Theo dõi chuyến    | FR13 – Cập nhật vị trí TX             | BRULE03        | UC10              | AC10                |
-| **RTM11** | BG04          | BR04 – Thanh toán         | FR16 – Tính cước                      | BRULE08        | UC14              | AC11                |
+| **RTM11** | BG04          | BR04 – Thanh toán         | FR16 – Tính cước                      | BRULE08        | UC13              | AC01                |
 | **RTM12** | BG04          | BR04 – Thanh toán         | FR17 – Thanh toán tiền mặt            | BRULE09        | UC14              | AC11                |
 | **RTM13** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử             | BRULE09        | UC14              | AC12                |
 | **RTM14** | BG04          | BR04 – Thanh toán         | FR19 – Xử lý thanh toán thất bại      | BRULE10        | UC14              | AC13                |
@@ -424,68 +436,48 @@ RTM cho CAB System
 | **RTM19** | BG03          | BR03 – Theo dõi chuyến    | FR37 – Xem danh sách booking          | —              | UC18              | AC17                |
 | **RTM20** | BG01          | BR06 – Trạng thái tài xế  | FR38 – Bật / tắt nhận chuyến          | BRULE01        | UC28              | AC18                |
 | **RTM21** | BG02          | BR08 – Tài xế, phương tiện | FR39 – Đăng ký và duyệt hồ sơ tài xế | BRULE12        | UC29, UC30        | AC19, AC20          |
+| **RTM22** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử trả trước   | BRULE13        | UC14              | AC21                |
+| **RTM23** | BG04          | BR04 – Thanh toán         | FR40 – Hoàn tiền                      | BRULE14, BRULE15 | UC31            | AC22, AC23          |
+| **RTM24** | BG03          | BR07 – Tài xế thực hiện chuyến | FR41 – Tài xế hủy chuyến đã nhận | BRULE16        | UC32              | AC24                |
 
 
 ```mermaid
 flowchart TD
-    A[Khách hàng tạo yêu cầu đặt xe] --> B[Hệ thống xác nhận yêu cầu]
+    A[Khách hàng tạo yêu cầu đặt xe] --> B{Yêu cầu hợp lệ?}
+    B -->|Không| D[Thông báo yêu cầu không hợp lệ] --> Z[Kết thúc]
+    B -->|Có| C[Hệ thống tính cước cố định]
 
-    B --> C{Yêu cầu hợp lệ?}
-
-    C -->|Không| D[Thông báo yêu cầu không hợp lệ]
-    D --> Z[Kết thúc]
-
-    C -->|Có| E[Hệ thống tìm tài xế phù hợp]
+    C --> U{Phương thức thanh toán}
+    U -->|Tiền mặt| E[Hệ thống tìm tài xế phù hợp]
+    U -->|Điện tử| X[Khách hàng thanh toán trước qua Payment Provider]
+    X --> Y{Thanh toán thành công?}
+    Y -->|Không| AA[Thông báo thanh toán thất bại, cho phép thử lại] --> X
+    Y -->|Có| E
 
     E --> F{Có tài xế phù hợp?}
-
-    F -->|Không| G[Thông báo không tìm được tài xế]
-    G --> Z
-
-    F -->|Có| H[Gửi yêu cầu đến tài xế]
+    F -->|Không| G[Thông báo không tìm được tài xế] --> RF
+    F -->|Có| H[Gửi lời mời đến tài xế gần nhất]
 
     H --> I{Tài xế phản hồi?}
+    I -->|Từ chối hoặc hết giờ| K[Tìm tài xế khác, không hoàn tiền] --> F
+    I -->|Chấp nhận| M[Tạo chuyến, thông báo cho khách hàng]
 
-    I -->|Không phản hồi| J[Chờ hết thời gian phản hồi]
-    J --> K[Tìm tài xế khác]
-
-    K --> F
-
-    I -->|Từ chối| L[Tài xế từ chối chuyến]
-    L --> K
-
-    I -->|Chấp nhận| M[Xác nhận tài xế cho chuyến]
-
-    M --> N[Thông báo tài xế đã nhận chuyến cho khách hàng]
-
-    N --> O[Tài xế di chuyển đến điểm đón]
-
-    O --> P[Tài xế cập nhật đã đến điểm đón]
-
-    P --> Q[Đón khách]
-
-    Q --> R[Tài xế cập nhật đang thực hiện chuyến]
+    M --> O[Tài xế đến điểm đón]
+    O --> CX{Có ai hủy trước khi chuyến bắt đầu?}
+    CX -->|Khách hủy hoặc tài xế hủy| CN[Chuyến CANCELED, thông báo các bên] --> RF
+    CX -->|Không| R[Đón khách, thực hiện chuyến]
 
     R --> S[Hoàn thành chuyến]
+    S --> PM{Phương thức thanh toán}
+    PM -->|Tiền mặt| V[Khách trả tiền mặt cho tài xế, hệ thống ghi nhận]
+    PM -->|Điện tử| W[Đã thanh toán trước, không hoàn tiền]
+    V --> AC[Khách hàng đánh giá tài xế]
+    W --> AC
+    AC --> AE[Kết thúc]
 
-    S --> T[Hệ thống tính cước]
+    RF{Đã thanh toán điện tử?}
+    RF -->|Có| RD[Hoàn đủ tiền cho khách hàng] --> Z
+    RF -->|Không| Z
+```
 
-    T --> U{Phương thức thanh toán}
-
-    U -->|Tiền mặt| V[Khách hàng thanh toán cho tài xế]
-    V --> W[Ghi nhận thanh toán]
-
-    U -->|Điện tử| X[Gửi yêu cầu đến Payment Provider]
-    X --> Y{Thanh toán thành công?}
-
-    Y -->|Có| W
-    Y -->|Không| AA[Thông báo thanh toán thất bại]
-    AA --> AB[Xử lý thanh toán lại theo chính sách]
-    AB --> X
-
-    W --> AC[Khách hàng đánh giá tài xế]
-    AC --> AD[Lưu lịch sử chuyến đi]
-    AD --> AE[Kết thúc]
-
-
-
+Ghi chú: khách hàng cũng có thể hủy trong lúc hệ thống đang tìm tài xế; khi đó yêu cầu đặt xe chuyển CANCELED và đi vào nhánh hoàn tiền như trên (BRULE14).

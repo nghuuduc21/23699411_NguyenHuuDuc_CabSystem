@@ -1,7 +1,7 @@
 # ADR-001 — Tách Auth và Customer thành hai service
 
-- Ngày: 2026-10-01. Trạng thái: **Đề xuất**, chờ sinh viên và giảng viên xác nhận.
-- Liên quan: `docs/design/01-bounded-contexts.md` mục 5.1, 5.2, 6.1; FR26, FR27, FR32; NFR06–NFR08; mục chấm 9, 10, 11, 21, 24.
+- Ngày: 2026-10-01. Trạng thái: **Đã chấp nhận** (2026-10-02) — danh sách 8 service giảng viên chốt trong `CLAUDE.md` có `auth-service` và `customer-service` riêng. Rà lại 2026-10-02: còn đúng với cách chia mới, chỉ sửa số mục dẫn chiếu.
+- Liên quan: `docs/design/01-bounded-contexts.md` mục 6.1, 6.2, 7.1; FR26, FR27, FR32; NFR06–NFR08; mục chấm 9, 10, 11, 21, 24.
 
 ## Bối cảnh
 
