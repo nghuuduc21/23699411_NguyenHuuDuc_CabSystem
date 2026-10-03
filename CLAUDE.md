@@ -86,20 +86,34 @@ Không có service riêng cho ghép tài xế (dispatch), báo cáo (report) và
 | Tính cước | `booking-service` tính quãng đường ước tính từ tọa độ rồi gửi quãng đường (số nguyên, đơn vị mét) và loại xe cho `payment-service`; `payment-service` giữ bảng giá, tính cước và lưu từng thành phần của cước | Booking có tọa độ; quy tắc giá thuộc context Fare & Payment, đổi giá chỉ sửa một nơi. Lưu từng thành phần để giải thích được con số cuối | Hai service cùng tham gia một phép tính |
 | Redis dừng | Gateway vẫn cho request đi qua và ghi log cảnh báo | Hệ thống không dừng chỉ vì thiếu bộ đếm rate limit | Trong lúc Redis dừng không có rate limit, và token đã đăng xuất tạm dùng lại được |
 | Đăng xuất | Gateway xử lý: ghi mã của token vào danh sách thu hồi trong Redis, tự hết hạn cùng lúc với token (FR42) | Gateway là nơi kiểm tra token ở mọi request nên tra danh sách tại chỗ, không phải gọi sang Auth | Phụ thuộc Redis |
-| Khóa chính | UUID (kiểu `uuid` của PostgreSQL, sinh bằng `gen_random_uuid()`) | Mỗi service tự sinh ID không cần nơi cấp số chung; ID không đoán được nên khó dò dữ liệu người khác; ID đi qua event và service khác vẫn duy nhất | Dài, khó đọc khi demo; index lớn hơn INT. Khác thiết kế tham chiếu (dùng INT) |
+| Khóa chính | **Số nguyên** (`bigint GENERATED ALWAYS AS IDENTITY`), không dùng UUID (đổi 2026-10-03 vì luật thi) | Khi thi phải gõ tay mọi request: `/customers/3` gõ được trong vài giây, UUID 36 ký tự thì không. Phiếu chấm ghi "lấy thông tin … với **mã số**". Thiết kế tham chiếu đã duyệt cũng dùng INT. Mỗi service tự cấp số cho dữ liệu của mình nên không trùng giữa các bảng của nó | Mã dễ đoán: đổi `/customers/3` thành `/customers/4` là thử được dữ liệu người khác. Vì vậy **mọi API theo mã phải kiểm tra quyền sở hữu** và trả 403 |
+| Ký JWT | **HS256** với một khóa bí mật `JWT_SECRET` dùng chung cho auth (ký) và Gateway (kiểm tra) | Một biến môi trường, không cần script sinh cặp khóa; dễ nhớ và dễ giải thích khi thi. Đủ cho mục chấm 27: sửa payload thì chữ ký không khớp → 401 | Ai có khóa đều ký được token, nên khóa chỉ được nằm ở auth và Gateway. RS256 an toàn hơn nhưng thêm bước sinh khóa |
+| Mã hóa dữ liệu nhạy cảm (mục chấm 24) | **Mật khẩu băm** (scrypt, có salt). **Mã hóa AES-256-GCM** các trường cá nhân **không dùng để tìm kiếm**: họ tên và ngày sinh trong hồ sơ khách, số giấy phép lái xe. Khóa lấy từ biến môi trường riêng của từng service. **Không mã hóa số điện thoại, email**, không có chỉ mục mù (blind index) | Ví dụ trong phiếu chấm là mật khẩu: băm là đúng yêu cầu. Trường cần tìm kiếm (đăng nhập bằng số điện thoại, ràng buộc trùng) mà mã hóa thì phải thêm chỉ mục mù, thêm một khái niệm phải giải thích. Giữ phạm vi nhỏ để tự giải thích được | Số điện thoại và email nằm dạng rõ trong database auth |
+| Phát event Kafka | Service ghi database xong (commit) rồi **gửi event ngay**; không dùng bảng outbox | Ít bảng, ít tiến trình chạy nền, ít khái niệm phải giải thích; event đến trong khoảng một giây | Nếu service dừng đúng giữa lúc ghi xong và lúc gửi thì event bị mất. Bên nghe vẫn phải chịu được event lặp |
 | Phân quyền | Ba role cố định trong cột `role`; **không có bảng PERMISSION** | Phiếu chấm chỉ kiểm tra theo role (mục 28); quyền không đổi lúc chạy | Thêm quyền mới phải sửa code Gateway |
 | Lỗi sai trạng thái | gRPC `FAILED_PRECONDITION` → HTTP 409 | Thao tác hợp lệ nhưng sai thời điểm (ví dụ hoàn thành chuyến chưa bắt đầu, mục chấm 17) là lỗi của request, không phải lỗi hạ tầng | — |
 | Hệ thống ngoài | **Giả lập đơn giản nhất** để dễ chấm và dễ chạy (giảng viên, 2026-10-03), đặt sau một lớp adapter. **Cổng thanh toán:** module giả lập nằm trong `payment-service`; nhận yêu cầu thu hoặc hoàn tiền rồi gọi ngay phần xử lý callback, mặc định thành công; tham số `simulate_result` chỉ có hiệu lực khi bật chế độ giả lập: `FAILED` cố ý làm thất bại để demo thanh toán lỗi; `MANUAL` giữ thanh toán ở trạng thái chờ, **không** tự gọi callback, để người demo tự gửi callback từ Postman và người chấm thấy rõ bước "hệ thống nhận callback" → COMPLETED (mục chấm 19, Q57). Endpoint callback xác thực bằng một khóa bí mật cố định trong header, không dùng chữ ký HMAC. **Bản đồ:** công thức khoảng cách trên tọa độ. **Kênh thông báo và SMS:** chỉ lưu vào database và ghi log. **OTP:** ghi log; khi bật chế độ giả lập thì trả luôn mã trong response để Postman dùng tiếp | Demo không phụ thuộc mạng, tài khoản và khóa API bên ngoài; mỗi mục chấm làm được trong 30 giây; adapter giữ được NFR13 | Không chứng minh được tích hợp thật; chế độ giả lập phải tắt khi chạy thật |
 
 ## Ràng buộc khi chấm
 
-Mỗi mục chấm chỉ có khoảng **30 giây** để thực hiện trên Postman. Vì vậy:
+Mỗi mục chấm chỉ có khoảng **30 giây** để thực hiện trên Postman, và mọi request phải gõ tay (xem "Ràng buộc khi thi"). Vì vậy:
 
 - Luồng thành công không có bước nào phải chờ: mọi thao tác phản hồi ngay, event Kafka được xử lý trong khoảng một giây.
 - Mọi giới hạn thời gian (hạn chờ thanh toán, hạn tài xế trả lời lời mời, cửa sổ rate limit) là **giới hạn trên** và đọc từ biến môi trường, để chỉnh ngắn lại khi cần demo trường hợp hết hạn.
 - Cổng thanh toán giả lập gửi callback ngay sau khi nhận yêu cầu thanh toán, trừ khi gửi `simulate_result: "MANUAL"` (dùng cho mục chấm 19 để người demo tự gửi callback).
 - Dữ liệu cần có sẵn (tài khoản, tài xế đã duyệt và đang Online, booking mẫu) được tạo bằng seed, không tạo tay lúc chấm.
-- Postman collection chia thư mục theo số mục chấm; script của request tự lưu token và các ID vào biến để request sau dùng luôn.
+- Postman collection trong `postman/` chỉ dùng để **test-agent kiểm thử và để sinh viên luyện tập**; khi thi không được dùng. Chuỗi request của mỗi mục phải gõ tay được trong 30 giây.
+
+## Ràng buộc khi thi (2026-10-03)
+
+Khi thi, sinh viên **không được mở tài liệu**, phải tự giải thích và tự thao tác:
+
+| Luật | Hệ quả bắt buộc cho thiết kế và code |
+|---|---|
+| Postman **không được lưu sẵn** gì; gõ mọi request từ đầu | Mỗi mục chấm tối đa khoảng **3 request**. Body JSON ít trường, tên trường ngắn, có giá trị mặc định hợp lý (ví dụ loại xe, phương thức thanh toán). Header phụ tối thiểu, giá trị ngắn (ví dụ `Idempotency-Key: k1`). Response trả luôn kết quả cần xem để khỏi gọi thêm request kiểm tra |
+| **Được copy/paste** giá trị từ response | Token, mã booking, mã thanh toán lấy bằng copy từ response trước |
+| Lệnh terminal **phải gõ đầy đủ**, không chạy script soạn sẵn | Ít lệnh, lệnh ngắn: dựng hệ thống bằng `docker compose up -d --build`; tên container, database, user ngắn và theo một quy luật (ví dụ container `auth-db`, user `cab`, database `auth`). `.env.example` có sẵn giá trị dùng được cho máy demo, chỉ cần sao chép thành `.env` |
+| Không mở ghi chú; phải **học thuộc và giải thích** | Dữ liệu seed dễ nhớ và theo quy luật (khách `0900000001`…, tài xế `0910000001`…, cùng một mật khẩu; tài xế seed ở quanh một tọa độ mẫu dễ nhớ). Ít khái niệm kỹ thuật nhất có thể; thứ gì không phục vụ mục chấm hoặc không giải thích được thì bỏ |
 
 ## Cấu trúc thư mục mục tiêu
 
