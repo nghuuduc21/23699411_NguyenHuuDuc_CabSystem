@@ -1,6 +1,6 @@
 # Spec 09-10 — Đăng ký tài khoản khách, đăng nhập, JWT, đăng xuất
 
-> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi**: mã số nguyên (ADR-015), JWT HS256 với `JWT_SECRET` (ADR-016), số điện thoại / email lưu rõ, bỏ chỉ mục mù và `AUTH_DATA_KEY` (ADR-012 sửa), seed theo 03 mục 14, đăng nhập bằng field `phone` hoặc `email`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3 (2026-10-03):** bỏ tiền tố `/api/v1`; response đăng nhập dùng field `token`; định danh sai định dạng → `INVALID_PHONE` / `INVALID_EMAIL`; Gateway đọc body là JSON bất kể `Content-Type`; chuỗi mục 27 theo 04 mục 5.3.
+> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi**: mã số nguyên (ADR-015), JWT HS256 với `JWT_SECRET` (ADR-016), số điện thoại / email lưu rõ, bỏ chỉ mục mù và `AUTH_DATA_KEY` (ADR-012 sửa), seed theo 03 mục 14, đăng nhập bằng field `phone` hoặc `email`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3 (2026-10-03):** bỏ tiền tố `/api/v1`; response đăng nhập dùng field `token`; định danh sai định dạng → `INVALID_PHONE` / `INVALID_EMAIL`; Gateway đọc body là JSON bất kể `Content-Type`; chuỗi mục 27 theo 04 mục 5.3. **Đồng bộ với 04 lần 4 (ADR-018):** A04 = `POST /api/v1/accounts`, A05 = `POST /api/v1/auth/login`, A06 = `POST /api/v1/auth/logout` (hai ngoại lệ có chủ đích); chuỗi mục 9, 10 theo 04 mục 5.1 (mục 10 đăng nhập ba role, tạo ba tab token).
 > Mục chấm **9, 10, 25, 27**; bổ trợ **24** (mật khẩu băm). FR26, FR42.
 > Đầu vào: `CLAUDE.md`; `srs.md` (FR26, FR42, UC01, UC02, UC33, AC27, RTM26, RTM27); `docs/design/01` quy tắc A1–A5, A8; `docs/design/02` G1, G10; `docs/design/03` mục 2, 3.1, 11.4, 12, 13, 14; `docs/design/04` A04–A06, mục 1, 1.1, 1.7, 3; ADR-010, ADR-012, ADR-013, ADR-015, ADR-016.
 > Phụ thuộc: **spec 00**. Ngoài phạm vi: rate limit (mục 29), OTP và đăng ký tài xế (mục 21), toàn bộ ma trận role (mục 28 — spec này chỉ dựng cơ chế).
@@ -73,8 +73,8 @@ Lấy token → kiểm tra chữ ký HS256 bằng `JWT_SECRET` và hạn → ki�
 | 3 | Kiểm tra chữ ký: **chỉ `HS256`** (`algorithms: ['HS256']`), khóa `JWT_SECRET` | Sai chữ ký / bị sửa / sai định dạng / thuật toán khác → 401 `TOKEN_INVALID`. Đúng chữ ký nhưng hết hạn → 401 `TOKEN_EXPIRED` |
 | 4 | Claim: `sub` là chuỗi số nguyên dương; `role` ∈ {`customer`, `driver`, `admin`}; có `jti` | Sai → 401 `TOKEN_INVALID` |
 | 5 | Redis `EXISTS revoked:{jti}` | Có → 401 `TOKEN_REVOKED`. Redis dừng → **cho qua**, log `warn` [ĐC] |
-| 6 | So `role` với bảng route (một bảng khai báo trong Gateway, ví dụ `src/routes.js`) | 403 `FORBIDDEN` |
-| 7 | Đọc body là JSON **bất kể `Content-Type`** (Postman chọn "Text" hay "JSON" đều chạy — 04 mục 1); body rỗng = `{}` | Không phân tích được thành JSON → 400 `INVALID_JSON` |
+| 6 | So `role` với bảng route (một bảng khai báo trong Gateway, ví dụ `src/routes.js`). Route có biến thể (04 mục 1.10, spec sau): so role của đường dẫn ở bước này, role của biến thể sau bước 8 | 403 `FORBIDDEN` |
+| 7 | Đọc body là JSON **bất kể `Content-Type`** (Postman chọn "Text" hay "JSON" đều chạy — 04 mục 1); body rỗng = `{}`; request `GET` bỏ qua body | Không phân tích được thành JSON → 400 `INVALID_JSON` |
 | 8 | Kiểm tra hình thức theo route | 400 |
 | 9 | Gọi gRPC (deadline 3 000 ms), đổi lỗi theo spec 00 mục 4.1 | 400 / 401 / 403 / 404 / 409 / 503 |
 
@@ -82,10 +82,11 @@ Metadata Gateway gửi cho service [ĐC 04 mục 1.7]: `x-request-id` (luôn); `
 
 Quy tắc chung cho body (mọi route) [BA]: body phải là object JSON; field không có trong danh sách của route → 400 `INVALID_INPUT` (chặn client tự gửi `role`, `account_id`).
 
-### 4.2 A04 `POST /auth/register`
+### 4.2 A04 `POST /api/v1/accounts`
 
 | | |
 |---|---|
+| Vì sao đường dẫn này | Đăng ký = tạo một tài khoản → `POST` vào tập `accounts` (không dùng động từ `register`). Chỉ tạo `customer`; tài xế dùng `/api/v1/driver-accounts` (spec 21) |
 | Token / role | Không / — |
 | Service — rpc | `auth-service` — `RegisterCustomer` |
 | Request | `{ "phone": "0901234567", "password": "12345678" }` — thêm `"email"` nếu muốn. Cùng body với A05 nên mục 9 chỉ sửa URL |
@@ -108,10 +109,11 @@ Quy tắc chung cho body (mọi route) [BA]: body phải là object JSON; field 
 
 "Chưa đăng nhập", "sai quyền", "không tìm thấy" không áp dụng: route công khai, tạo mới.
 
-### 4.3 A05 `POST /auth/login`
+### 4.3 A05 `POST /api/v1/auth/login`
 
 | | |
 |---|---|
+| Vì sao đường dẫn này | Ngoại lệ có chủ đích (04 mục 1.9): quy ước phổ biến; đăng nhập không tạo bản ghi nào (JWT không lưu phiên) |
 | Token / role | Không / — |
 | Service — rpc | `auth-service` — `Login` |
 | Request | `{ "phone": "0900000001", "password": "12345678" }` hoặc `{ "email": "…", "password": "…" }` — **đúng một** trong `phone`, `email` [BA DN1, 04 mục 1.8] |
@@ -144,10 +146,11 @@ JWT [ĐC ADR-016]:
 | Không chứa | Số điện thoại, email, họ tên (payload chỉ là base64, ai cũng đọc được) |
 | Ký | `JWT_SECRET`, chỉ auth-service và gateway có |
 
-### 4.4 A06 `POST /auth/logout`
+### 4.4 A06 `POST /api/v1/auth/logout`
 
 | | |
 |---|---|
+| Vì sao đường dẫn này | Ngoại lệ có chủ đích như A05; Gateway tự xử lý, không có tài nguyên ở service nào |
 | Token / role | Có / cả ba role |
 | Service | **Không** — Gateway + Redis [ĐC] |
 | Request | Không body |
@@ -246,20 +249,22 @@ Tiền điều kiện: spec 00 đạt; seed đã chạy. Mỗi mục chấm ≤ 
 | AC-DN-12 | 25 | Seed KH1 | A05 `{ "phone": "0900000001", "password": "' OR '1'='1" }` | 401 `INVALID_CREDENTIALS` |
 | AC-DN-13 | 25 | — | A05 `{ "phone": "' OR 1=1 --", "password": "x" }` | 400 `INVALID_PHONE`; sau đó AC-DN-07 vẫn 200 (bảng còn nguyên) |
 | AC-DN-14 | 25 | Đọc code `auth-service` | Tìm mọi câu SQL | Mọi giá trị đi qua `$n`; không ghép chuỗi |
-| AC-DN-15 | 27 | Token KH1 hợp lệ | A38 `GET /customers/me` với token đã **sửa một ký tự ở giữa** (không phải ký tự cuối) | 401 `TOKEN_INVALID` |
+| AC-DN-15 | 27 | Token KH1 hợp lệ | A38 `GET /api/v1/customers/me` với token đã **sửa một ký tự ở giữa** (không phải ký tự cuối) | 401 `TOKEN_INVALID` |
 | AC-DN-16 | 27 | — | A38 không header `Authorization` | 401 `TOKEN_MISSING` |
 | AC-DN-17 | 27 | Token KH1 hợp lệ | A06 → A38 cùng token | 200 `LOGGED_OUT`; 401 `TOKEN_REVOKED` (FR42) |
 | AC-DN-18 | 27 (503) | `docker compose stop redis` | A06 với token hợp lệ | 503 `SERVICE_UNAVAILABLE`; log Gateway có cảnh báo Redis |
 | AC-DN-19 | 24 | Seed | `docker exec auth-db psql -U cab -d auth -c "table accounts"` | `password_hash` bắt đầu `scrypt$`, không thấy `12345678`; `phone` hiện rõ (đúng thiết kế, nói được lý do) |
 
-Chuỗi gõ tay khi thi (khớp 04 mục 5, rút còn ≤ 3 request):
+| AC-DN-20 | 404 | — | `POST /auth/login` (thiếu `/api/v1`) | 404 `ROUTE_NOT_FOUND` |
+
+Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab, 30 giây gồm cả giải thích; `(…)` = tùy chọn):
 
 | Mục | Request | Kết quả |
 |---|---|---|
-| 9 | A04 số mới → A05 số đó → A04 lại số đó | 201; 200 token; 409 |
-| 10 | A05 KH1 đúng → A05 KH1 sai mật khẩu → A05 KH9 | 200; 401; 403 |
-| 25 | A05 mật khẩu `' OR '1'='1` → A05 phone `' OR 1=1 --` → A09 `/customers/1 OR 1=1` (spec 11) | 401 `INVALID_CREDENTIALS`; 400 `INVALID_PHONE`; 400 `INVALID_ID` |
-| 27 | A38 `/customers/me` với token KH1 sửa một ký tự ở giữa → sửa tab: No Auth | 401 `TOKEN_INVALID`; 401 `TOKEN_MISSING`. Phụ: A06 token đúng → A38 lại token đó → 200 `LOGGED_OUT`; 401 `TOKEN_REVOKED` |
+| 9 | `POST /api/v1/accounts` số mới → sửa tab `accounts` → `auth/login` → (sửa lại `accounts`) | 201; 200 token; (409) |
+| 10 | Tab mục 9 sửa số KH1 → nhân bản tab số TX1 → nhân bản tab số AD1 → (tab KH1 sai mật khẩu) | 200 `customer`; 200 `driver`; 200 `admin`; (401). KH9 → 403 để test-agent kiểm (AC-DN-10) |
+| 25 | Tab KH1 mật khẩu `' OR '1'='1` → tab GET `/api/v1/customers/1 OR 1=1` (spec 11) → (tab KH1 phone `' OR 1=1 --`) | 401 `INVALID_CREDENTIALS`; 400 `INVALID_ID`; (400 `INVALID_PHONE`) |
+| 27 | Tab GET `/api/v1/customers/me` với token KH1 sửa một ký tự ở giữa → sửa tab: No Auth | 401 `TOKEN_INVALID`; 401 `TOKEN_MISSING`. Phụ: A06 token đúng → A38 lại token đó → 200 `LOGGED_OUT`; 401 `TOKEN_REVOKED` |
 
 ### 8.1 Có thể làm sau (vượt phiếu chấm)
 

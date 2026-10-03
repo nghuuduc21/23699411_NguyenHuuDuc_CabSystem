@@ -1,6 +1,6 @@
 # Spec 00 — Hạ tầng: cấu trúc mã nguồn, Compose, Kafka, Gateway health
 
-> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3:** không tiền tố đường dẫn, Gateway đọc body JSON bất kể `Content-Type`, lệnh `psql` dạng `table <bảng>`, tạo `.env` bằng `cp`.
+> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3:** Gateway đọc body JSON bất kể `Content-Type`, lệnh `psql` dạng `table <bảng>`, tạo `.env` bằng `cp`. **Đồng bộ với 04 lần 4 (ADR-018):** route nghiệp vụ dưới `/api/v1/`; ba endpoint health ở ngoài tiền tố; `GET` bỏ qua body; đóng H-Q4 (giảng viên cho phép khóa mẫu trong `.env.example`).
 > Mục chấm **1, 2, 5, 6, 7, 8**.
 > Đầu vào: `CLAUDE.md` (Quy tắc kiến trúc, Quyết định kỹ thuật, Ràng buộc khi chấm, Ràng buộc khi thi, Cấu trúc thư mục, Quy ước code); `docs/design/02` mục 2, 6, 7; `docs/design/03` mục 1.1, 1.3, 11.3, 12, **13**, **14**; `docs/design/04` mục 1, 2.1; ADR-010, ADR-014, ADR-015, ADR-016, ADR-017.
 > Phạm vi: khung **chạy được, chưa có nghiệp vụ**. Mỗi service: khởi động → nối database của mình → chạy migration → chạy seed (nếu bật) → trả lời health gRPC. Gateway: ba endpoint health và bảng đổi lỗi gRPC → HTTP dùng chung cho các spec sau.
@@ -239,9 +239,10 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 | Điểm | Quy định |
 |---|---|
 | Header mọi response | `X-Content-Type-Options: nosniff`; `Content-Security-Policy: default-src 'none'`; `Cache-Control: no-store`; `X-Request-Id` (Gateway sinh, chuyển cho service qua metadata `x-request-id`) |
-| Đường dẫn | **Không có tiền tố** phiên bản: `http://localhost:3000/<route>` |
-| Body | Đọc là JSON **bất kể `Content-Type`** (Postman chọn "Text" vẫn chạy); body rỗng = `{}`; không phân tích được → 400 `INVALID_JSON` |
-| Route không tồn tại | 404 `{ "error": "ROUTE_NOT_FOUND" }` |
+| Đường dẫn | Route nghiệp vụ: **`/api/v1/{resource}/{id}?{query}`** (04 mục 1.9, ADR-018). Ngoài tiền tố chỉ có A01–A03 |
+| Bảng route | Một bảng khai báo trong Gateway (ví dụ `src/routes.js`): method, đường dẫn, role, rpc; route có biến thể thêm cột "chọn theo" (04 mục 1.10). Spec này chỉ đăng ký A01–A03 |
+| Body | Đọc là JSON **bất kể `Content-Type`** (Postman chọn "Text" vẫn chạy); body rỗng = `{}`; không phân tích được → 400 `INVALID_JSON`. Request `GET`: **bỏ qua body** |
+| Route không tồn tại | 404 `{ "error": "ROUTE_NOT_FOUND" }` (gồm đường dẫn nghiệp vụ thiếu `/api/v1`) |
 | Lỗi không lường trước trong Gateway | 503 `{ "error": "SERVICE_UNAVAILABLE" }`, không stack trace |
 | Log | Một dòng mỗi request: method, path, status, thời gian, `request_id`. **Không** ghi header `Authorization`, body |
 
@@ -267,7 +268,7 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 | 200 | Cả 8 `SERVING`: `{ "status": "UP", "services": { "auth-service": "SERVING", …, "rating-service": "SERVING" } }` |
 | 503 | Có service khác `SERVING`: `{ "status": "DEGRADED", "services": { …, "rating-service": "UNREACHABLE" } }` |
 
-Ba endpoint health (như mọi route, không có tiền tố phiên bản — 04 mục 1) không token, không rate limit; body không theo dạng `{ "error": … }` vì là báo cáo trạng thái.
+Ba endpoint health **nằm ngoài `/api/v1`** (04 mục 1.9: không phải tài nguyên nghiệp vụ; healthcheck Docker gọi `/health` cố định), không token, không rate limit; body không theo dạng `{ "error": … }` vì là báo cáo trạng thái.
 
 ### 4.1 Bảng đổi lỗi gRPC → HTTP (dùng cho mọi spec sau) [ĐC]
 
@@ -344,7 +345,7 @@ Tiền điều kiện chung: `.env` sao chép từ `.env.example`; `docker compo
 | AC-HT-05 | 6 | Mọi thứ healthy | `GET /health`; `GET /ready`; `GET /health/services` | 200 `UP`; 200 `READY`; 200 `UP` với 8 service `SERVING` |
 | AC-HT-06 | 6 (503) | `docker compose stop rating-service` | `GET /health/services` | 503 `DEGRADED`, `rating-service = "UNREACHABLE"`, 7 service còn lại `SERVING` |
 | AC-HT-07 | 6 (503) | `docker compose stop redis` | `GET /ready` rồi `GET /health` | `/ready` 503, `redis = "DOWN"`; `/health` vẫn 200 |
-| AC-HT-08 | 404 | — | `GET /khong-co` | 404 `{ "error": "ROUTE_NOT_FOUND" }` |
+| AC-HT-08 | 404 | — | `GET /api/v1/khong-co`; `GET /api/health` | 404 `{ "error": "ROUTE_NOT_FOUND" }` cả hai (health chỉ có ở `/health`) |
 | AC-HT-09 | 7 | Compose đã lên | Mở `http://localhost:8080` → cluster `cab` → Topics | Đủ 7 topic mục 3.3, không topic nghiệp vụ nào khác (topic nội bộ `__…` được phép) |
 | AC-HT-10 | 8 | Compose đã lên | `docker compose ps -a` | Chỉ `gateway` có `0.0.0.0:3000->3000` và `kafka-ui` có `0.0.0.0:8080->8080`; container khác không có `->` |
 | AC-HT-11 | 8 (lỗi) | Compose đã lên | Postman gọi thẳng `http://localhost:50051`, `http://localhost:5432` | Lỗi kết nối (không có response) |
@@ -389,4 +390,4 @@ Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư
 | H-Q1 | Máy chấm có thể có PostgreSQL cài sẵn trên 5432, làm AC-HT-11 "kết nối được" nhầm | (a) Chứng minh bằng `docker compose ps -a` (không có `->`); (b) không làm gì | (a) | SV |
 | H-Q2 | `mem_limit` 256m cho PostgreSQL và tổng RAM (~6 GB) có vừa máy demo không | Đo sau khi chạy | Test-agent đo bằng `docker stats` | Test |
 | ~~H-Q3~~ | Đã đóng: dùng `cp .env.example .env` (mục 3.7, 06) | — | — | — |
-| H-Q4 | Khóa mẫu trong `.env.example` nằm trên Git: giảng viên có coi là vi phạm mục 2 không | (a) Giữ, ghi rõ "chỉ cho máy demo"; (b) để trống, sinh viên tự điền khi thi | (a) — đã chốt ở 03 mục 11.4; cần nói được đánh đổi | GV |
+| ~~H-Q4~~ | Đã đóng 2026-10-03: giảng viên cho phép khóa mẫu trong `.env.example`, miễn `.env` thật không đưa lên công khai | — | — | — |

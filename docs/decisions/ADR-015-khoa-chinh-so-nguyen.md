@@ -13,7 +13,7 @@ Luật thi (2026-10-03): Postman **không lưu sẵn gì**, mọi request gõ ta
 | # | Lựa chọn | Ưu | Nhược |
 |---|---|---|---|
 | A | UUID (`gen_random_uuid()`) | Không đoán được; service tự sinh mã trước khi ghi | 36 ký tự, không gõ tay được, không học thuộc được mã seed |
-| B | **`bigint GENERATED ALWAYS AS IDENTITY`** | `/customers/1` gõ trong một giây; mã seed học thuộc được; giống tham chiếu | Mã dễ đoán; mã chỉ có sau khi database cấp |
+| B | **`bigint GENERATED ALWAYS AS IDENTITY`** | `/api/v1/customers/1` — phần mã gõ trong một giây; mã seed học thuộc được; giống tham chiếu | Mã dễ đoán; mã chỉ có sau khi database cấp |
 | C | `serial` / `integer` | Như B | `serial` là cách cũ, cho ghi đè ID nhầm; `integer` không khác biệt gì đáng kể nhưng `CLAUDE.md` đã chốt `bigint` |
 
 ## Quyết định
@@ -38,14 +38,14 @@ Chọn **B** cho mọi bảng có mã tự cấp.
 
 ## Đánh đổi
 
-- **Mã dễ đoán**: đổi `/customers/1` thành `/customers/2` là thử được dữ liệu người khác. Vì vậy **mọi API theo mã kiểm tra quyền sở hữu** và trả 403 (`docs/design/04` mục 4) — điều này phải làm dù dùng UUID.
+- **Mã dễ đoán**: đổi `/api/v1/customers/1` thành `/api/v1/customers/2` là thử được dữ liệu người khác. Vì vậy **mọi API theo mã kiểm tra quyền sở hữu** và trả 403 (`docs/design/04` mục 4) — điều này phải làm dù dùng UUID.
 - Mã lộ quy mô (biết đã có khoảng bao nhiêu booking). Chấp nhận cho môi trường học tập.
 - Service không tự sinh mã trước khi ghi như UUID: Booking phải xin số từ dãy trước khi gọi Payment; số bị bỏ khi S4 lỗi (dãy có lỗ, vô hại).
 - Mã của hai service có thể trùng giá trị (booking 7 và trip 7). Không gây lỗi vì không bảng nào trộn mã của hai service; seed còn cố ý cho trùng để dễ nhớ.
 
 ## Câu trả lời mẫu khi vấn đáp
 
-"Em dùng khóa chính số nguyên tự tăng, kiểu bigint identity, vì khi thi phải gõ tay mọi request: gõ `/customers/1` thì nhanh, UUID 36 ký tự thì không. Mã do API tạo bắt đầu từ 1000, còn dữ liệu mẫu dùng số nhỏ nên không bao giờ trùng. Nhược điểm là mã dễ đoán, nên mọi API theo mã đều kiểm tra người gọi có phải chủ dữ liệu không, sai thì trả 403."
+"Em dùng khóa chính số nguyên tự tăng, kiểu bigint identity, vì khi thi phải gõ tay mọi request: gõ `/api/v1/customers/1` thì nhanh, UUID 36 ký tự thì không. Mã do API tạo bắt đầu từ 1000, còn dữ liệu mẫu dùng số nhỏ nên không bao giờ trùng. Nhược điểm là mã dễ đoán, nên mọi API theo mã đều kiểm tra người gọi có phải chủ dữ liệu không, sai thì trả 403."
 
 ## Điều kiện xem lại
 

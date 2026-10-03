@@ -25,7 +25,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Ảnh kiến trúc và ảnh bounded context / database (vẽ từ `docs/design/02` và `03`; sửa thiết kế thì sửa file `.html` cùng thư mục rồi xuất lại ảnh) | `docs/architecture/kien-truc.png`, `bounded-context-db.png` | Có |
 | Kịch bản thi: request gõ tay, lệnh, câu trả lời vấn đáp cho từng mục chấm; những thứ phải nhớ | `docs/design/06-kich-ban-thi.md` | Có |
 | Đặc tả từng phần việc | `docs/specs/` | `00-ha-tang`, `09-10-dang-ky-dang-nhap`, `11-ho-so-khach-hang` |
-| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-017 |
+| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-018 |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
 
 ## Danh sách service (giảng viên chốt, không tự ý thêm bớt)

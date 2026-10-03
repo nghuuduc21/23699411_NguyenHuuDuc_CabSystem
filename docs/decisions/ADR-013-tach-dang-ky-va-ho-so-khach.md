@@ -31,12 +31,12 @@ Chọn **D**.
 
 | Điểm | Thiết kế |
 |---|---|
-| Đăng ký (A04) | Số điện thoại, email (tùy chọn), mật khẩu → tạo Account role `customer`. Không có họ tên. Không gọi service nào (A8) |
-| Tạo hồ sơ (A37 `POST /customers/me`) | Sau khi đăng nhập. Họ tên bắt buộc, ngày sinh tùy chọn. `customer_id` = `x-account-id` do Gateway chuyển từ token; client không gửi mã. Đã có → 409 (C1, BRULE18) |
-| Xem / sửa (A38, A09, A10) | Chưa có hồ sơ → 404 (C5). Sửa chỉ qua `/customers/me` |
+| Đăng ký (A04 `POST /api/v1/accounts` — đường dẫn theo ADR-018) | Số điện thoại, email (tùy chọn), mật khẩu → tạo Account role `customer`. Không có họ tên. Không gọi service nào (A8) |
+| Tạo hồ sơ (A37 `POST /api/v1/customers`) | Sau khi đăng nhập. Họ tên bắt buộc, ngày sinh tùy chọn. `customer_id` = `x-account-id` do Gateway chuyển từ token; client không gửi mã. Đã có → 409 (C1, BRULE18) |
+| Xem / sửa (A38, A09, A10) | Chưa có hồ sơ → 404 (C5). Sửa chỉ qua `PATCH /api/v1/customers/me` |
 | Vì sao Customer tin `account_id` mà không hỏi Auth | Gateway đã kiểm tra chữ ký JWT do Auth cấp; chỉ Gateway vào được mạng nội bộ (mục chấm 8). Token là bằng chứng tài khoản tồn tại và có role `customer` |
 | Số điện thoại trong hồ sơ | **Bỏ**: số điện thoại là định danh đăng nhập, chỉ nằm ở Auth (file 03 mục 4.1, Q58) |
-| Mục chấm 11 | Sửa 2026-10-03 theo luật thi (gõ tay, tối đa khoảng 3 request): đăng nhập KH1 seed (`0900000001`, đã có hồ sơ) → `GET /customers/1` (200, mã gõ tay được — ADR-015). Đường phụ khi được hỏi: `GET /customers/2` bằng token KH1 → 403; KH3 (`0900000003`, chưa có hồ sơ) → xem 404, tạo 201. Chuỗi chốt ở file 04 / kịch bản thi |
+| Mục chấm 11 | Sửa 2026-10-03 theo luật thi (gõ tay, tối đa khoảng 3 request): đăng nhập KH1 seed (`0900000001`, đã có hồ sơ) → `GET /api/v1/customers/1` (200, mã gõ tay được — ADR-015). Đường phụ khi được hỏi: `GET /api/v1/customers/2` bằng token KH1 → 403; KH3 (`0900000003`, chưa có hồ sơ) → xem 404, tạo 201. Chuỗi chốt ở file 04 / kịch bản thi |
 | Mã đường giao tiếp | Bỏ S1, **giữ nguyên S2–S7**, không đánh số lại |
 
 ## Vì sao

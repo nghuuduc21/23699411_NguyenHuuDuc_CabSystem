@@ -1,5 +1,7 @@
 # Buổi 1 — Bản đồ phiếu chấm & tài liệu
 
+> **Lưu ý (2026-10-03):** đường dẫn API trong file này là bản cũ. API chính thức theo chuẩn `/api/v1/{resource}/{id}?{query}` nằm ở `docs/design/04-api.md`; cách gõ khi thi nằm ở `docs/design/06-kich-ban-thi.md`.
+
 > Tuần 1 · Giai đoạn 0. Cập nhật: 2026-09-30.
 > Cột **Trạng thái** phản ánh code tại thời điểm viết: ✅ xong · 🟡 một phần · ❌ chưa có.
 >

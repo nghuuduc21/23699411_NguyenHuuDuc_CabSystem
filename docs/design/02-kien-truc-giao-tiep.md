@@ -7,6 +7,7 @@
 > **Đã chốt (`CLAUDE.md`):** 8 service; Kafka + Kafka UI; Redis ở Gateway, không Nginx; **Auth và Customer không gọi nhau** (2026-10-03); Booking → Trip `CreateTrip` đồng bộ; Booking → Payment đồng bộ để tính cước và tạo thanh toán; kết quả thanh toán và hoàn tiền đi bằng event; khóa chính số nguyên (ADR-015); JWT HS256 (ADR-016); gửi event ngay sau commit, không outbox (ADR-017); `FAILED_PRECONDITION` → 409; ba hệ thống ngoài giả lập đơn giản nhất sau adapter.
 > **Sửa 2026-10-03 lần 2 (luật thi: gõ tay mọi request, không mở tài liệu):** đóng Q19 (HS256 — ADR-016) và Q20 (bỏ outbox — ADR-017, ADR-005 bị thay thế); đóng GĐ-6, GĐ-8. **Không đổi đường giao tiếp nào** (S2–S7, K1–K7 giữ nguyên).
 > **Sửa 2026-10-03** theo góp ý giảng viên: **bỏ đường S1** (`auth-service` → `customer-service` `CreateProfile`) — ADR-013 thay ADR-004. **Giữ nguyên mã S2–S7**, không đánh số lại, để không phải đổi mã ở file 03, 04, 05 và ADR; mã S1 bỏ trống, không dùng lại. Hệ thống ngoài giả lập đơn giản: callback xác thực bằng khóa bí mật trong header, bỏ chữ ký HMAC — ADR-014. Đóng Q43, Q50. Cùng ngày đóng Q56 (Booking không gọi Customer — mục 9), Q57 (`simulate_result: "MANUAL"` — mục 4.5, 8.2), Q58.
+> **Sửa 2026-10-03 lần 3 (ADR-018):** chỉ đổi **nhãn đường dẫn REST** trong mục 7 và sơ đồ trình tự mục 8 theo file 04 lần 4 (`/api/v1/…`, đổi trạng thái bằng `PATCH` + `status`). **Không đổi đường giao tiếp, rpc hay topic nào.**
 > **Chưa chốt:** chỗ ghi **[GĐ-n]** là *giả định tạm*, liệt kê ở mục 11.
 > **Đồng bộ 2026-10-02 lần 4** (cùng lúc viết file 03, 04): Booking tính quãng đường, Payment tính cước (đóng Q38, GĐ-13); hạn thanh toán BRULE17 → K6 có thêm `CANCELED`; Redis dừng thì cho qua (đóng Q39); đăng xuất ở Gateway theo FR42 (đóng Q40); tìm tài xế bằng Haversine (ADR-011). Chỉ sửa các dòng bị ảnh hưởng.
 
@@ -350,8 +351,8 @@ Các bước demo:
 | 4 | Kafka UI → Consumers | Group `notification-service` đã đọc hai message đó (lag = 0) |
 | 5 | Postman: tài xế nhận chuyến (mục 16) | Response có `trip_id`; `trip.status-changed` có message `status = ACCEPTED` |
 | 6 | Postman: cập nhật trạng thái đến hoàn thành (mục 17) | `trip.status-changed` có thêm message; khi `COMPLETED`, group `payment-service` và `driver-service` đã đọc; `payment.status-changed` có message `COMPLETED` (tiền mặt) |
-| 7 | Postman (mục 19, theo 04 mục 5.2): A31 `POST /payments/7/pay` cho booking seed B7 (điện tử, `PENDING_PAYMENT`) với `{"simulate_result":"MANUAL"}` — adapter **không** tự gọi callback; rồi A32 `POST /payments/callback` với `{"txn_id":"SIM-7-1"}` | Sau A31: Payment `PENDING`, **chưa** có message mới ở `payment.status-changed`, `booking.offer-created`. Sau A32: `payment.status-changed` có `COMPLETED`; group `booking-service` đã đọc; `booking.offer-created` có message mới (lời mời tới TX4). Gửi lại A32 (mục 30) **không** tạo message mới |
-| 8 | Postman (mục 18): khách hủy chuyến seed 5 (A29) | `trip.status-changed` có message `CANCELED`; group `payment-service`, `driver-service`, `notification-service` đã đọc; `payment.status-changed` có `REFUNDED`. Phụ: hủy booking điện tử chưa có tài xế (A22) → `booking.canceled` có message |
+| 7 | Postman (mục 19, theo 04 mục 5.2): A31 `POST /api/v1/payments/7/transactions` cho booking seed B7 (điện tử, `PENDING_PAYMENT`) với `{"simulate_result":"MANUAL"}` — adapter **không** tự gọi callback; rồi A32 `POST /api/v1/payment-callbacks` với `{"txn_id":"SIM-7-1"}` | Sau A31: Payment `PENDING`, **chưa** có message mới ở `payment.status-changed`, `booking.offer-created`. Sau A32: `payment.status-changed` có `COMPLETED`; group `booking-service` đã đọc; `booking.offer-created` có message mới (lời mời tới TX4). Gửi lại A32 (mục 30) **không** tạo message mới |
+| 8 | Postman (mục 18): khách hủy chuyến seed 5 (A29 `PATCH /api/v1/trips/5` `{"status":"CANCELED","reason":"ban viec"}`) | `trip.status-changed` có message `CANCELED`; group `payment-service`, `driver-service`, `notification-service` đã đọc; `payment.status-changed` có `REFUNDED`. Phụ: hủy booking điện tử chưa có tài xế (A22) → `booking.canceled` có message |
 
 Yêu cầu với Compose (dev-agent hiện thực): `kafka`, `kafka-init`, `redis` và các database không có `ports`; `kafka-ui` có `ports` 8080; `gateway` có `ports` 3000; không container nào khác có `ports`. Kafka UI không có đăng nhập, chỉ dùng cho môi trường học tập (Q22).
 
@@ -369,7 +370,7 @@ sequenceDiagram
   participant CU as customer-service
 
   Note over C,A: Mục 9 — đăng ký chỉ tạo tài khoản
-  C->>GW: A04 POST /auth/register (SĐT, email, mật khẩu)
+  C->>GW: A04 POST /api/v1/accounts (SĐT, email, mật khẩu)
   GW->>A: gRPC RegisterCustomer
   A->>A: kiểm tra trùng, băm mật khẩu, lưu Account role customer
   alt số điện thoại đã có
@@ -379,18 +380,18 @@ sequenceDiagram
     A-->>GW: account_id
     GW-->>C: 201 (chưa có hồ sơ)
   end
-  C->>GW: A05 POST /auth/login
+  C->>GW: A05 POST /api/v1/auth/login
   GW->>A: gRPC Login
   A-->>GW: JWT (sub = account_id, role = customer)
   GW-->>C: 200
 
   Note over C,CU: Mục 11 — khách mở màn hình hồ sơ
-  C->>GW: A09 GET /customers/{account_id} (kèm JWT)
+  C->>GW: A09 GET /api/v1/customers/{account_id} (kèm JWT)
   GW->>GW: kiểm tra JWT, token chưa thu hồi, role
   GW->>CU: gRPC GetCustomer (metadata x-account-id)
   CU-->>GW: NOT_FOUND
   GW-->>C: 404 CUSTOMER_NOT_FOUND
-  C->>GW: A37 POST /customers/me (họ tên, ngày sinh)
+  C->>GW: A37 POST /api/v1/customers (họ tên, ngày sinh)
   GW->>CU: gRPC CreateCustomer (metadata x-account-id)
   CU->>CU: customer_id = x-account-id, mã hóa, lưu
   alt đã có hồ sơ
@@ -400,7 +401,7 @@ sequenceDiagram
     CU-->>GW: hồ sơ
     GW-->>C: 201
   end
-  C->>GW: A09 GET /customers/{account_id}
+  C->>GW: A09 GET /api/v1/customers/{account_id}
   GW->>CU: gRPC GetCustomer
   CU-->>GW: hồ sơ
   GW-->>C: 200
@@ -418,7 +419,7 @@ sequenceDiagram
   participant K as kafka
   participant N as notification-service
 
-  KH->>GW: REST đặt xe (điện tử)
+  KH->>GW: A19 POST /api/v1/bookings (pay ONLINE)
   GW->>B: gRPC CreateBooking
   B->>B: kiểm tra dữ liệu, tính quãng đường, xin booking_id từ dãy số (file 03 mục 6.1)
   B->>P: S4 gRPC CreatePayment
@@ -435,7 +436,7 @@ sequenceDiagram
     K-)N: báo khách đã nhận yêu cầu
   end
   Note over KH,P: Chưa tìm tài xế (BRULE13)
-  KH->>GW: A31 thực hiện thanh toán (Idempotency-Key)
+  KH->>GW: A31 POST /api/v1/payments/{id}/transactions (Idempotency-Key)
   GW->>P: gRPC PayPayment
   P->>P: ghi khóa chống lặp, tạo giao dịch CHARGE PENDING (lần thử n)
   P->>P: adapter giả lập sinh provider_transaction_id
@@ -447,7 +448,7 @@ sequenceDiagram
     P->>P: không gọi callback; giao dịch PENDING, Payment PENDING
     P-->>GW: payment_status PENDING, provider_transaction_id
     GW-->>KH: 200
-    PP->>GW: A32 callback SUCCESS cho provider_transaction_id đó (header X-Callback-Secret)
+    PP->>GW: A32 POST /api/v1/payment-callbacks SUCCESS cho provider_transaction_id đó (header X-Callback-Secret)
     GW->>P: gRPC HandleProviderCallback
     P->>P: cùng hàm xử lý callback: giao dịch SUCCEEDED, Payment COMPLETED, lưu callback_response
     P-->>GW: 200 kết quả xử lý
@@ -494,7 +495,7 @@ sequenceDiagram
     K-)N: báo tài xế có lời mời
     Note over B: Tài xế từ chối hoặc hết hạn thì loại, hỏi người kế tiếp. Không event, không hoàn tiền
   end
-  TX->>GW: REST nhận Offer
+  TX->>GW: A24 PATCH /api/v1/offers/{id} status ACCEPTED
   GW->>B: gRPC AcceptOffer
   B->>B: khóa Booking, kiểm tra còn SEARCHING và Offer còn hạn
   alt Booking đã bị hủy hoặc Offer hết hạn
@@ -539,14 +540,14 @@ sequenceDiagram
   participant N as notification-service
 
   alt chưa có tài xế, khách hủy Booking
-    U->>GW: REST hủy booking (lý do)
+    U->>GW: A22 PATCH /api/v1/bookings/{id} status CANCELED, reason
     GW->>B: gRPC CancelBooking
     B->>B: Booking CANCELED, Offer đang chờ VOIDED
     B-->>GW: OK
     GW-->>U: 200
     B-)K: K4 booking.canceled
   else đã có tài xế, chưa đón khách, khách hoặc tài xế hủy Trip
-    U->>GW: REST hủy chuyến (lý do)
+    U->>GW: A29 PATCH /api/v1/trips/{id} status CANCELED, reason
     GW->>T: gRPC CancelTrip
     T->>T: kiểm tra ACCEPTED hoặc ARRIVED, Trip CANCELED, ghi lịch sử
     T-->>GW: OK
@@ -554,7 +555,7 @@ sequenceDiagram
     T-)K: K5 trip.status-changed (CANCELED, canceled_by)
     K-)DR: tài xế rảnh lại
   else đã đón khách
-    U->>GW: REST hủy chuyến
+    U->>GW: A29 PATCH /api/v1/trips/{id} status CANCELED
     GW->>T: gRPC CancelTrip
     T-->>GW: FAILED_PRECONDITION
     GW-->>U: 409
@@ -593,7 +594,7 @@ sequenceDiagram
   participant P as payment-service
   participant N as notification-service
 
-  TX->>GW: REST cập nhật "hoàn thành"
+  TX->>GW: A28 PATCH /api/v1/trips/{id} status COMPLETED
   GW->>T: gRPC UpdateTripStatus
   T->>T: kiểm tra đang IN_PROGRESS, lưu COMPLETED, ghi lịch sử
   T-->>GW: OK kèm số tiền phải thu (bản chụp)
@@ -622,7 +623,7 @@ sequenceDiagram
   participant R as rating-service
   participant T as trip-service
 
-  KH->>GW: REST đánh giá chuyến (điểm, nhận xét)
+  KH->>GW: A34 POST /api/v1/ratings (trip_id, điểm, nhận xét)
   GW->>R: gRPC CreateRating
   R->>T: S7 gRPC GetTripForRating
   alt chuyến hoàn thành và của khách này

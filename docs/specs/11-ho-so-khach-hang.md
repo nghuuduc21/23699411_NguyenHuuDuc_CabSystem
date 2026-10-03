@@ -1,6 +1,6 @@
 # Spec 11 — Hồ sơ khách hàng: tạo, xem, sửa, xem theo mã
 
-> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi**: mã số nguyên (`/customers/1`), khách xem mã khác mình → 403 ngay (ADR-015), mã hóa không AAD và không byte phiên bản (03 mục 11.4), seed KH1 / KH2 / KH3 / KH9 theo 03 mục 14, response ngắn, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3 (2026-10-03):** bỏ tiền tố `/api/v1`; field API là **`name`**, **`dob`** (cột database giữ `full_name_enc`, `date_of_birth_enc`); Gateway đọc body là JSON bất kể `Content-Type`; chuỗi mục 11 phụ theo 04 mục 5.2; đóng HS-Q3, HS-M1–M3.
+> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi**: mã số nguyên (`/api/v1/customers/1`), khách xem mã khác mình → 403 ngay (ADR-015), mã hóa không AAD và không byte phiên bản (03 mục 11.4), seed KH1 / KH2 / KH3 / KH9 theo 03 mục 14, response ngắn, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3 (2026-10-03):** field API là **`name`**, **`dob`** (cột database giữ `full_name_enc`, `date_of_birth_enc`); Gateway đọc body là JSON bất kể `Content-Type`; chuỗi mục 11 phụ theo 04 mục 5.2; đóng HS-Q3, HS-M1–M3. **Đồng bộ với 04 lần 4 (ADR-018):** mọi đường dẫn dưới `/api/v1/`; A37 = `POST /api/v1/customers` (không còn `POST …/me`); A10 = `PATCH /api/v1/customers/me` (đóng HS-Q4); chuỗi mục 11, 24, 25, 26 dùng lại tab GET (04 mục 5).
 > Mục chấm **11**, **24** (phần hồ sơ), **26**; bổ trợ **25**, **27**, **28**. FR27.
 > Đầu vào: `CLAUDE.md` (dòng "Đăng ký và hồ sơ khách hàng", "Hồ sơ khách hàng", "Khóa chính", "Mã hóa"); `srs.md` (FR27, BRULE12, BRULE18, UC03, UC19, AC28, AC29, RTM28); `docs/design/01` C1–C6; `docs/design/03` mục 4.1, 11.4, 13, 14; `docs/design/04` A09, A10, A37, A38, mục 1.6, 3, 4; ADR-012, ADR-013, ADR-015.
 > Phụ thuộc: **spec 00** và **spec 09-10** (token, cơ chế xác thực ở Gateway, seed tài khoản).
@@ -37,7 +37,7 @@
 
 ## 4. API REST tại Gateway
 
-Tất cả cần token; xác thực theo spec 09-10 mục 4.1. Route `/customers/me` được so khớp **trước** `/customers/{customer_id}`.
+Tất cả cần token; xác thực theo spec 09-10 mục 4.1. Route `/api/v1/customers/me` được so khớp **trước** `/api/v1/customers/{customer_id}`.
 
 ### 4.1 Kiểm tra field (A37, A10)
 
@@ -50,10 +50,11 @@ Kiểm tra `<` / `>` ở **cả hai lớp** (04 mục 1.6): Gateway chặn sớm
 
 Tên field ngắn ở lớp API (04 mục 1.8, luật thi gõ tay); tên đầy đủ chỉ còn ở cột database (`full_name_enc`, `date_of_birth_enc` — mục 7.1). Gateway đọc body là JSON bất kể `Content-Type` (spec 09-10 mục 4.1 bước 7).
 
-### 4.2 A37 `POST /customers/me` — tạo hồ sơ của tôi
+### 4.2 A37 `POST /api/v1/customers` — tạo hồ sơ của tôi
 
 | | |
 |---|---|
+| Vì sao đường dẫn này | Tạo = `POST` vào tập `customers` (04 mục 1.9). Không có mã trong đường dẫn hay body: `customer_id` = `account_id` trong token |
 | Token / role | Có / `customer` |
 | rpc | `CreateCustomer` |
 | Request | `{ "name": "Pham Duc" }` — thêm `"dob": "2001-03-10"` nếu muốn. Không nhận `customer_id` (field lạ → 400) |
@@ -69,10 +70,11 @@ Tên field ngắn ở lớp API (04 mục 1.8, luật thi gõ tay); tên đầy 
 | Đã có hồ sơ | 409 | `CUSTOMER_ALREADY_EXISTS` |
 | `customer-service` dừng | 503 | `SERVICE_UNAVAILABLE` |
 
-### 4.3 A38 `GET /customers/me` — xem hồ sơ của tôi
+### 4.3 A38 `GET /api/v1/customers/me` — xem hồ sơ của tôi
 
 | | |
 |---|---|
+| Vì sao đường dẫn này | `me` = mã của người trong token (04 mục 1.9 R6) |
 | Token / role | Có / `customer` |
 | rpc | `GetCustomer` với `customer_id = sub` (Gateway chỉ điền tham số — 04 mục 2.2) |
 | Response 200 | `{ "customer_id": 1, "name": "Nguyễn Văn An", "dob": "2000-01-01" }` |
@@ -84,7 +86,7 @@ Tên field ngắn ở lớp API (04 mục 1.8, luật thi gõ tay); tên đầy 
 | Chưa có hồ sơ | 404 | `CUSTOMER_NOT_FOUND` |
 | Service dừng | 503 | `SERVICE_UNAVAILABLE` |
 
-### 4.4 A09 `GET /customers/{customer_id}` — xem khách hàng theo mã (mục 11)
+### 4.4 A09 `GET /api/v1/customers/{customer_id}` — xem khách hàng theo mã (mục 11)
 
 | | |
 |---|---|
@@ -102,12 +104,13 @@ Tên field ngắn ở lớp API (04 mục 1.8, luật thi gõ tay); tên đầy 
 | Không có hồ sơ với mã này (khách xem mã của mình, hoặc admin) | 404 | `CUSTOMER_NOT_FOUND` | Service |
 | Service dừng | 503 | `SERVICE_UNAVAILABLE` | Gateway |
 
-Thứ tự ở service [BA HS1]: role `customer` và mã ≠ `x-account-id` → **403 ngay, không đọc database**; sau đó mới tìm hồ sơ → 404. Lý do: mã là số nhỏ, dễ đoán (đổi `/customers/1` thành `/customers/2`); nếu tìm trước rồi mới so chủ thì 404 / 403 lộ ra "mã này đã có hồ sơ hay chưa". Kiểm tra được ngay vì `customer_id` = `account_id`.
+Thứ tự ở service [BA HS1]: role `customer` và mã ≠ `x-account-id` → **403 ngay, không đọc database**; sau đó mới tìm hồ sơ → 404. Lý do: mã là số nhỏ, dễ đoán (đổi `/api/v1/customers/1` thành `/api/v1/customers/2`); nếu tìm trước rồi mới so chủ thì 404 / 403 lộ ra "mã này đã có hồ sơ hay chưa". Kiểm tra được ngay vì `customer_id` = `account_id`.
 
-### 4.5 A10 `PUT /customers/me` — sửa hồ sơ của tôi
+### 4.5 A10 `PATCH /api/v1/customers/me` — sửa hồ sơ của tôi
 
 | | |
 |---|---|
+| Vì sao đường dẫn này | `PATCH` vì sửa **một phần** (field vắng giữ nguyên) — đổi từ `PUT` ở 04 lần 4, đóng HS-Q4 |
 | Token / role | Có / `customer` |
 | rpc | `UpdateCustomer` |
 | Request | `name` và / hoặc `dob`, **ít nhất một**, ví dụ `{ "name": "An Nguyen" }`. Field vắng = giữ nguyên; `"dob": null` = xóa ngày sinh [BA]; `"name": null` → 400 |
@@ -199,32 +202,33 @@ Tiền điều kiện: spec 00, 09-10 đạt; seed đã chạy. Token lấy bằ
 
 | AC | Mục | Given | When | Then |
 |---|---|---|---|---|
-| AC-HS-01 | 11 | Token KH1 | A09 `/customers/1` | 200 `{ customer_id: 1, name: "Nguyễn Văn An", dob: "2000-01-01" }` |
-| AC-HS-02 | 11 (403) | Token KH1 | A09 `/customers/2` | 403 `NOT_OWNER` (C2, AC29) |
-| AC-HS-03 | 11 (404) | Token KH3 (chưa có hồ sơ) | A09 `/customers/3`; A38; A10 `{ "name": "X" }` | 404 `CUSTOMER_NOT_FOUND` cả ba (C5, AC28) |
-| AC-HS-04 | 11 | Sau AC-HS-03 | A37 `{ "name": "Pham Duc" }` → A09 `/customers/3` | 201 `customer_id = 3`, `dob = null`; 200 cùng nội dung |
+| AC-HS-01 | 11 | Token KH1 | A09 `/api/v1/customers/1` | 200 `{ customer_id: 1, name: "Nguyễn Văn An", dob: "2000-01-01" }` |
+| AC-HS-02 | 11 (403) | Token KH1 | A09 `/api/v1/customers/2` | 403 `NOT_OWNER` (C2, AC29) |
+| AC-HS-03 | 11 (404) | Token KH3 (chưa có hồ sơ) | A09 `/api/v1/customers/3`; A38; A10 `{ "name": "X" }` | 404 `CUSTOMER_NOT_FOUND` cả ba (C5, AC28) |
+| AC-HS-04 | 11 | Sau AC-HS-03 | A37 `{ "name": "Pham Duc" }` → A09 `/api/v1/customers/3` | 201 `customer_id = 3`, `dob = null`; 200 cùng nội dung |
 | AC-HS-05 | 11 (409) | Sau AC-HS-04 | A37 lần hai | 409 `CUSTOMER_ALREADY_EXISTS` (C1, BRULE18) |
-| AC-HS-06 | 11 | Token AD1 | A09 `/customers/1`; A09 `/customers/3000` | 200 hồ sơ KH1; 404 `CUSTOMER_NOT_FOUND` (UC19) |
-| AC-HS-07 | 11, 28 (403) | Token TX1; token AD1 | TX1: A09 `/customers/1`; AD1: A37 | 403 `FORBIDDEN` cả hai |
-| AC-HS-08 | 11 (401) | — | A09 `/customers/1` không token | 401 `TOKEN_MISSING` |
-| AC-HS-09 | 11 (400) | Token KH1 | A09 `/customers/abc` | 400 `INVALID_ID` |
+| AC-HS-06 | 11 | Token AD1 | A09 `/api/v1/customers/1`; A09 `/api/v1/customers/3000` | 200 hồ sơ KH1; 404 `CUSTOMER_NOT_FOUND` (UC19) |
+| AC-HS-07 | 11, 28 (403) | Token TX1; token AD1 | TX1: A09 `/api/v1/customers/1`; AD1: A37 | 403 `FORBIDDEN` cả hai |
+| AC-HS-08 | 11 (401) | — | A09 `/api/v1/customers/1` không token | 401 `TOKEN_MISSING` |
+| AC-HS-09 | 11 (400) | Token KH1 | A09 `/api/v1/customers/abc` | 400 `INVALID_ID` |
 | AC-HS-10 | 11 (400) | Token KH3 | A37 thiếu `name`; A37 `dob: "15/01/2000"`; A37 có thêm `customer_id` | 400 `INVALID_INPUT` tất cả |
 | AC-HS-11 | 11 | Token KH1 | A10 `{ "dob": "1999-12-31" }` | 200; họ tên giữ nguyên, ngày sinh mới |
 | AC-HS-12 | 11 (503) | `docker compose stop customer-service` | A38 bằng token KH1 | 503 `SERVICE_UNAVAILABLE`; A05 vẫn 200 (NFR05) |
-| AC-HS-13 | 24 | Seed KH1 | A09 `/customers/1` (token KH1) | 200, họ tên rõ cho đúng chủ |
+| AC-HS-13 | 24 | Seed KH1 | A09 `/api/v1/customers/1` (token KH1) | 200, họ tên rõ cho đúng chủ |
 | AC-HS-14 | 24 | Seed KH1 | `docker exec customer-db psql -U cab -d customer -c "table customer_profiles"` | Cột `full_name_enc`, `date_of_birth_enc` hiện dạng `\x…`; không thấy "Nguyễn Văn An", "2000-01-01" |
 | AC-HS-15 | 24 | Repo | `git ls-files .env` | Rỗng — khóa thật nằm trong `.env`, không trên Git (spec 00) |
-| AC-HS-16 | 26 | Token KH1 | A10 `{ "name": "<script>alert(1)</script>" }` → sửa tab sang `GET` (A38) | 400 `TEXT_CONTAINS_HTML`; 200, `name` vẫn "Nguyễn Văn An", header có `nosniff` và CSP |
-| AC-HS-17 | 25 | Token KH1 | A09 `/customers/1 OR 1=1` | 400 `INVALID_ID`; không 200, không 5xx |
+| AC-HS-16 | 26 | Token KH1 | A10 `PATCH /api/v1/customers/me` `{ "name": "<script>alert(1)</script>" }` → sửa tab sang `GET` (A38), body giữ nguyên | 400 `TEXT_CONTAINS_HTML`; 200, `name` vẫn "Nguyễn Văn An", header có `nosniff` và CSP |
+| AC-HS-17 | 25 | Token KH1 | A09 `/api/v1/customers/1 OR 1=1` | 400 `INVALID_ID`; không 200, không 5xx |
+| AC-HS-18 | Đường dẫn | Token KH1 | `PUT /api/v1/customers/me`; `POST /api/v1/customers/me`; `GET /customers/1` (thiếu `/api/v1`) | 404 `ROUTE_NOT_FOUND` cả ba (đường dẫn cũ đã bỏ — ADR-018) |
 
-Chuỗi gõ tay khi thi (≤ 3 request):
+Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab GET; `(…)` = tùy chọn):
 
 | Mục | Request | Kết quả |
 |---|---|---|
-| 11 | A09 `/customers/1` (token KH1 từ mục 10) → sửa tab `/customers/2` | 200 hồ sơ; 403 `NOT_OWNER` (chưa có token KH1 thì thêm A05 trước) |
-| 11 phụ (tạo hồ sơ) | A37 `{ "name": "Pham Duc" }` với token của mục 9 → A09 `/customers/1000` cùng token | 201 `customer_id` 1000; 200 hồ sơ vừa tạo (04 mục 5.2) |
-| 24 | A09 `/customers/1` (token KH1) + lệnh `psql` ở `customer-db` và `auth-db` (spec 00 mục 3.7) | API trả rõ; database chỉ có `\x…`; `password_hash` bắt đầu `scrypt$` |
-| 26 | A10 `{"name":"<script>alert(1)</script>"}` → sửa tab: `GET`, xóa body | 400; 200 hồ sơ không đổi, có `nosniff`, CSP |
+| 11 | `GET /api/v1/customers/1` (token KH1 từ mục 10) → sửa tab `/api/v1/customers/2` | 200 hồ sơ; 403 `NOT_OWNER` |
+| 11 phụ (tạo hồ sơ) | (A37 `POST /api/v1/customers` `{"name":"Pham Duc"}` với token của mục 9) | (201 `customer_id` 1000) |
+| 24 | Tab GET `/api/v1/customers/1` (token KH1) + lệnh `psql` ở `customer-db` (spec 00 mục 3.7); (lệnh `auth-db`) | API trả rõ; database chỉ có `\x…`; (`password_hash` bắt đầu `scrypt$`) |
+| 26 | Tab GET: method `PATCH`, URL `/api/v1/customers/me`, body `{"name":"<script>alert(1)</script>"}` → sửa tab: method `GET` (không cần xóa body — `GET` bỏ qua body) | 400; 200 hồ sơ không đổi, có `nosniff`, CSP |
 
 Kết quả mong đợi theo phiếu chấm mục 11: có token xem được khách hàng theo mã số; khách khác bị 403; không token 401.
 
@@ -270,5 +274,5 @@ Kết quả mong đợi theo phiếu chấm mục 11: có token xem được kh�
 | HS-Q1 | Mục 24 ghi "POSTMAN" nhưng dữ liệu at rest chỉ thấy trong database (Q52) | (a) Postman + lệnh `psql`; (b) API admin trả bản mã | (a) | GV |
 | HS-Q2 | Chống XSS bằng từ chối `<`, `>` (Q51) | (a) Từ chối; (b) lưu nguyên, escape khi trả | (a) | SV / GV |
 | ~~HS-Q3~~ | Đã đóng 2026-10-03: rút ngắn thành `name`, `dob` ở lớp API (04 mục 1.8, `CLAUDE.md`); cột database giữ tên đầy đủ | — | — | — |
-| HS-Q4 | A10 dùng `PUT` nhưng cập nhật từng phần | (a) Giữ như 04; (b) `PATCH` | (a) | SV |
+| ~~HS-Q4~~ | Đã đóng 2026-10-03: A10 đổi sang `PATCH` (sửa một phần, 04 lần 4) | — | — | — |
 | HS-Q5 | Seed họ tên có dấu ("Nguyễn Văn An"); ví dụ tạo hồ sơ dùng không dấu ("Pham Duc") để gõ nhanh | Giữ | Giữ — API nhận cả hai | — |

@@ -1,5 +1,7 @@
 # Buổi 2 — Nghiệp vụ & truy vết yêu cầu
 
+> **Lưu ý (2026-10-03):** đường dẫn API trong file này là bản cũ. API chính thức theo chuẩn `/api/v1/{resource}/{id}?{query}` nằm ở `docs/design/04-api.md`; cách gõ khi thi nằm ở `docs/design/06-kich-ban-thi.md`.
+
 > Tuần 1 · Giai đoạn 1. Nguồn: `srs.md`, `API document/*.yml`, phiếu chấm.
 >
 > **Lưu ý (2026-10-01):** `API document/` và tài liệu DDD cũ đã bỏ khi xây lại từ đầu. Cột API và Service trong bảng truy vết là **đề xuất tham khảo**; thiết kế chính thức nằm ở `docs/design/` do ba-agent viết.

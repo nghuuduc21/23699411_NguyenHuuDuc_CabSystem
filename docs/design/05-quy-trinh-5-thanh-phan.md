@@ -1,7 +1,7 @@
 # 05 — Quy trình nghiệp vụ theo mô hình 5 thành phần
 
 > Nguồn: `srs.md` (FR, BRULE, UC), `docs/design/01`–`04`, `CLAUDE.md`. Cập nhật 2026-10-03.
-> Mã API (A01–A39) theo `04-api.md` (không tiền tố `/api/v1`, tên trường ngắn — đồng bộ 2026-10-03: QT01–QT09); mã gRPC giữa service (S2–S7; S1 đã bỏ) và topic Kafka (K1–K7) theo `02-kien-truc-giao-tiep.md`.
+> Mã API (A01–A39) theo `04-api.md` (tên trường ngắn — đồng bộ 2026-10-03: QT01–QT09). **Đồng bộ 04 lần 4 (ADR-018):** cột Software dùng đường dẫn `/api/v1/…`, đổi trạng thái bằng `PATCH` + `status`; mã API và rpc không đổi; mã gRPC giữa service (S2–S7; S1 đã bỏ) và topic Kafka (K1–K7) theo `02-kien-truc-giao-tiep.md`.
 > Sửa 2026-10-03 theo góp ý giảng viên: QT01 chỉ tạo tài khoản, QT04 thêm bước tạo hồ sơ (ADR-013); QT05, QT10, QT16, QT17 theo cách giả lập hệ thống ngoài mới (ADR-014); ma trận 4.1, 4.2. Cùng ngày: QT09 ghi rõ đặt xe không cần hồ sơ (Q56); QT10 thêm `simulate_result: "MANUAL"` (Q57). Sửa lần 3 theo luật thi: D1 (số điện thoại, email lưu rõ — ADR-012), D14 (HS256 — ADR-016), QT02, QT08, QT12, QT21 (seed theo quy luật, lệnh gõ tay, 14 biến môi trường).
 
 ## 0. Mô hình 5 thành phần
@@ -161,7 +161,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Khách nhập số điện thoại, email (tùy chọn), mật khẩu. <br> 2. Hệ thống kiểm tra dữ liệu; số điện thoại hoặc email đã có → từ chối (409). <br> 3. Auth băm mật khẩu, tạo tài khoản role `customer`. Đăng ký công khai **không** tạo được role khác. <br> 4. Trả về tài khoản (không có mật khẩu). **Chưa có hồ sơ**: khách tạo hồ sơ sau khi đăng nhập (QT04). Auth không gọi service nào (ADR-013). |
 | **People** | P1 Khách hàng |
 | **Hardware** | H1 gửi request · H4 xử lý · H5 lưu tài khoản (auth-db) |
-| **Software** | SW1 → SW2 `POST /auth/register` (A04) → SW3 `RegisterCustomer` → SW11 |
+| **Software** | SW1 → SW2 `POST /api/v1/accounts` (A04) → SW3 `RegisterCustomer` → SW11 |
 | **Data** | Tạo D1 `accounts` |
 
 ### QT02 — Đăng nhập
@@ -171,7 +171,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Người dùng nhập số điện thoại (hoặc email) và mật khẩu. <br> 2. Auth tìm tài khoản theo số điện thoại (hoặc email) lưu rõ, có ràng buộc không trùng; so mật khẩu với bản băm. <br> 3. Sai thông tin → 401; tài khoản bị khóa → từ chối (Exception UC02). <br> 4. Đúng → cấp JWT chứa mã tài khoản, role, mã token, hạn. <br> 5. Chuỗi SQL injection như `' OR 1=1 --` không đăng nhập được vì truy vấn dùng tham số (mục 25). |
 | **People** | P1, P2, P3 |
 | **Hardware** | H1/H2/H3 nhận và **lưu token** · H4 · H5 đọc auth-db |
-| **Software** | SW1 → SW2 `POST /auth/login` (A05, body `phone` hoặc `email` + `password`) → SW3 `Login` → SW11 |
+| **Software** | SW1 → SW2 `POST /api/v1/auth/login` (A05, body `phone` hoặc `email` + `password`) → SW3 `Login` → SW11 |
 | **Data** | Đọc D1 · Tạo D14 (token, không lưu ở server) |
 
 ### QT03 — Đăng xuất
@@ -181,7 +181,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Người dùng gửi yêu cầu đăng xuất kèm token. <br> 2. Gateway ghi mã token (`jti`) vào danh sách thu hồi, tự hết hạn cùng lúc với token. <br> 3. Từ đó mọi request dùng token này bị 401. Không gọi sang service nào. |
 | **People** | P1, P2, P3 |
 | **Hardware** | H1/H2/H3 xóa token · H6 lưu `revoked:{jti}` |
-| **Software** | SW1 → SW2 `POST /auth/logout` (A06) → SW12 |
+| **Software** | SW1 → SW2 `POST /api/v1/auth/logout` (A06) → SW12 |
 | **Data** | Tạo D12 `revoked:{jti}` · D14 hết hiệu lực |
 
 ### QT04 — Tạo, xem và cập nhật hồ sơ khách hàng
@@ -191,7 +191,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | Tiền điều kiện: khách đã đăng nhập (QT02). <br> 1. Khách mở màn hình hồ sơ. Chưa có hồ sơ → 404 (chưa có). <br> 2. **Tạo hồ sơ**: khách nhập họ tên (bắt buộc), ngày sinh (tùy chọn). Customer lấy `customer_id` = mã tài khoản trong token, không nhận mã từ client; mã hóa rồi lưu. Đã có hồ sơ → 409 (BRULE18). <br> 3. **Xem**: khách xem hồ sơ của mình (theo mã hoặc `/me`); admin xem được mọi hồ sơ (mục 11). Khách xem hồ sơ người khác → 403. Customer giải mã họ tên, ngày sinh rồi trả về. <br> 4. **Sửa**: chỉ hồ sơ của mình; chưa có → 404; văn bản chứa `<` hoặc `>` bị từ chối 400 (chống XSS, mục 26). Customer mã hóa lại trước khi lưu. <br> Customer không gọi Auth: token đã đủ để biết ai đang thao tác (ADR-013). |
 | **People** | P1 (chủ hồ sơ: tạo, xem, sửa), P3 (chỉ xem) |
 | **Hardware** | H1/H3 · H4 · H5 customer-db (dữ liệu nằm trên đĩa ở dạng **mã hóa**, mục 24) |
-| **Software** | SW2 `POST /customers/me` (A37, body `name`, `dob`), `GET /customers/me` (A38), `GET /customers/{id}` (A09), `PUT /customers/me` (A10) → SW4 `CreateCustomer`, `GetCustomer`, `UpdateCustomer` |
+| **Software** | SW2 `POST /api/v1/customers` (A37, body `name`, `dob`), `GET /api/v1/customers/me` (A38), `GET /api/v1/customers/{id}` (A09), `PATCH /api/v1/customers/me` (A10) → SW4 `CreateCustomer`, `GetCustomer`, `UpdateCustomer` |
 | **Data** | Tạo, đọc, sửa D3. Khóa mã hóa lấy từ biến môi trường của customer-service |
 
 ### QT05 — Đăng ký tài xế
@@ -201,7 +201,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Tài xế nhập số điện thoại, xin OTP. <br> 2. Auth tạo OTP, lưu bản băm kèm hạn; kênh gửi giả lập **ghi log** mã OTP, và khi `SIMULATION_MODE=true` thì **trả luôn mã trong response** để Postman dùng tiếp (ADR-014). <br> 3. Tài xế nhập OTP và thông tin tài khoản; OTP đúng và còn hạn → Auth tạo tài khoản role `driver` và **trả luôn token** (không cần đăng nhập riêng). <br> 4. Tài xế dùng token đó nộp hồ sơ cá nhân và xe. <br> 5. Hồ sơ ở trạng thái **chờ duyệt** (`PENDING`). |
 | **People** | P2 Tài xế |
 | **Hardware** | H2 · H4 · H5 auth-db (tài khoản, OTP), driver-db (hồ sơ, xe) |
-| **Software** | SW2 A07 `POST /auth/otp`, A08 `POST /auth/register-driver`, A11 `POST /drivers/me` → SW3 `RequestDriverOtp`, `RegisterDriver` → SW5 `SubmitApplication` · SW14 kênh OTP giả lập (log) |
+| **Software** | SW2 A07 `POST /api/v1/otps`, A08 `POST /api/v1/driver-accounts`, A11 `POST /api/v1/drivers` → SW3 `RequestDriverOtp`, `RegisterDriver` → SW5 `SubmitApplication` · SW14 kênh OTP giả lập (log) |
 | **Data** | Tạo D2, D1 (role `driver`), D4 (`drivers` với `approval_status = PENDING`, `vehicles`) |
 
 ### QT06 — Duyệt hồ sơ tài xế
@@ -211,7 +211,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Admin mở danh sách hồ sơ chờ duyệt. <br> 2. Admin xem chi tiết, chọn duyệt hoặc từ chối (kèm lý do). <br> 3. Driver cập nhật trạng thái hồ sơ, ghi người duyệt và thời điểm. <br> 4. Driver phát event K7; Notification báo kết quả cho tài xế. <br> 5. Người không phải admin gọi API duyệt → 403 (mục 28, BRULE12). |
 | **People** | P3 Admin; P2 nhận kết quả |
 | **Hardware** | H3 · H4 · H5 driver-db · H7 lưu event K7 |
-| **Software** | SW2 A13 `GET /drivers?status=PENDING`, A15 `…/approve`, A16 `…/reject` → SW5 `ListDrivers`, `ApproveDriver`, `RejectDriver` → SW13 K7 → SW9 |
+| **Software** | SW2 A13 `GET /api/v1/drivers?approval_status=PENDING`, A15 / A16 `PATCH /api/v1/drivers/{id}` (`approval_status` = `APPROVED` / `REJECTED`) → SW5 `ListDrivers`, `ApproveDriver`, `RejectDriver` → SW13 K7 → SW9 |
 | **Data** | Sửa D4 (`approval_status`, `reviewed_by`, `reviewed_at`, `reject_reason`) · Tạo D13 (K7), D10 |
 
 ### QT07 — Bật / tắt nhận chuyến và gửi vị trí
@@ -221,7 +221,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Tài xế đã được duyệt chuyển Online hoặc Offline; chưa duyệt thì không Online được. <br> 2. Khi Online, điện thoại tài xế gửi vị trí hiện tại định kỳ. <br> 3. Chỉ tài xế Online mới được đưa vào ghép chuyến (BRULE01). |
 | **People** | P2 |
 | **Hardware** | H2 (GPS) · H4 · H5 driver-db (chỉ lưu **vị trí hiện tại**, không lưu lịch sử) |
-| **Software** | SW2 A17 `POST /drivers/me/online`, A39 `POST /drivers/me/offline`, A18 `PUT /drivers/me/location` → SW5 `SetAvailability`, `UpdateLocation` |
+| **Software** | SW2 `PATCH /api/v1/drivers/me`: A17 `{"status":"ONLINE"}`, A39 `{"status":"OFFLINE"}`, A18 `{"lat","lng"}` → SW5 `SetAvailability`, `UpdateLocation` |
 | **Data** | Sửa D4 (`availability`, `current_lat`, `current_lng`, `location_updated_at`) |
 
 ### QT08 — Xem tài xế
@@ -231,7 +231,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Xem tài xế theo mã (mục 12): khách thấy phần công khai; tài xế thấy đủ hồ sơ của mình; admin thấy đủ. <br> 2. Tìm tài xế quanh một tọa độ (mục 13): lọc tài xế Online, đúng loại xe, trong bán kính 1 km; sắp theo khoảng cách; có `limit` và phân trang. <br> 3. Khoảng cách tính bằng công thức trên hai cột tọa độ, không dùng PostGIS (ADR-011). |
 | **People** | P1, P3 (tìm quanh tọa độ); P1, P2, P3 (xem theo mã) |
 | **Hardware** | H1/H3 · H4 · H5 driver-db |
-| **Software** | SW2 A14 `GET /drivers/{id}`, A12 `GET /drivers/nearby?lat&lng&vehicle&page&limit` (bán kính 1 km là hằng số, không có tham số) → SW5 `GetDriver`, `FindNearbyDrivers` |
+| **Software** | SW2 A14 `GET /api/v1/drivers/{id}`, A12 `GET /api/v1/drivers?lat&lng&vehicle&page&limit` (bán kính 1 km là hằng số, không có tham số) → SW5 `GetDriver`, `FindNearbyDrivers` |
 | **Data** | Đọc D4. Seed TX1–TX8 (mã 11–18) ở các trạng thái khác nhau; tại điểm mẫu P0 (10.82, 106.68) tìm thấy TX1–TX4 (file 03 mục 14) |
 
 ### QT09 — Đặt xe và tính cước cố định
@@ -241,7 +241,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Khách chọn điểm đón, điểm đến, loại xe, phương thức thanh toán. Điều kiện chỉ là đã đăng nhập bằng tài khoản `customer` (số điện thoại ở Auth) và đủ bốn dữ liệu này; **không cần đã tạo hồ sơ** (QT04), Booking không gọi Customer (Q56, 2026-10-03). <br> 2. Booking tính quãng đường ước tính = khoảng cách đường thẳng × 1,3 (đơn vị mét). <br> 3. Booking gọi Payment (S4, gRPC đồng bộ): Payment áp bảng giá, tính **cước cố định** = giá mở cửa + đơn giá/km × quãng đường, làm tròn lên 1.000 đ, không thấp hơn cước tối thiểu (BRULE08); tạo thanh toán ở trạng thái chờ. <br> 4. Booking lưu yêu cầu kèm số tiền: **tiền mặt** → trạng thái đang tìm tài xế, chuyển sang QT11; **điện tử** → trạng thái chờ thanh toán, chuyển sang QT10. <br> 5. Booking phát K1; Notification báo khách "đã nhận yêu cầu". |
 | **People** | P1 |
 | **Hardware** | H1 (GPS điểm đón) · H4 · H5 booking-db, payment-db · H7 |
-| **Software** | SW2 `POST /bookings` (A19, body `from`, `to`, `vehicle`, `pay`) → SW6 `CreateBooking` → SW8 `CreatePayment` (S4) → SW13 K1 → SW9 |
+| **Software** | SW2 `POST /api/v1/bookings` (A19, body `from`, `to`, `vehicle`, `pay`) → SW6 `CreateBooking` → SW8 `CreatePayment` (S4) → SW13 K1 → SW9 |
 | **Data** | Tạo D5 `bookings`, D8 `fares`, D9 `payments` (hạn 10 phút với điện tử) · Đọc D8 `fare_rates` · Tạo D13 (K1) |
 
 ### QT10 — Thanh toán điện tử trả trước
@@ -251,7 +251,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Khách thực hiện thanh toán, gửi kèm khóa chống lặp (`Idempotency-Key`). <br> 2. Payment ghi khóa, tạo lần thử; gửi yêu cầu thu tiền đến cổng thanh toán giả lập (module trong `payment-service`). <br> 3. Cổng giả lập **gọi ngay phần xử lý callback**, mặc định thành công. Khi `SIMULATION_MODE=true` khách có thể gửi `simulate_result`: `FAILED` để demo thất bại; `MANUAL` để cổng giả lập **không** gọi callback — lần thử và thanh toán đứng ở `PENDING`, chờ callback từ ngoài ở bước 6 (mục 19; Q57, ADR-014). <br> 4. Thành công → Payment chuyển **COMPLETED** (mục 19), phát K6; Booking nghe K6, chuyển sang tìm tài xế (QT11). Mặc định response của bước 1 đã có kết quả; với `MANUAL` thì kết quả có sau bước 6. <br> 5. Thất bại → `FAILED`, khách thử lại; tối đa 3 lần trong 10 phút (BRULE17). Quá hạn hoặc hết lượt → thanh toán bị hủy, Booking bị hủy. Đang có lần thử `PENDING` thì không mở lần thử mới (409). <br> 6. Callback từ ngoài (Postman đóng vai Provider) vào endpoint callback, xác thực bằng **khóa bí mật cố định trong header** (không HMAC); sai khóa → 401. Giao dịch đang `PENDING` (sau `MANUAL`) → xử lý như bước 4 / 5, Payment `PENDING → COMPLETED`. Giao dịch đã có kết quả → trả kết quả cũ. <br> 7. Gửi lại đúng request cũ (cùng khóa chống lặp) hoặc callback cũ → trả lại kết quả cũ, **không thu tiền lần hai** (mục 30). <br> 8. Hệ thống không lưu số thẻ hay tài khoản ngân hàng (BRULE09). |
 | **People** | P1 Khách hàng; P5 Nhà cung cấp thanh toán (giả lập; Postman đóng vai khi gửi callback từ ngoài) |
 | **Hardware** | H1 · H4 · H5 payment-db, booking-db · H7 |
-| **Software** | SW2 A31 `POST /payments/{id}/pay`, A32 `POST /payments/callback` (header `X-Callback-Secret`), A30 `GET /payments/{id}` → SW8 `PayPayment`, `HandleProviderCallback` (cùng một hàm xử lý callback) · SW14 cổng thanh toán giả lập · SW13 K6 → SW6, SW9 |
+| **Software** | SW2 A31 `POST /api/v1/payments/{id}/transactions`, A32 `POST /api/v1/payment-callbacks` (header `X-Callback-Secret`), A30 `GET /api/v1/payments/{id}` → SW8 `PayPayment`, `HandleProviderCallback` (cùng một hàm xử lý callback) · SW14 cổng thanh toán giả lập · SW13 K6 → SW6, SW9 |
 | **Data** | Tạo D9 `idempotency_keys`, `payment_transactions` (loại thu) · Sửa D9 `payments` (`COMPLETED` / `FAILED` / `CANCELED`), D5 (trạng thái booking) · Tạo D13 (K6) |
 
 ### QT11 — Ghép tài xế
@@ -261,7 +261,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Booking gọi Driver lấy danh sách tài xế Online, đúng loại xe, trong 1 km, gần nhất trước (S2; BRULE01–03). <br> 2. Booking tạo lời mời cho tài xế gần nhất, có hạn trả lời; phát K2, Notification báo tài xế. <br> 3. Tài xế xem lời mời và: <br> &nbsp;&nbsp;• **Từ chối** → không hoàn tiền, hỏi tài xế kế tiếp (BRULE05, BRULE15). <br> &nbsp;&nbsp;• **Không trả lời** đến hết hạn → hỏi tài xế kế tiếp (BRULE04, BRULE06). <br> &nbsp;&nbsp;• **Nhận** → Booking giữ chỗ tài xế (S3), gọi Trip tạo chuyến (S5, gRPC đồng bộ: tài xế cần ngay mã chuyến), lưu phân công, Booking chuyển "đã có tài xế". Trip phát K5 (`ACCEPTED`), Notification báo khách. <br> 4. Hết danh sách mà chưa ai nhận → Booking "không tìm được tài xế", phát K3; Payment hoàn tiền nếu đã thu (QT16); Notification báo khách (BRULE07). |
 | **People** | P2 Tài xế (nhận lời mời); P1 nhận kết quả |
 | **Hardware** | H2 · H4 · H5 booking-db, driver-db, trip-db · H7 |
-| **Software** | SW6 → SW5 `FindNearbyDrivers` (S2), `ReserveDriver`, `ReleaseDriver` (S3) → SW7 `CreateTrip` (S5) · SW2 A23 `GET /offers`, A24 `…/accept`, A25 `…/reject` · SW13 K2, K3, K5 |
+| **Software** | SW6 → SW5 `FindNearbyDrivers` (S2), `ReserveDriver`, `ReleaseDriver` (S3) → SW7 `CreateTrip` (S5) · SW2 A23 `GET /api/v1/offers`, A24 / A25 `PATCH /api/v1/offers/{id}` (`status` = `ACCEPTED` / `REJECTED`) · SW13 K2, K3, K5 |
 | **Data** | Đọc D4 · Tạo D6 `driver_offers`, `driver_assignments`, D7 `trips` · Sửa D5, D4 (`availability`, `current_booking_id`) · Tạo D13 (K2, K3, K5) |
 
 ### QT12 — Xem danh sách và chi tiết booking
@@ -271,7 +271,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Khách xem danh sách booking **của mình**, lọc theo trạng thái, mới nhất trước, có `limit` và phân trang (mục 14). <br> 2. Khách xem chi tiết một booking của mình; admin xem được mọi booking. |
 | **People** | P1, P3 |
 | **Hardware** | H1/H3 · H4 · H5 booking-db |
-| **Software** | SW2 A20 `GET /bookings?status&page&limit`, A21 `GET /bookings/{id}` → SW6 `ListBookings`, `GetBooking` |
+| **Software** | SW2 A20 `GET /api/v1/bookings?status&page&limit`, A21 `GET /api/v1/bookings/{id}` → SW6 `ListBookings`, `GetBooking` |
 | **Data** | Đọc D5. Seed B1–B7 của KH1 (mã 1–7, file 03 mục 14) |
 
 ### QT13 — Thực hiện và theo dõi chuyến đi
@@ -281,7 +281,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Tài xế cập nhật trạng thái **đúng thứ tự**: đã nhận → đã đến điểm đón → đã đón khách → đang đi → hoàn thành. Sai thứ tự → 409 (mục 17). <br> 2. Mỗi lần đổi trạng thái: Trip ghi lịch sử, phát K5; Notification báo khách. <br> 3. Khách xem chuyến: Trip trả thông tin chuyến, gọi Driver lấy tên, biển số, vị trí hiện tại của tài xế (S6). <br> 4. Khi hoàn thành: Driver nghe K5, trả tài xế về trạng thái rảnh; Payment nghe K5, ghi nhận tiền mặt nếu có (QT15). |
 | **People** | P2 (cập nhật); P1 (theo dõi) |
 | **Hardware** | H2, H1 · H4 · H5 trip-db, driver-db · H7 |
-| **Software** | SW2 A28 `PATCH /trips/{id}/status`, A27 `GET /trips/{id}` → SW7 `UpdateTripStatus`, `GetTrip` → SW5 `GetDriverSummary` (S6) · SW13 K5 → SW5, SW8, SW9 |
+| **Software** | SW2 A28 `PATCH /api/v1/trips/{id}` (`status` = `ARRIVED` … `COMPLETED`), A27 `GET /api/v1/trips/{id}` → SW7 `UpdateTripStatus`, `GetTrip` → SW5 `GetDriverSummary` (S6) · SW13 K5 → SW5, SW8, SW9 |
 | **Data** | Sửa D7 `trips` · Tạo D7 `trip_status_history`, D13 (K5) · Sửa D4 khi hoàn thành |
 
 ### QT14 — Hủy booking / hủy chuyến
@@ -291,7 +291,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | Chỉ hủy được **trước khi chuyến bắt đầu** (BRULE16). <br> 1. **Khách hủy khi chưa có tài xế** (đang chờ thanh toán hoặc đang tìm): Booking chuyển hủy, ghi lý do, phát K4. <br> 2. **Khách hủy khi đã có tài xế**, hoặc **tài xế hủy chuyến đã nhận** (FR41): Trip chuyển `CANCELED` khi chuyến ở trạng thái đã nhận hoặc đã đến; sau khi đón khách → 409. Trip phát K5. Hệ thống **không tự tìm tài xế khác**. <br> 3. Payment nghe K4 hoặc K5: đã thu thì hoàn tiền (QT16), chưa thu thì hủy thanh toán. Driver nghe K5, trả tài xế về rảnh. Notification báo các bên (mục 18). |
 | **People** | P1; P2 (chỉ hủy chuyến đã nhận) |
 | **Hardware** | H1, H2 · H4 · H5 booking-db, trip-db, payment-db · H7 |
-| **Software** | SW2 A22 `POST /bookings/{id}/cancel`, A29 `POST /trips/{id}/cancel` → SW6 `CancelBooking`, SW7 `CancelTrip` · SW13 K4, K5 → SW5, SW8, SW9 |
+| **Software** | SW2 A22 `PATCH /api/v1/bookings/{id}`, A29 `PATCH /api/v1/trips/{id}` (cả hai `{"status":"CANCELED","reason":…}`) → SW6 `CancelBooking`, SW7 `CancelTrip` · SW13 K4, K5 → SW5, SW8, SW9 |
 | **Data** | Sửa D5 hoặc D7 (trạng thái, `cancel_reason`, `canceled_by`) · Tạo D13 (K4 / K5) |
 
 ### QT15 — Ghi nhận thanh toán tiền mặt
@@ -321,7 +321,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Notification nghe cả 7 topic. <br> 2. Với mỗi event: xác định người nhận, tạo thông báo. Kênh gửi (thông báo, SMS) là giả lập: **chỉ lưu vào database và ghi một dòng log** (loại, người nhận, mã event; không dữ liệu cá nhân) — ADR-014. Event bị giao lặp không tạo thông báo trùng (ràng buộc duy nhất theo mã event và người nhận). <br> 3. Người dùng xem thông báo của mình, mới nhất trước, có phân trang. <br> 4. Notification lỗi không làm hỏng đặt xe hay chuyến đi, vì bên phát không chờ (NFR05). |
 | **People** | P1, P2, P3 (người nhận) |
 | **Hardware** | H7 · H4 · H5 notification-db (MongoDB) · H1/H2/H3 hiển thị |
-| **Software** | SW13 → SW9 → SW14 kênh gửi giả lập (log) · SW2 A33 `GET /notifications` → SW9 `ListNotifications` |
+| **Software** | SW13 → SW9 → SW14 kênh gửi giả lập (log) · SW2 A33 `GET /api/v1/notifications` → SW9 `ListNotifications` |
 | **Data** | Đọc D13 · Tạo D10 `notifications` |
 
 ### QT18 — Đánh giá chuyến đi
@@ -331,7 +331,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Khách chọn chuyến đã hoàn thành, chọn số sao (1–5), nhập nhận xét. <br> 2. Rating hỏi Trip (S7, gRPC đồng bộ): chuyến đã hoàn thành và đúng là của khách này? Không đúng → từ chối (BRULE11). <br> 3. Rating lưu đánh giá gắn với chuyến; mỗi chuyến chỉ một đánh giá (mục 20). <br> 4. Rating cộng vào tổng điểm của tài xế trong cùng giao dịch. <br> 5. Người dùng xem đánh giá của chuyến và điểm trung bình của tài xế. |
 | **People** | P1 (đánh giá); P2, P3 (xem) |
 | **Hardware** | H1 · H4 · H5 rating-db, trip-db |
-| **Software** | SW2 A34 `POST /trips/{id}/rating`, A35, A36 → SW10 `CreateRating` → SW7 `GetTripForRating` (S7) |
+| **Software** | SW2 A34 `POST /api/v1/ratings`, A35 `GET /api/v1/ratings?trip_id`, A36 `GET /api/v1/ratings?driver_id` → SW10 `CreateRating` → SW7 `GetTripForRating` (S7) |
 | **Data** | Đọc D7 · Tạo D11 `ratings` · Sửa D11 `driver_ratings` |
 
 ### QT19 — Giám sát chuyến đi (admin)
@@ -341,7 +341,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Admin xem danh sách chuyến, lọc theo trạng thái. <br> 2. Admin mở một chuyến để xem khách, tài xế, trạng thái. <br> 3. Người không phải admin chỉ thấy chuyến của mình. <br> Xử lý sự cố (FR31) chưa được thiết kế chi tiết; ngoài phiếu chấm. |
 | **People** | P3 |
 | **Hardware** | H3 · H4 · H5 trip-db |
-| **Software** | SW2 A26 `GET /trips?status&page&limit`, A27 → SW7 `ListTrips`, `GetTrip` |
+| **Software** | SW2 A26 `GET /api/v1/trips?status&page&limit`, A27 → SW7 `ListTrips`, `GetTrip` |
 | **Data** | Đọc D7 |
 
 ### QT20 — Kiểm soát truy cập tại Gateway (cắt ngang)
