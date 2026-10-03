@@ -94,7 +94,7 @@ Các cách giảm phụ thuộc đã xét và **không chọn**:
 ### Đánh đổi khác
 
 - **Có khoảng trễ ngắn** giữa "thanh toán xong" và "bắt đầu tìm tài xế" (một nhịp event).
-- **Tiền đi theo event**: mất event là khách trả tiền mà không được phục vụ, hoặc không được hoàn. Cần outbox (ADR-005).
+- **Tiền đi theo event**: mất event là khách trả tiền mà không được phục vụ, hoặc không được hoàn. Từ 2026-10-03 **không dùng outbox**: gửi event ngay sau commit, chấp nhận rủi ro mất event khi sự cố đúng thời điểm (ADR-017, thay ADR-005).
 - **Hủy đúng lúc đang trả tiền**: Booking đã `CANCELED` nhưng callback "thành công" đến sau. Quy tắc M11: Payment vẫn ghi nhận rồi hoàn ngay. Booking nhận `payment.status-changed` khi không còn ở `PENDING_PAYMENT` thì bỏ qua.
 - ~~Booking có thể chờ thanh toán mãi nếu khách bỏ đi~~ — đã giải quyết bằng BRULE17 (10 phút, 3 lần thử); đổi lại `payment-service` có thêm một tiến trình nền tìm thanh toán quá hạn.
 - **Tài xế hủy thì khách phải đặt lại và trả lại từ đầu** (FR41): đơn giản, nhưng trải nghiệm kém hơn tự tìm tài xế khác.

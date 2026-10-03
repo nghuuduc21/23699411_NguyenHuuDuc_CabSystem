@@ -1,6 +1,7 @@
 # ADR-005 — Phát event Kafka qua outbox
 
-- Ngày: 2026-10-02. Trạng thái: **Đề xuất — giả định tạm GĐ-6**, chờ câu trả lời Q20 (sinh viên quyết). Sửa 2026-10-02 lần 3: danh sách event và hậu quả đổi theo luồng trả trước, hoàn tiền (ADR-009) và bàn giao bằng gRPC (ADR-008); quyết định không đổi.
+- Ngày: 2026-10-02. Trạng thái: **Bị thay thế bởi ADR-017** (2026-10-03). Theo luật thi, sinh viên chốt gửi event ngay sau commit, không outbox (`CLAUDE.md` dòng "Phát event Kafka"); 4 bảng `outbox` và `OUTBOX_POLL_INTERVAL_MS` đã bỏ khỏi `docs/design/03`. File này giữ lại để giải thích phương án "không mất event" khi vấn đáp và làm phương án quay lại.
+- Lịch sử: đề xuất (giả định GĐ-6, chờ Q20); sửa 2026-10-02 lần 3: danh sách event và hậu quả đổi theo luồng trả trước, hoàn tiền (ADR-009) và bàn giao bằng gRPC (ADR-008).
 - Liên quan: `docs/design/02-kien-truc-giao-tiep.md` mục 6.3; NFR14, NFR15; BRULE07, BRULE13, BRULE14; mục chấm 7, 15, 18, 19.
 
 ## Bối cảnh
@@ -18,9 +19,9 @@ Từ khi thanh toán là trả trước, event mang theo **tiền**: mất event
 | C | **Outbox:** ghi event vào bảng `outbox` trong cùng giao dịch với thay đổi nghiệp vụ; tiến trình nền đọc bảng và gửi Kafka, gửi xong đánh dấu | Thay đổi và event cùng thành công hoặc cùng thất bại; Kafka dừng thì event nằm chờ | Thêm một bảng và một tiến trình nền cho mỗi service phát event; event có thể bị gửi hai lần |
 | D | A + tác vụ quét định kỳ tìm bản ghi bị kẹt | Không cần bảng outbox | Phải viết logic quét riêng cho từng loại kẹt; dễ sót |
 
-## Quyết định (tạm)
+## Quyết định (tạm, đã bị thay thế)
 
-Chọn **C** cho cả bốn service phát event.
+~~Chọn **C** cho cả bốn service phát event.~~ Từ 2026-10-03 chọn **A** — xem ADR-017 (lý do, đánh đổi, câu trả lời mẫu).
 
 ## Vì sao
 

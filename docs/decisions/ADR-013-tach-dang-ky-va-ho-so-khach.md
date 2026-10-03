@@ -36,7 +36,7 @@ Chọn **D**.
 | Xem / sửa (A38, A09, A10) | Chưa có hồ sơ → 404 (C5). Sửa chỉ qua `/customers/me` |
 | Vì sao Customer tin `account_id` mà không hỏi Auth | Gateway đã kiểm tra chữ ký JWT do Auth cấp; chỉ Gateway vào được mạng nội bộ (mục chấm 8). Token là bằng chứng tài khoản tồn tại và có role `customer` |
 | Số điện thoại trong hồ sơ | **Bỏ**: số điện thoại là định danh đăng nhập, chỉ nằm ở Auth (file 03 mục 4.1, Q58) |
-| Mục chấm 11 | Chuỗi 4 request: xem (404) → tạo (201) → xem (200) → xem hồ sơ người khác (403). Dự phòng: tài khoản seed KH3 (chưa có hồ sơ), KH1 (đã có) |
+| Mục chấm 11 | Sửa 2026-10-03 theo luật thi (gõ tay, tối đa khoảng 3 request): đăng nhập KH1 seed (`0900000001`, đã có hồ sơ) → `GET /customers/1` (200, mã gõ tay được — ADR-015). Đường phụ khi được hỏi: `GET /customers/2` bằng token KH1 → 403; KH3 (`0900000003`, chưa có hồ sơ) → xem 404, tạo 201. Chuỗi chốt ở file 04 / kịch bản thi |
 | Mã đường giao tiếp | Bỏ S1, **giữ nguyên S2–S7**, không đánh số lại |
 
 ## Vì sao

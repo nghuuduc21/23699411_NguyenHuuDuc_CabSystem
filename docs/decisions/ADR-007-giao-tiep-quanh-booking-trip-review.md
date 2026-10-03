@@ -55,7 +55,7 @@ Trip không cần gì từ Payment: không quy tắc nào của Trip phụ thu�
 
 - **Khe hở khi giữ chỗ** (quyết định 1): Driver đã chuyển tài xế sang bận nhưng bước sau lỗi → tài xế kẹt bận. Xử lý: `ReserveDriver` gọi lặp được nên tài xế bấm nhận lại; Offer hết hạn mà chưa phân công thì Booking gọi `ReleaseDriver` (Q35).
 - **Đánh giá phụ thuộc Trip** (quyết định 3).
-- **Tiền mặt được ghi nhận và tiền được hoàn sau sự việc một nhịp** (quyết định 4); mất event là mất khoản hoàn, nên cần outbox (ADR-005).
+- **Tiền mặt được ghi nhận và tiền được hoàn sau sự việc một nhịp** (quyết định 4); mất event là mất khoản hoàn. Từ 2026-10-03 không dùng outbox: gửi event ngay sau commit, rủi ro này được chấp nhận (ADR-017, thay ADR-005).
 - Quyết định 3 và 4 **khác thiết kế đã được duyệt**; sinh viên phải nói được bảng 10.1 của file 02 khi vấn đáp.
 
 ## Điều kiện xem lại

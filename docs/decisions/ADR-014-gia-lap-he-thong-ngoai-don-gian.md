@@ -28,11 +28,11 @@ Chọn **C**.
 | Thông báo, SMS | `notification-service` | Chỉ lưu vào database và ghi một dòng log; bỏ field `status` của thông báo |
 | OTP | `auth-service` | Ghi log mã; `SIMULATION_MODE=true` thì trả `otp` trong response A07 |
 
-Biến môi trường: `SIMULATION_MODE` (auth, payment; `true` trong `.env.example`, phải `false` khi chạy thật), `PAYMENT_CALLBACK_SECRET` (payment).
+Biến môi trường: `SIMULATION_MODE` (auth, payment; từ 2026-10-03 cũng bật chạy seed ở mọi service có seed, thay `SEED_ON_START`; `true` trong `.env.example`, phải `false` khi chạy thật), `PAYMENT_CALLBACK_SECRET` (payment; `.env.example`: `cab-secret`). Mã giao dịch giả lập theo quy luật `SIM-<payment_id>-<attempt_no>` để gõ tay được (`docs/design/03` mục 8.4).
 
 ## Vì sao
 
-1. **30 giây mỗi mục chấm**: luồng mặc định chỉ cần A19 → A31 là đã `COMPLETED`; không script tính chữ ký, không chờ. Mục 19 dùng `MANUAL` để thấy rõ bước "nhận callback → COMPLETED": A19 → A31 (`PENDING`) → A30 → A32 → A30 (`COMPLETED`) → A21, 6 request, callback chỉ cần một header và hai biến Postman đã lưu (file 04 mục 5).
+1. **30 giây mỗi mục chấm**: luồng mặc định chỉ cần A19 → A31 là đã `COMPLETED`; không script tính chữ ký, không chờ. Mục 19 dùng `MANUAL` để thấy rõ bước "nhận callback → COMPLETED". Sửa 2026-10-03 theo luật thi (Postman không lưu sẵn biến, tối đa khoảng 3 request): dùng booking seed **B7** (đang chờ thanh toán, payment 7): A31 `MANUAL` cho payment 7 (`PENDING`, `txn_id` = `SIM-7-1`) → A32 callback với header `X-Callback-Secret: cab-secret` (response trả luôn trạng thái `COMPLETED`) — 2 request, tùy chọn thêm A30 để xem (`docs/design/03` mục 14, D17; chuỗi chi tiết ở file 04 / kịch bản thi).
 2. **Một hàm xử lý callback** cho cả đường nội bộ và A32: chống lặp theo `provider_transaction_id` và `callback_response` dùng chung, nên mục 30 chứng minh được cho cả hai đường.
 3. **NFR13 vẫn giữ**: nghiệp vụ chỉ gọi adapter; nối Provider thật thì thay adapter (thêm HMAC hoặc chữ ký của Provider), không sửa luồng Payment.
 4. Không thêm container, không thêm đường giao tiếp giữa 8 service.

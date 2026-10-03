@@ -2,7 +2,7 @@
 
 > Nguồn: `srs.md` (FR, BRULE, UC), `docs/design/01`–`04`, `CLAUDE.md`. Cập nhật 2026-10-03.
 > Mã API (A01–A38) theo `04-api.md`; mã gRPC giữa service (S2–S7; S1 đã bỏ) và topic Kafka (K1–K7) theo `02-kien-truc-giao-tiep.md`.
-> Sửa 2026-10-03 theo góp ý giảng viên: QT01 chỉ tạo tài khoản, QT04 thêm bước tạo hồ sơ (ADR-013); QT05, QT10, QT16, QT17 theo cách giả lập hệ thống ngoài mới (ADR-014); ma trận 4.1, 4.2. Cùng ngày: QT09 ghi rõ đặt xe không cần hồ sơ (Q56); QT10 thêm `simulate_result: "MANUAL"` (Q57).
+> Sửa 2026-10-03 theo góp ý giảng viên: QT01 chỉ tạo tài khoản, QT04 thêm bước tạo hồ sơ (ADR-013); QT05, QT10, QT16, QT17 theo cách giả lập hệ thống ngoài mới (ADR-014); ma trận 4.1, 4.2. Cùng ngày: QT09 ghi rõ đặt xe không cần hồ sơ (Q56); QT10 thêm `simulate_result: "MANUAL"` (Q57). Sửa lần 3 theo luật thi: D1 (số điện thoại, email lưu rõ — ADR-012), D14 (HS256 — ADR-016), QT02, QT08, QT12, QT21 (seed theo quy luật, lệnh gõ tay, 14 biến môi trường).
 
 ## 0. Mô hình 5 thành phần
 
@@ -121,7 +121,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 
 | Mã | Dữ liệu | Thuộc service | Lưu ở | Dữ liệu chính |
 |---|---|---|---|---|
-| **D1** | `accounts` | auth | H5 (auth-db) | Mã tài khoản, số điện thoại và email (mã hóa), mật khẩu băm, role, trạng thái |
+| **D1** | `accounts` | auth | H5 (auth-db) | Mã tài khoản (số nguyên), số điện thoại và email (lưu rõ, không trùng — ADR-012), mật khẩu băm scrypt, role, trạng thái |
 | **D2** | `otp_verifications` | auth | H5 (auth-db) | OTP băm, hạn, số lần thử |
 | **D3** | `customer_profiles` | customer | H5 (customer-db) | Họ tên (bắt buộc), ngày sinh (tùy chọn), đều mã hóa. Có thể chưa có dòng cho một tài khoản |
 | **D4** | `drivers`, `vehicles`, `vehicle_types` | driver | H5 (driver-db) | Hồ sơ, số giấy phép (mã hóa), trạng thái duyệt, Online/Offline, vị trí hiện tại; xe, biển số, loại xe |
@@ -134,7 +134,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 | **D11** | `ratings`, `driver_ratings` | rating | H5 (rating-db) | Số sao, nhận xét theo chuyến; tổng điểm và số lượt của tài xế |
 | **D12** | Key Redis `rl:*`, `revoked:{jti}` | Gateway | H6 | Bộ đếm rate limit; token đã đăng xuất |
 | **D13** | Event Kafka K1–K7 | Service phát | H7 | `event_id`, loại event, mã đối tượng, trạng thái mới |
-| **D14** | Token JWT | auth cấp | H1, H2, H3 | `sub` (mã tài khoản), `role`, `jti`, `exp`, chữ ký |
+| **D14** | Token JWT | auth cấp | H1, H2, H3 | `sub` (mã tài khoản), `role`, `jti`, `exp`, chữ ký HS256 bằng `JWT_SECRET` (ADR-016) |
 
 **Bảy event Kafka (D13):**
 
@@ -168,7 +168,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Người dùng nhập số điện thoại (hoặc email) và mật khẩu. <br> 2. Auth tìm tài khoản qua chỉ mục, so mật khẩu với bản băm. <br> 3. Sai thông tin → 401; tài khoản bị khóa → từ chối (Exception UC02). <br> 4. Đúng → cấp JWT chứa mã tài khoản, role, mã token, hạn. <br> 5. Chuỗi SQL injection như `' OR 1=1 --` không đăng nhập được vì truy vấn dùng tham số (mục 25). |
+| **Procedures** | 1. Người dùng nhập số điện thoại (hoặc email) và mật khẩu. <br> 2. Auth tìm tài khoản theo số điện thoại (hoặc email) lưu rõ, có ràng buộc không trùng; so mật khẩu với bản băm. <br> 3. Sai thông tin → 401; tài khoản bị khóa → từ chối (Exception UC02). <br> 4. Đúng → cấp JWT chứa mã tài khoản, role, mã token, hạn. <br> 5. Chuỗi SQL injection như `' OR 1=1 --` không đăng nhập được vì truy vấn dùng tham số (mục 25). |
 | **People** | P1, P2, P3 |
 | **Hardware** | H1/H2/H3 nhận và **lưu token** · H4 · H5 đọc auth-db |
 | **Software** | SW1 → SW2 `POST /api/v1/auth/login` (A05) → SW3 `Login` → SW11 |
@@ -232,7 +232,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **People** | P1, P3 (tìm quanh tọa độ); P1, P2, P3 (xem theo mã) |
 | **Hardware** | H1/H3 · H4 · H5 driver-db |
 | **Software** | SW2 A14 `GET /drivers/{id}`, A12 `GET /drivers/nearby?lat&lng&radius_m&vehicle_type&page&limit` → SW5 `GetDriver`, `FindNearbyDrivers` |
-| **Data** | Đọc D4. Cần seed ít nhất 5 tài xế ở các trạng thái khác nhau |
+| **Data** | Đọc D4. Seed TX1–TX8 (mã 11–18) ở các trạng thái khác nhau; tại điểm mẫu P0 (10.82, 106.68) tìm thấy TX1–TX4 (file 03 mục 14) |
 
 ### QT09 — Đặt xe và tính cước cố định
 
@@ -272,7 +272,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **People** | P1, P3 |
 | **Hardware** | H1/H3 · H4 · H5 booking-db |
 | **Software** | SW2 A20 `GET /bookings?status&page&limit`, A21 `GET /bookings/{id}` → SW6 `ListBookings`, `GetBooking` |
-| **Data** | Đọc D5. Cần seed ít nhất 5 booking |
+| **Data** | Đọc D5. Seed B1–B7 của KH1 (mã 1–7, file 03 mục 14) |
 
 ### QT13 — Thực hiện và theo dõi chuyến đi
 
@@ -358,11 +358,11 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Dựng toàn bộ hệ thống bằng Docker Compose; liệt kê container (mục 5). <br> 2. `kafka-init` tạo sẵn 7 topic khi khởi động. <br> 3. Seed dữ liệu mẫu: admin, tài xế đã duyệt và đang Online gần một tọa độ mẫu, booking mẫu. <br> 4. Kiểm tra sức khỏe: `/health` (Gateway còn sống), `/ready` (Gateway sẵn sàng), `/health/services` (8 service) (mục 6). <br> 5. Mở Kafka UI xem topic, event và consumer (mục 7). <br> 6. Kiểm tra `.gitignore` và `.env`: không đưa file chứa mật khẩu, khóa lên GitHub (mục 2). |
+| **Procedures** | 1. Gõ tay hai lệnh: `cp .env.example .env` rồi `docker compose up -d --build`; liệt kê container bằng `docker compose ps` (mục 5). Đặt lại dữ liệu: `docker compose down -v` rồi dựng lại. <br> 2. `kafka-init` tạo sẵn 7 topic khi khởi động. <br> 3. Khi `SIMULATION_MODE=true`, mỗi service tự seed theo quy luật dễ nhớ, cùng mật khẩu `SEED_PASSWORD`: khách `090000000n` (mã n), tài xế `091000000n` (mã 10 + n) đứng quanh điểm mẫu P0 (10.82, 106.68), admin `0999999999` (mã 99), booking B1–B7 (file 03 mục 14). <br> 4. Kiểm tra sức khỏe: `/health` (Gateway còn sống), `/ready` (Gateway sẵn sàng), `/health/services` (8 service) (mục 6). <br> 5. Mở Kafka UI xem topic, event và consumer (mục 7). <br> 6. Kiểm tra `.gitignore` và `.env`: không đưa file chứa mật khẩu, khóa lên GitHub (mục 2). |
 | **People** | P4 Quản trị hệ thống (khi chấm: sinh viên) |
 | **Hardware** | Máy chủ (laptop 16 GB) · H4–H8 |
 | **Software** | SW15 Docker Compose · SW2 A01 `/health`, A02 `/ready`, A03 `/health/services` · SW13 Kafka UI · Git |
-| **Data** | Biến môi trường (`.env`: mật khẩu database, khóa ký JWT, khóa mã hóa) · Dữ liệu seed vào D1–D11 |
+| **Data** | 14 biến môi trường (`.env`: `DB_PASSWORD`, `JWT_SECRET`, `CUSTOMER_DATA_KEY`, `DRIVER_DATA_KEY`, `PAYMENT_CALLBACK_SECRET`, `SIMULATION_MODE`, `SEED_PASSWORD`, các hạn và ngưỡng — file 03 mục 13) · Dữ liệu seed vào D1–D9, D11 (không seed thông báo) |
 
 ---
 

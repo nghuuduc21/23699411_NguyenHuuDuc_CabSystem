@@ -4,7 +4,8 @@
 > File này trả lời: **service nào nói chuyện với service nào, bằng gì, vì yêu cầu nào** — và cặp nào **không** nói chuyện.
 > Không thuộc file này: loại database và schema (file 03), đường dẫn REST chi tiết (file 04), field của `.proto` (spec).
 >
-> **Đã chốt (`CLAUDE.md`):** 8 service; Kafka + Kafka UI; Redis ở Gateway, không Nginx; **Auth và Customer không gọi nhau** (2026-10-03); Booking → Trip `CreateTrip` đồng bộ; Booking → Payment đồng bộ để tính cước và tạo thanh toán; kết quả thanh toán và hoàn tiền đi bằng event; UUID; `FAILED_PRECONDITION` → 409; ba hệ thống ngoài giả lập đơn giản nhất sau adapter.
+> **Đã chốt (`CLAUDE.md`):** 8 service; Kafka + Kafka UI; Redis ở Gateway, không Nginx; **Auth và Customer không gọi nhau** (2026-10-03); Booking → Trip `CreateTrip` đồng bộ; Booking → Payment đồng bộ để tính cước và tạo thanh toán; kết quả thanh toán và hoàn tiền đi bằng event; khóa chính số nguyên (ADR-015); JWT HS256 (ADR-016); gửi event ngay sau commit, không outbox (ADR-017); `FAILED_PRECONDITION` → 409; ba hệ thống ngoài giả lập đơn giản nhất sau adapter.
+> **Sửa 2026-10-03 lần 2 (luật thi: gõ tay mọi request, không mở tài liệu):** đóng Q19 (HS256 — ADR-016) và Q20 (bỏ outbox — ADR-017, ADR-005 bị thay thế); đóng GĐ-6, GĐ-8. **Không đổi đường giao tiếp nào** (S2–S7, K1–K7 giữ nguyên).
 > **Sửa 2026-10-03** theo góp ý giảng viên: **bỏ đường S1** (`auth-service` → `customer-service` `CreateProfile`) — ADR-013 thay ADR-004. **Giữ nguyên mã S2–S7**, không đánh số lại, để không phải đổi mã ở file 03, 04, 05 và ADR; mã S1 bỏ trống, không dùng lại. Hệ thống ngoài giả lập đơn giản: callback xác thực bằng khóa bí mật trong header, bỏ chữ ký HMAC — ADR-014. Đóng Q43, Q50. Cùng ngày đóng Q56 (Booking không gọi Customer — mục 9), Q57 (`simulate_result: "MANUAL"` — mục 4.5, 8.2), Q58.
 > **Chưa chốt:** chỗ ghi **[GĐ-n]** là *giả định tạm*, liệt kê ở mục 11.
 > **Đồng bộ 2026-10-02 lần 4** (cùng lúc viết file 03, 04): Booking tính quãng đường, Payment tính cước (đóng Q38, GĐ-13); hạn thanh toán BRULE17 → K6 có thêm `CANCELED`; Redis dừng thì cho qua (đóng Q39); đăng xuất ở Gateway theo FR42 (đóng Q40); tìm tài xế bằng Haversine (ADR-011). Chỉ sửa các dòng bị ảnh hưởng.
@@ -72,7 +73,7 @@ Trả lời nhận xét "không phải service nào cũng giao tiếp cả đồ
 | `kafka-init` | Tạo topic khi khởi động rồi thoát | Mục chấm 7 | Không |
 | Database của từng service | File 03 | Database-per-service | Không |
 
-**Chỉ hai thành phần mở cổng ra máy chủ:** Gateway tại `http://localhost:3000` và Kafka UI tại `http://localhost:8080` (hai số cổng là đề xuất, đặt trong `.env.example`). Kafka UI là công cụ xem, không phải đường vào nghiệp vụ.
+**Chỉ hai thành phần mở cổng ra máy chủ:** Gateway tại `http://localhost:3000` và Kafka UI tại `http://localhost:8080` (hai số cổng cố định, ghi thẳng trong `compose.yaml`; không còn biến `GATEWAY_PORT`, `KAFKA_UI_PORT` — file 03 mục 13). Kafka UI là công cụ xem, không phải đường vào nghiệp vụ.
 
 **Không đặt Nginx** trước Gateway: Gateway tự làm reverse proxy (`CLAUDE.md`).
 
@@ -105,7 +106,7 @@ Gateway **không** làm:
 
 Gateway chuyển danh tính đã kiểm tra (`account_id`, `role`) cho service qua gRPC metadata. Service tin metadata này vì chỉ Gateway vào được mạng nội bộ của Compose (mục chấm 8). Lời gọi service → service chuyển tiếp nguyên metadata đó.
 
-**[GĐ-8]** JWT ký bằng khóa bất đối xứng: `auth-service` giữ khóa riêng, Gateway chỉ có khóa công khai.
+**JWT ký HS256** bằng một khóa bí mật `JWT_SECRET` mà chỉ `auth-service` (ký) và Gateway (kiểm tra) có — đã chốt 2026-10-03, ADR-016 (trước là giả định GĐ-8: khóa bất đối xứng).
 
 ## 3. Sơ đồ kiến trúc
 
@@ -273,7 +274,7 @@ Cặp Booking — Payment có **cả gRPC lẫn Kafka**, nhưng là ba việc kh
 | Điểm | Quy ước | Lý do |
 |---|---|---|
 | Tên topic | `<context>.<sự-kiện>`, chữ thường, gạch nối | Nhìn tên biết ai phát |
-| Phong bì chung | `event_id` (UUID), `event_type`, `occurred_at`, `data` | `event_id` để nhận ra message lặp |
+| Phong bì chung | `event_id` (chuỗi UUID do bên phát sinh bằng `crypto.randomUUID()` lúc gửi), `event_type`, `occurred_at`, `data` | `event_id` để nhận ra message lặp. Event không có bảng riêng nên không có số tự tăng; không ai phải gõ mã này nên không vướng luật thi (ADR-015). Các ID trong `data` là số nguyên |
 | Khóa message (key) | ID của đối tượng chính | Kafka giữ thứ tự theo key: các event của cùng một chuyến, cùng một booking đến đúng thứ tự |
 | Consumer group | Tên service | Mỗi service nhận mỗi event một lần, dù chạy nhiều bản |
 | Nội dung | **Chỉ ID, trạng thái, số tiền.** Không họ tên, số điện thoại, địa chỉ, tọa độ, lý do hủy, nhận xét | NFR08, NFR16: event xem được trên Kafka UI |
@@ -304,9 +305,9 @@ Năm điều cần giải thích được:
 | K6 dùng key `booking_id` | Payment gắn với booking (lúc trả trước chưa có Trip). `FAILED` → `COMPLETED` → `REFUNDED` của cùng một booking phải đến đúng thứ tự |
 | K6 chỉ mang `CANCELED` khi lý do là **quá hạn hoặc hết lượt** (BRULE17) | Đó là trường hợp duy nhất Payment tự hủy bỏ mà Booking chưa biết. Khi Payment hủy bỏ vì nhận K3 / K4 / K5 thì chính Booking hoặc Trip là bên báo tin, không cần báo ngược lại |
 
-### 6.3 Phát event không được mất
+### 6.3 Phát event: gửi ngay sau commit, không outbox (ADR-017)
 
-Vấn đề: service ghi database xong rồi mới gửi Kafka. Nếu chết giữa hai bước, trạng thái đã đổi mà event không bao giờ được phát.
+Vấn đề: service ghi database xong rồi mới gửi Kafka. Nếu chết giữa hai bước, trạng thái đã đổi mà event không bao giờ được phát. Bảng dưới là hậu quả của rủi ro đã **chấp nhận**.
 
 | Event mất | Hậu quả |
 |---|---|
@@ -314,7 +315,16 @@ Vấn đề: service ghi database xong rồi mới gửi Kafka. Nếu chết gi�
 | K3, K4, K5 (`CANCELED`) | Chuyến không thực hiện mà **không hoàn tiền** (vi phạm BRULE14) |
 | K5 (`COMPLETED`) | Tiền mặt không được ghi nhận; tài xế kẹt ở trạng thái bận |
 
-**[GĐ-6]** Dùng mẫu **outbox**: ghi event vào một bảng trong cùng giao dịch với thay đổi nghiệp vụ; một tiến trình nền đọc bảng đó và gửi lên Kafka. Truy vết: NFR14, NFR15. Chi tiết và phương án rút gọn: ADR-005.
+**Đã chốt 2026-10-03 (ADR-017, thay ADR-005):** service **commit giao dịch rồi gửi event ngay** trong cùng request; **không dùng bảng outbox**.
+
+| Điểm | Thiết kế |
+|---|---|
+| Thứ tự | Ghi database (commit) → gửi Kafka (producer có thử lại vài lần, tổng ≤ 1 giây) → trả response |
+| Gửi thất bại sau khi đã commit | Không hoàn tác dữ liệu, vẫn trả kết quả thành công cho client; ghi log mức `error` mã `EVENT_PUBLISH_FAILED` kèm topic và key (không kèm dữ liệu cá nhân) |
+| Rủi ro chấp nhận | Service dừng hoặc Kafka dừng **đúng giữa** lúc commit và lúc gửi xong → event mất; các hậu quả ở bảng trên có thể xảy ra (cần xử lý tay theo log) |
+| Vì sao chấp nhận | Ít bảng, không tiến trình nền, ít khái niệm phải giải thích khi thi không được mở tài liệu; event đến trong khoảng một giây. Khe hở chỉ mở khi có sự cố đúng thời điểm, không xảy ra trong demo |
+| Vẫn giữ | Mọi consumer chịu được event lặp (mục 6.4, file 03 mục 11.3): producer thử lại có thể gửi hai lần |
+| Truy vết | NFR14, NFR15 — đáp ứng ở mức "consumer lặp an toàn", **không** đáp ứng "không mất event khi sự cố" |
 
 ### 6.4 Chống trùng ở Notification
 
@@ -410,7 +420,7 @@ sequenceDiagram
 
   KH->>GW: REST đặt xe (điện tử)
   GW->>B: gRPC CreateBooking
-  B->>B: kiểm tra dữ liệu, tính quãng đường
+  B->>B: kiểm tra dữ liệu, tính quãng đường, xin booking_id từ dãy số (file 03 mục 6.1)
   B->>P: S4 gRPC CreatePayment
   alt payment-service lỗi hoặc quá deadline
     B-->>GW: UNAVAILABLE, không tạo booking
@@ -462,7 +472,7 @@ sequenceDiagram
 
 Booking **tiền mặt**: giống đến bước lưu Booking, nhưng lưu thẳng `SEARCHING` và bộ ghép chạy ngay; không có đoạn thanh toán. Thanh toán **thất bại** (A31 kèm `simulate_result: "FAILED"`, chỉ khi `SIMULATION_MODE=true`): giao dịch `FAILED`, Payment `FAILED`, phát K6 (`FAILED`), Notification báo khách, Booking vẫn `PENDING_PAYMENT`; khách thanh toán lại với khóa mới (FR19).
 
-Callback nội bộ (adapter) và callback từ ngoài (A32) đi qua **cùng một hàm xử lý**, nên chống lặp theo `provider_transaction_id` áp dụng cho cả hai (mục 30). Mỗi lần gọi A31 với khóa mới là một lần thử. **Quá 10 phút hoặc lần thử thứ 3 thất bại (BRULE17):** Payment → `CANCELED`, phát K6 (`CANCELED` kèm lý do); Booking đang `PENDING_PAYMENT` → `CANCELED` (người hủy: hệ thống), phát K4; Notification báo khách. Hạn và số lần đọc từ biến môi trường (file 03 mục 13).
+Callback nội bộ (adapter) và callback từ ngoài (A32) đi qua **cùng một hàm xử lý**, nên chống lặp theo `provider_transaction_id` áp dụng cho cả hai (mục 30). Mỗi lần gọi A31 với khóa mới là một lần thử. **Quá 10 phút hoặc lần thử thứ 3 thất bại (BRULE17):** Payment → `CANCELED`, phát K6 (`CANCELED` kèm lý do); Booking đang `PENDING_PAYMENT` → `CANCELED` (người hủy: hệ thống), phát K4; Notification báo khách. Hạn đọc từ biến `PAYMENT_TIMEOUT_SECONDS`; số lần thử (3) là hằng số trong code (file 03 mục 13).
 
 ### 8.3 Ghép tài xế → nhận chuyến → tạo Trip (mục 15, 16) — [GĐ-2]
 
@@ -714,7 +724,7 @@ Thiết kế tham chiếu (`docs/reference/thiet-ke-da-duyet.md`) đã được 
 | Vai trò và quyền | Bảng ROLE, PERMISSION, ROLE_PERMISSION | Ba role cố định, không có bảng PERMISSION | `CLAUDE.md` |
 | `DRIVER_OFFER.price_offer` | Có | Không có giá trong Offer; số tiền nằm ở Booking | BRULE08: cước cố định cho cả booking, không đổi theo tài xế |
 | Điểm trung bình tài xế | Bảng DRIVER_RATING ở Rating & Review | Giống: DriverRating thuộc Rating | Q28 |
-| Khóa chính | INT | UUID | `CLAUDE.md` |
+| Khóa chính | INT | **Số nguyên** `bigint` identity — giống tham chiếu (đổi 2026-10-03, trước là UUID) | `CLAUDE.md`; ADR-015 |
 
 ## 11. Giả định tạm và phạm vi ảnh hưởng
 
@@ -729,6 +739,8 @@ Thiết kế tham chiếu (`docs/reference/thiet-ke-da-duyet.md`) đã được 
 | GĐ-10 | Bàn giao Booking → Trip bằng event | **Đổi**: gRPC `CreateTrip` | `CLAUDE.md`; ADR-008 |
 | GĐ-12 | Rating hỏi Trip bằng gRPC | Giữ. BA đóng vì khớp nguyên tắc đồng bộ là mặc định; **chưa có xác nhận riêng** cho đường này | Nguyên tắc trong `CLAUDE.md`; ADR-007 |
 | GĐ-13 | Booking tính quãng đường rồi gửi cho Payment | Chốt đúng như giả định | `CLAUDE.md` dòng "Tính cước" |
+| GĐ-6 | Outbox cho mọi service phát event | **Đổi 2026-10-03**: gửi Kafka ngay sau commit, không outbox (mục 6.3) | `CLAUDE.md`; ADR-017 (thay ADR-005) |
+| GĐ-8 | JWT ký bất đối xứng | **Đổi 2026-10-03**: HS256, một khóa `JWT_SECRET` (mục 2.2) | `CLAUDE.md`; ADR-016 |
 
 ### 11.2 Còn hiệu lực
 
@@ -738,8 +750,6 @@ Nếu câu trả lời khác giả định, sửa đúng các dòng ở cột cu
 |---|---|---|---|---|
 | GĐ-2 | Q5 | Tài xế gọi API của `booking-service` để xem Offer đang chờ, kèm thông báo K2 | Chỉ qua thông báo | G4 bỏ thao tác "xem Offer đang chờ" |
 | GĐ-4 | Q4 | Tài xế chờ duyệt đăng nhập được; Driver chặn bật Online | Không đăng nhập được | Cặp Auth–Driver thành có nối; R2, G1, G3 đổi |
-| GĐ-6 | Q20 | Outbox cho mọi service phát event | Gửi Kafka ngay sau khi ghi database | Mục 6.3; file 03 bớt bảng outbox; chấp nhận rủi ro trong bảng 6.3 |
-| GĐ-8 | Q19 | JWT ký bất đối xứng | Khóa bí mật dùng chung | Mục 2.2; không đổi đường giao tiếp |
 | GĐ-9 | Q21 — file 03 đã thiết kế theo giả định này (BA chọn, chờ sinh viên xác nhận) | `customer_id` và `driver_id` chính là `account_id` | Mỗi hồ sơ có mã riêng | Booking, Trip, Payment, Rating, Notification phải hỏi Customer / Driver để đổi mã → thêm lời gọi gRPC |
 | GĐ-9b | Q27 | Booking không nghe kết cục của Trip | Booking ghi trạng thái cuối | K5 thêm subscriber `booking-service`; mục 9; file 01 thêm trạng thái Booking |
 | GĐ-11 | Q28 | Điểm trung bình tài xế thuộc Rating, không báo cho Driver | Rating gọi gRPC sang Driver để ghi điểm | Thêm S8 rating → driver; mục 9 bỏ dòng Driver – Rating |
@@ -764,14 +774,14 @@ Q1–Q16, Q27–Q32, Q44, Q45 ở file 01. Q46–Q49 ở file 03. Q50–Q55 ở 
 | Q39 | Redis dừng thì Gateway làm gì? | Cho request đi qua, ghi log cảnh báo | `CLAUDE.md` dòng "Redis dừng". Còn mở phần `/ready` trả gì: file 04 quyết định P5 |
 | Q40 | Đăng xuất có làm không, xử lý ở đâu? | Có (FR42, UC33). Gateway tự xử lý bằng danh sách thu hồi trong Redis | `CLAUDE.md` dòng "Đăng xuất"; `srs.md` |
 | Q21 (BA đóng, chưa xác nhận) | `customer_id`, `driver_id` có trùng `account_id` không? | Trùng: khóa chính của hồ sơ chính là `account_id`. Từ 2026-10-03 đây cũng là điều kiện để bỏ S1: Customer lấy mã từ token | File 03 mục 4.1, 5.2, quyết định D1 |
+| Q19 | JWT ký bằng gì? | HS256, khóa chung `JWT_SECRET` giữa auth và Gateway (2026-10-03) | `CLAUDE.md`; ADR-016 |
+| Q20 | Chống mất event bằng outbox hay gửi thẳng? | Gửi thẳng ngay sau commit, chấp nhận rủi ro mất event khi sự cố (2026-10-03) | `CLAUDE.md`; ADR-017 |
 | Q43 | OTP gửi cho tài xế bằng cách nào khi kênh gửi là giả lập? | Adapter trong `auth-service` ghi log; `SIMULATION_MODE=true` thì trả mã trong response A07. Không qua Notification | `CLAUDE.md` dòng "Hệ thống ngoài"; ADR-014 |
 
 ### 12.2 Còn mở
 
 | # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
 |---|---|---|---|---|
-| Q19 | JWT ký bằng gì? | (a) Bất đối xứng: Gateway không tự tạo token được; (b) khóa chung: đơn giản hơn | (a) | SV |
-| Q20 | Chống mất event bằng outbox hay gửi thẳng? | ADR-005 | Outbox | SV |
 | Q22 | Kafka UI không có đăng nhập. Chấp nhận cho môi trường học tập không? | (a) Chấp nhận, event chỉ chứa ID và số tiền; (b) bật đăng nhập | (a) | SV |
 | Q24 | `driver-service` không trả lời khi Booking hỏi (S2): thử lại mấy lần rồi kết luận không tìm được? | 3 lần / chờ đến khi có lại | 3 lần rồi phát K3 (khách được hoàn tiền) | SV |
 | Q25 | Deadline bao nhiêu? Đặt xe và nhận chuyến đi qua 2–3 service nối tiếp | Là biến cấu hình | Service → service 1 giây; Gateway → service 3 giây. NFR01 (≤ 2 giây) tính cho điều kiện bình thường, khi đó mỗi lời gọi chỉ vài chục mili giây | SV |

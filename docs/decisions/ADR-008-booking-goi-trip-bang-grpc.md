@@ -80,4 +80,4 @@ Thêm vào đó:
 
 ## Điều kiện xem lại
 
-Quyết định đã chốt trong `CLAUDE.md`; muốn đổi phải hỏi lại sinh viên và giảng viên. Phương án lùi nếu việc xử lý hai khe hở tốn công hơn lợi ích: A kèm outbox; khi đó thêm lại topic `booking.driver-assigned` và sửa S5, K5, mục 8.3 của file 02.
+Quyết định đã chốt trong `CLAUDE.md`; muốn đổi phải hỏi lại sinh viên và giảng viên. Phương án lùi nếu việc xử lý hai khe hở tốn công hơn lợi ích: A kèm outbox (outbox đã bỏ từ 2026-10-03 — ADR-017; chọn phương án lùi này thì phải thêm lại outbox theo ADR-005); khi đó thêm lại topic `booking.driver-assigned` và sửa S5, K5, mục 8.3 của file 02.

@@ -35,16 +35,16 @@
 <body>
 <div id="canvas">
   <h1>CAB System – Bounded Context / Database View</h1>
-  <div class="sub">8 bounded context · mỗi context một service và một database riêng · khóa chính UUID · tiền là số nguyên (đồng)</div>
+  <div class="sub">8 bounded context · mỗi context một service và một database riêng · khóa chính bigint (số nguyên) · tiền là số nguyên (đồng)</div>
   <div class="grid" id="grid"></div>
   <div class="legend">
     <div><b>PK</b> khóa chính</div>
     <div><b>FK</b> khóa ngoại trong cùng database</div>
     <div><b>UK</b> ràng buộc duy nhất (UNIQUE)</div>
     <div><span class="ref">→ service</span>: ID của service khác, <b style="min-width:0;font-size:16.5px">không có khóa ngoại</b></div>
-    <div><span class="enc">cột_enc</span>: dữ liệu mã hóa AES-256-GCM · <span class="enc">cột_bidx</span>: chỉ mục để tra cứu dữ liệu đã mã hóa</div>
+    <div><span class="enc">cột_enc</span>: dữ liệu mã hóa AES-256-GCM; cột tím khác: mật khẩu, OTP đã băm</div>
     <div>Mọi bảng có <code>created_at timestamptz</code>; bảng có sửa thêm <code>updated_at</code></div>
-    <div>Bảng kỹ thuật không vẽ: <code>schema_migrations</code> (mọi database PostgreSQL), <code>outbox</code> (driver, booking, trip, payment)</div>
+    <div>Bảng kỹ thuật không vẽ: <code>schema_migrations</code> (mọi database PostgreSQL)</div>
   </div>
 </div>
 
@@ -55,29 +55,28 @@ const contexts = [
     rel: '<code>accounts</code> là tài khoản chung cho ba vai trò. OTP gắn theo số điện thoại (đăng ký tài xế).',
     tables: [
       { t: 'accounts', hd: '#f9c5c5', cols: [
-        ['PK', 'account_id', 'uuid'], ['', 'phone_enc', 'bytea'], ['UK', 'phone_bidx', 'bytea'],
-        ['', 'email_enc', 'bytea'], ['UK', 'email_bidx', 'bytea'], ['', 'password_hash', 'text'],
+        ['PK', 'account_id', 'bigint'], ['UK', 'phone', 'text'], ['UK', 'email', 'text'], ['', 'password_hash', 'text'],
         ['', 'role', 'text'], ['', 'status', 'text']] },
       { t: 'otp_verifications', hd: '#d9c5f9', cols: [
-        ['PK', 'otp_id', 'uuid'], ['', 'phone_bidx', 'bytea'], ['', 'otp_hash', 'bytea'], ['', 'purpose', 'text'],
+        ['PK', 'otp_id', 'bigint'], ['', 'phone', 'text'], ['', 'otp_hash', 'text'], ['', 'purpose', 'text'],
         ['', 'expires_at', 'timestamptz'], ['', 'attempt_count', 'smallint'], ['', 'consumed_at', 'timestamptz']] },
     ] },
   { n: 2, name: 'Customer', ic: '👥', svc: 'customer-service', db: 'PostgreSQL · customer-db', span: 2, bg: '#e9f8ea', bd: '#3fae4a',
     rel: '<code>customer_id</code> = <code>account_id</code> lấy từ token. Hồ sơ do khách tự tạo sau khi đăng nhập; auth và customer không gọi nhau.',
     tables: [
       { t: 'customer_profiles', hd: '#f9c5c5', cols: [
-        ['PK', 'customer_id', 'uuid', 'auth'], ['', 'full_name_enc', 'bytea'], ['', 'date_of_birth_enc', 'bytea']] },
+        ['PK', 'customer_id', 'bigint', 'auth'], ['', 'full_name_enc', 'bytea'], ['', 'date_of_birth_enc', 'bytea']] },
     ] },
   { n: 3, name: 'Driver & Vehicle', ic: '🚗', svc: 'driver-service', db: 'PostgreSQL · driver-db', span: 6, bg: '#fff6e0', bd: '#e0a100',
     rel: '<code>drivers</code> 1 — 1 <code>vehicles</code> · <code>vehicle_types</code> 1 — n <code>vehicles</code> · <code>driver_id</code> = <code>account_id</code>. Tìm tài xế trong 1 km: tính khoảng cách trên <code>current_lat</code>, <code>current_lng</code>.',
     tables: [
       { t: 'drivers', hd: '#f9c5c5', cols: [
-        ['PK', 'driver_id', 'uuid', 'auth'], ['', 'full_name', 'text'], ['', 'license_number_enc', 'bytea'], ['UK', 'license_number_bidx', 'bytea'],
-        ['', 'approval_status', 'text'], ['', 'reviewed_by', 'uuid', 'auth'], ['', 'reviewed_at', 'timestamptz'], ['', 'reject_reason', 'text'],
-        ['', 'availability', 'text'], ['', 'current_booking_id', 'uuid', 'booking'],
+        ['PK', 'driver_id', 'bigint', 'auth'], ['', 'full_name', 'text'], ['', 'license_number_enc', 'bytea'],
+        ['', 'approval_status', 'text'], ['', 'reviewed_by', 'bigint', 'auth'], ['', 'reviewed_at', 'timestamptz'], ['', 'reject_reason', 'text'],
+        ['', 'availability', 'text'], ['', 'current_booking_id', 'bigint', 'booking'],
         ['', 'current_lat, current_lng', 'double precision'], ['', 'location_updated_at', 'timestamptz']] },
       { t: 'vehicles', hd: '#f9e3a8', cols: [
-        ['PK', 'vehicle_id', 'uuid'], ['FK UK', 'driver_id', 'uuid'], ['FK', 'vehicle_type', 'text'],
+        ['PK', 'vehicle_id', 'bigint'], ['FK UK', 'driver_id', 'bigint'], ['FK', 'vehicle_type', 'text'],
         ['UK', 'license_plate', 'text'], ['', 'brand, model, color', 'text']] },
       { t: 'vehicle_types', hd: '#d9c5f9', cols: [
         ['PK', 'code', 'text'], ['', 'name', 'text'], ['', 'seats', 'smallint']] },
@@ -86,30 +85,30 @@ const contexts = [
     rel: '<code>bookings</code> 1 — n <code>driver_offers</code> · <code>bookings</code> 1 — 0..1 <code>driver_assignments</code>. Ghép tài xế nằm trong context này.',
     tables: [
       { t: 'bookings', hd: '#f9c5c5', cols: [
-        ['PK', 'booking_id', 'uuid'], ['', 'customer_id', 'uuid', 'customer'], ['', 'vehicle_type', 'text'],
+        ['PK', 'booking_id', 'bigint'], ['', 'customer_id', 'bigint', 'customer'], ['', 'vehicle_type', 'text'],
         ['', 'pickup_lat, pickup_lng', 'double precision'], ['', 'pickup_address', 'text'],
         ['', 'destination_lat, destination_lng', 'double precision'], ['', 'destination_address', 'text'],
         ['', 'payment_method', 'text'], ['', 'estimated_distance_m', 'integer'], ['', 'fare_amount', 'integer'],
-        ['UK', 'payment_id', 'uuid', 'payment'], ['', 'status', 'text'], ['', 'cancel_reason', 'text'],
+        ['UK', 'payment_id', 'bigint', 'payment'], ['', 'status', 'text'], ['', 'cancel_reason', 'text'],
         ['', 'canceled_by', 'text'], ['', 'canceled_at', 'timestamptz']] },
       { t: 'driver_offers', hd: '#f9e3a8', cols: [
-        ['PK', 'offer_id', 'uuid'], ['FK', 'booking_id', 'uuid'], ['', 'driver_id', 'uuid', 'driver'], ['', 'distance_m', 'integer'],
+        ['PK', 'offer_id', 'bigint'], ['FK', 'booking_id', 'bigint'], ['', 'driver_id', 'bigint', 'driver'], ['', 'distance_m', 'integer'],
         ['', 'status', 'text'], ['', 'expires_at', 'timestamptz'], ['', 'responded_at', 'timestamptz']] },
       { t: 'driver_assignments', hd: '#bcd9f7', cols: [
-        ['PK', 'assignment_id', 'uuid'], ['FK UK', 'booking_id', 'uuid'], ['FK UK', 'offer_id', 'uuid'],
-        ['', 'driver_id', 'uuid', 'driver'], ['UK', 'trip_id', 'uuid', 'trip'], ['', 'assigned_at', 'timestamptz']] },
+        ['PK', 'assignment_id', 'bigint'], ['FK UK', 'booking_id', 'bigint'], ['FK UK', 'offer_id', 'bigint'],
+        ['', 'driver_id', 'bigint', 'driver'], ['UK', 'trip_id', 'bigint', 'trip'], ['', 'assigned_at', 'timestamptz']] },
     ] },
   { n: 5, name: 'Trip', ic: '🗺️', svc: 'trip-service', db: 'PostgreSQL · trip-db', span: 5, bg: '#f1ecfd', bd: '#8b5cf6',
     rel: '<code>trips</code> 1 — n <code>trip_status_history</code>. Trip giữ bản chụp của booking (tọa độ, phương thức, cước).',
     tables: [
       { t: 'trips', hd: '#bfe8c2', cols: [
-        ['PK', 'trip_id', 'uuid'], ['UK', 'booking_id', 'uuid', 'booking'], ['', 'customer_id', 'uuid', 'customer'], ['', 'driver_id', 'uuid', 'driver'],
+        ['PK', 'trip_id', 'bigint'], ['UK', 'booking_id', 'bigint', 'booking'], ['', 'customer_id', 'bigint', 'customer'], ['', 'driver_id', 'bigint', 'driver'],
         ['', 'vehicle_type', 'text'], ['', 'pickup_lat, pickup_lng', 'double precision'], ['', 'destination_lat, destination_lng', 'double precision'],
         ['', 'pickup_address, destination_address', 'text'], ['', 'payment_method', 'text'], ['', 'fare_amount', 'integer'],
         ['', 'status', 'text'], ['', 'started_at, ended_at', 'timestamptz'], ['', 'cancel_reason', 'text'], ['', 'canceled_by', 'text']] },
       { t: 'trip_status_history', hd: '#bcd9f7', cols: [
-        ['PK', 'history_id', 'uuid'], ['FK', 'trip_id', 'uuid'], ['', 'from_status', 'text'], ['', 'to_status', 'text'],
-        ['', 'changed_by', 'uuid', 'auth'], ['', 'changed_by_role', 'text'], ['', 'reason', 'text'], ['', 'changed_at', 'timestamptz']] },
+        ['PK', 'history_id', 'bigint'], ['FK', 'trip_id', 'bigint'], ['', 'from_status', 'text'], ['', 'to_status', 'text'],
+        ['', 'changed_by', 'bigint', 'auth'], ['', 'changed_by_role', 'text'], ['', 'reason', 'text'], ['', 'changed_at', 'timestamptz']] },
     ] },
   { n: 6, name: 'Fare & Payment', ic: '💳', svc: 'payment-service', db: 'PostgreSQL · payment-db', span: 12, bg: '#e3f7f5', bd: '#1aa198',
     rel: '<code>fares</code> 1 — 1 <code>payments</code> · <code>payments</code> 1 — n <code>payment_transactions</code> (mỗi lần thu, mỗi lần hoàn). Cước và thanh toán gắn với <code>booking_id</code> vì trả trước, lúc đó chưa có chuyến.',
@@ -117,34 +116,34 @@ const contexts = [
       { t: 'fare_rates', hd: '#d9c5f9', cols: [
         ['PK', 'vehicle_type', 'text'], ['', 'base_fare', 'integer'], ['', 'per_km_rate', 'integer'], ['', 'min_fare', 'integer']] },
       { t: 'fares', hd: '#f9c5c5', cols: [
-        ['PK', 'fare_id', 'uuid'], ['UK', 'booking_id', 'uuid', 'booking'], ['', 'vehicle_type', 'text'], ['', 'distance_m', 'integer'],
+        ['PK', 'fare_id', 'bigint'], ['UK', 'booking_id', 'bigint', 'booking'], ['', 'vehicle_type', 'text'], ['', 'distance_m', 'integer'],
         ['', 'base_fare, per_km_rate, min_fare', 'integer'], ['', 'total_amount', 'integer'], ['', 'calculated_at', 'timestamptz']] },
       { t: 'payments', hd: '#d9c5f9', cols: [
-        ['PK', 'payment_id', 'uuid'], ['UK', 'booking_id', 'uuid', 'booking'], ['FK UK', 'fare_id', 'uuid'], ['', 'customer_id', 'uuid', 'customer'],
+        ['PK', 'payment_id', 'bigint'], ['UK', 'booking_id', 'bigint', 'booking'], ['FK UK', 'fare_id', 'bigint'], ['', 'customer_id', 'bigint', 'customer'],
         ['', 'method', 'text'], ['', 'amount', 'integer'], ['', 'status', 'text'], ['', 'status_reason', 'text'],
         ['', 'expires_at', 'timestamptz'], ['', 'paid_at, refunded_at', 'timestamptz']] },
       { t: 'payment_transactions', hd: '#f9e3a8', cols: [
-        ['PK', 'transaction_id', 'uuid'], ['FK', 'payment_id', 'uuid'], ['', 'type', 'text'], ['', 'attempt_no', 'smallint'],
+        ['PK', 'transaction_id', 'bigint'], ['FK', 'payment_id', 'bigint'], ['', 'type', 'text'], ['', 'attempt_no', 'smallint'],
         ['UK', 'provider_transaction_id', 'text'], ['', 'amount', 'integer'], ['', 'status', 'text'],
         ['', 'callback_response', 'jsonb'], ['', 'processed_at', 'timestamptz']] },
       { t: 'idempotency_keys', hd: '#bcd9f7', cols: [
-        ['PK', 'account_id', 'uuid', 'auth'], ['PK', 'idempotency_key', 'text'], ['', 'request_hash', 'text'], ['', 'response', 'jsonb']] },
+        ['PK FK', 'payment_id', 'bigint'], ['PK', 'idempotency_key', 'text'], ['', 'request_hash', 'text'], ['', 'response', 'jsonb']] },
     ] },
   { n: 7, name: 'Notification', ic: '🔔', svc: 'notification-service', db: 'MongoDB · notification-db', span: 3, bg: '#f0f1f5', bd: '#6b7280',
     rel: 'Collection. UNIQUE (<code>event_id</code>, <code>recipient_id</code>) chặn tạo trùng khi Kafka giao lặp.',
     tables: [
       { t: 'notifications', hd: '#f9c5c5', cols: [
-        ['PK', '_id', 'string (UUID)'], ['UK', 'event_id', 'string (UUID)'], ['UK', 'recipient_id', 'string (UUID)', 'auth'],
+        ['PK', '_id', 'ObjectId'], ['UK', 'event_id', 'string (UUID)'], ['UK', 'recipient_id', 'long', 'auth'],
         ['', 'type', 'string'], ['', 'title, body', 'string'], ['', 'data', 'object'], ['', 'created_at', 'date']] },
     ] },
   { n: 8, name: 'Rating', ic: '⭐', svc: 'rating-service', db: 'PostgreSQL · rating-db', span: 5, bg: '#fff3e6', bd: '#f08a24',
     rel: 'Mỗi chuyến một đánh giá (UNIQUE <code>trip_id</code>). <code>driver_ratings</code> giữ tổng để tính điểm trung bình.',
     tables: [
       { t: 'ratings', hd: '#f9c5c5', cols: [
-        ['PK', 'rating_id', 'uuid'], ['UK', 'trip_id', 'uuid', 'trip'], ['', 'customer_id', 'uuid', 'customer'], ['', 'driver_id', 'uuid', 'driver'],
+        ['PK', 'rating_id', 'bigint'], ['UK', 'trip_id', 'bigint', 'trip'], ['', 'customer_id', 'bigint', 'customer'], ['', 'driver_id', 'bigint', 'driver'],
         ['', 'score', 'smallint (1–5)'], ['', 'comment', 'text']] },
       { t: 'driver_ratings', hd: '#bfe8c2', cols: [
-        ['PK', 'driver_id', 'uuid', 'driver'], ['', 'rating_count', 'integer'], ['', 'rating_sum', 'integer']] },
+        ['PK', 'driver_id', 'bigint', 'driver'], ['', 'rating_count', 'integer'], ['', 'rating_sum', 'integer']] },
     ] },
   { n: '', name: 'API Gateway', ic: '🛡️', svc: 'gateway', db: 'Redis (không phải bounded context nghiệp vụ)', span: 4, bg: '#fdecec', bd: '#e05252',
     rel: 'Key tự hết hạn. Redis không lưu dữ liệu nghiệp vụ.',

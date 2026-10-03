@@ -7,7 +7,7 @@ Sinh viên phải tự giải thích được mọi quyết định. Vì vậy m
 
 ## Trạng thái
 
-Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã xong:** `docs/design/01`–`05`, ADR-001 đến ADR-014 và hai ảnh sơ đồ. Đã đưa vào hai góp ý của giảng viên (2026-10-03): tách đăng ký khỏi hồ sơ khách hàng (ADR-013) và giả lập hệ thống ngoài thật đơn giản (ADR-014). Chưa có đặc tả trong `docs/specs/` và chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
+Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã xong:** `docs/design/01`–`05`, ADR-001 đến ADR-014 và hai ảnh sơ đồ. Đã đưa vào hai góp ý của giảng viên (2026-10-03): tách đăng ký khỏi hồ sơ khách hàng (ADR-013) và giả lập hệ thống ngoài thật đơn giản (ADR-014). Vòng 2 đã mở: có ba đặc tả đầu (`docs/specs/00`, `09-10`, `11`); đang sửa toàn bộ thiết kế và đặc tả theo luật thi (2026-10-03) và viết `docs/design/06-kich-ban-thi.md`. Chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
 
 ## Tài liệu
 
@@ -23,8 +23,9 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | API REST của Gateway, ma trận phân quyền, chuỗi request từng mục chấm | `docs/design/04-api.md` | Có |
 | Quy trình nghiệp vụ theo mô hình 5 thành phần (Procedures, People, Hardware, Software, Data) | `docs/design/05-quy-trinh-5-thanh-phan.md` | Có |
 | Ảnh kiến trúc và ảnh bounded context / database (vẽ từ `docs/design/02` và `03`; sửa thiết kế thì sửa file `.html` cùng thư mục rồi xuất lại ảnh) | `docs/architecture/kien-truc.png`, `bounded-context-db.png` | Có |
-| Đặc tả từng phần việc | `docs/specs/` | Chưa có |
-| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-014 |
+| Kịch bản thi: request gõ tay, lệnh, câu trả lời vấn đáp cho từng mục chấm; những thứ phải nhớ | `docs/design/06-kich-ban-thi.md` | Có |
+| Đặc tả từng phần việc | `docs/specs/` | `00-ha-tang`, `09-10-dang-ky-dang-nhap`, `11-ho-so-khach-hang` |
+| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-017 |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
 
 ## Danh sách service (giảng viên chốt, không tự ý thêm bớt)
@@ -111,6 +112,7 @@ Khi thi, sinh viên **không được mở tài liệu**, phải tự giải th�
 | Luật | Hệ quả bắt buộc cho thiết kế và code |
 |---|---|
 | Postman **không được lưu sẵn** gì; gõ mọi request từ đầu | Mỗi mục chấm tối đa khoảng **3 request**. Body JSON ít trường, tên trường ngắn, có giá trị mặc định hợp lý (ví dụ loại xe, phương thức thanh toán). Header phụ tối thiểu, giá trị ngắn (ví dụ `Idempotency-Key: k1`). Response trả luôn kết quả cần xem để khỏi gọi thêm request kiểm tra |
+| Đường dẫn và tên trường API | **Không có tiền tố `/api/v1`** (ví dụ `http://localhost:3000/bookings`); tên trường ngắn (`name`, `dob`, `vehicle`, `pay`, `from`, `to`); tên cột database vẫn đầy đủ. Định nghĩa chính thức ở `docs/design/04-api.md` (2026-10-03) |
 | **Được copy/paste** giá trị từ response | Token, mã booking, mã thanh toán lấy bằng copy từ response trước |
 | Lệnh terminal **phải gõ đầy đủ**, không chạy script soạn sẵn | Ít lệnh, lệnh ngắn: dựng hệ thống bằng `docker compose up -d --build`; tên container, database, user ngắn và theo một quy luật (ví dụ container `auth-db`, user `cab`, database `auth`). `.env.example` có sẵn giá trị dùng được cho máy demo, chỉ cần sao chép thành `.env` |
 | Không mở ghi chú; phải **học thuộc và giải thích** | Dữ liệu seed dễ nhớ và theo quy luật (khách `0900000001`…, tài xế `0910000001`…, cùng một mật khẩu; tài xế seed ở quanh một tọa độ mẫu dễ nhớ). Ít khái niệm kỹ thuật nhất có thể; thứ gì không phục vụ mục chấm hoặc không giải thích được thì bỏ |

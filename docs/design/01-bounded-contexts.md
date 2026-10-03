@@ -3,6 +3,7 @@
 > Vòng 1 (chỉ BA), bản sửa 2026-10-02 lần 3: theo **8 service giảng viên chốt** và các quyết định mới trong `CLAUDE.md` (đổi tên `rating-service`; đồng bộ là mặc định; thanh toán trả trước với cước cố định; hoàn tiền; hủy; Redis ở Gateway).
 > Đồng bộ 2026-10-02 lần 4 (cùng lúc viết file 03, 04): công thức cước và ai tính quãng đường; hạn thanh toán 10 phút / 3 lần (BRULE17); đăng xuất (FR42, UC33); đóng Q10 (một phần), Q11, Q16, Q21, Q37. Chỉ sửa các dòng bị ảnh hưởng.
 > Sửa 2026-10-03 theo góp ý giảng viên: **tách đăng ký khỏi hồ sơ khách hàng** — Auth và Customer không còn quan hệ (R1 không nối, bỏ đường S1; quy tắc A8, C1, C4–C6; BRULE18) — ADR-013; hệ thống ngoài giả lập đơn giản — ADR-014. Cùng ngày: đóng Q56 (đặt xe không cần hồ sơ — B1), Q57 (`simulate_result: "MANUAL"` — mục 6.6), Q58 (hồ sơ không lưu số điện thoại).
+> Sửa 2026-10-03 lần 3 theo luật thi (gõ tay mọi request, không mở tài liệu): khóa chính số nguyên (Q31 — ADR-015); mục chấm 24 chỉ băm mật khẩu và mã hóa họ tên, ngày sinh khách, số giấy phép — số điện thoại, email lưu rõ (ADR-012 sửa); không outbox (ADR-017). Không đổi context, aggregate hay quy tắc nào.
 > Nguồn sự thật: `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
 > File này trả lời: **chia hệ thống thành những phần nào, mỗi phần sở hữu gì, vì sao**. gRPC hay Kafka cho từng quan hệ: file 02. Loại database, schema: file 03.
 > Tên trạng thái viết HOA là **đề xuất**, trừ các tên đã có trong SRS và `CLAUDE.md` (`NO_DRIVER_FOUND`, `CANCELED`, `FAILED`, `COMPLETED`, Online/Offline, "chờ duyệt"). Tên chính thức chốt ở spec.
@@ -558,7 +559,7 @@ Kết quả: 39/42 FR có context chính; FR42 do Gateway xử lý. **FR33 khôn
 | 21 | Đăng ký tài xế (OTP) → chờ duyệt | Auth, Driver | |
 | 22 | Admin duyệt / từ chối | Driver; Notification | |
 | 23 | Tài xế bật / tắt nhận chuyến | Driver | |
-| 24 | Mã hóa dữ liệu nhạy cảm + quản lý khóa | Cắt ngang: Auth, Customer, Driver, Payment | NFR08, NFR16; trường nào: file 03 |
+| 24 | Mã hóa dữ liệu nhạy cảm + quản lý khóa | Cắt ngang: Auth (băm mật khẩu, OTP), Customer (mã hóa họ tên, ngày sinh), Driver (mã hóa số giấy phép) | NFR08, NFR16; phạm vi hẹp, số điện thoại / email lưu rõ: file 03 mục 11.4, ADR-012 |
 | 25 | SQL injection | Cắt ngang; demo tại Auth (đăng nhập) | Quy ước code trong `CLAUDE.md` |
 | 26 | XSS | Cắt ngang: Customer, Driver, Booking, Trip, Rating | Xử lý ở đâu: file 02 / 04 |
 | 27 | JWT bị sửa → 401 | Gateway (Auth cấp token) | |
@@ -602,7 +603,7 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q15 | Tách Dispatch? | Ghép tài xế nằm trong `booking-service` | `CLAUDE.md` |
 | Q29 | Hủy là hai thao tác hay một? | Hai: hủy Booking (chưa có tài xế), hủy Trip (đã có tài xế) | `CLAUDE.md` |
 | Q30 | Có bảng PERMISSION không? | Không; ba role cố định | `CLAUDE.md` |
-| Q31 | Khóa chính INT hay UUID? | UUID | `CLAUDE.md` |
+| Q31 | Khóa chính INT hay UUID? | **Đổi 2026-10-03:** số nguyên `bigint GENERATED ALWAYS AS IDENTITY` (trước là UUID) vì luật thi phải gõ tay mọi request; mọi API theo mã kiểm tra quyền sở hữu (403) | `CLAUDE.md`; ADR-015 |
 | Q37 | Booking chờ thanh toán được bao lâu, thanh toán lại mấy lần? | 10 phút, tối đa 3 lần thử; quá thì booking bị hủy | `srs.md` BRULE17, AC25; `CLAUDE.md` |
 | Q16 | Bảng Entity trong `srs.md` chưa khớp thiết kế | Sinh viên đã sửa Booking, Trip, Fare, Payment theo trả trước và thêm dòng dẫn sang file 03. Phần còn khác (`password_hash` ở ba bảng, bảng Role, lịch sử vị trí): file 03 câu Q46 | `srs.md` |
 | Q10 (một phần) | Thêm mã mới vào `srs.md`? | Đã thêm FR42, UC33, BRULE17, AC25, AC26. **Còn thiếu** mã cho: trình tự trạng thái chuyến (mục 17), rate limit (mục 29), chống xử lý lặp (mục 30), D6, D8 — vẫn mở ở 9.2 | `srs.md` |
@@ -619,11 +620,11 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q2 | FR34 Audit Log làm đến mức nào? | (a) Mỗi service tự ghi phần của mình (7.3); (b) thêm bảng nhật ký thao tác admin | (a) | SV |
 | Q4 | Tài xế chờ duyệt có đăng nhập được không? | (a) Được, nhưng không bật Online được (D6); (b) không được — Auth phải biết kết quả duyệt | (a) — ít phụ thuộc hơn | SV |
 | Q5 | Tài xế nhận Offer bằng cách nào khi không có push thật? | (a) Tài xế gọi API xem Offer đang chờ, kèm thông báo; (b) chỉ qua thông báo | (a) | SV |
-| Q8 | Tài khoản `admin` tạo bằng cách nào? | (a) Seed sẵn; (b) API đổi role | (a) | SV |
+| Q8 | Tài khoản `admin` tạo bằng cách nào? | (a) Seed sẵn; (b) API đổi role | (a) — file 03 mục 14 đã seed AD1 (`0999999999`, mã 99) | SV |
 | Q9 | Mục 11, 12: role nào được xem hồ sơ của người khác? | (a) Chỉ chính chủ và `admin`; (b) tài xế xem được khách của chuyến mình và ngược lại | (a) | SV |
 | Q10 | Có thêm mã mới vào `srs.md` cho các dòng **còn thiếu** ở 8.3 không (mục 17, 29, 30, D6, D8; AC cho FR42)? | (a) Thêm BRULE19…, NFR17, AC30 và cập nhật RTM; (b) giữ nguyên | (a); BA thêm khi được đồng ý | SV |
 | Q11 | FR15 (ETA) tính thế nào? (Phần lịch sử vị trí đã đóng ở 9.1) | (a) ETA = khoảng cách / tốc độ trung bình; (b) không làm | (a), làm sau 30 mục | SV |
-| Q12 | Thời hạn tài xế trả lời Offer là bao lâu? | 15–30 giây | Biến môi trường `OFFER_TIMEOUT_SECONDS`, mặc định đề xuất 20 giây (file 03 mục 13) | SV |
+| Q12 | Thời hạn tài xế trả lời Offer là bao lâu? | 15–30 giây | Biến môi trường `OFFER_TIMEOUT_SECONDS`, giá trị nghiệp vụ đề xuất 20 giây; `.env.example` đặt 300 giây để kịp gõ tay từ mục 15 sang 16 (file 03 mục 13) | SV |
 | Q27 | Booking có cần biết kết cục của Trip để danh sách booking (mục 14) hiện trạng thái cuối không? Rõ nhất khi tài xế hủy chuyến: Booking vẫn ghi `DRIVER_ASSIGNED` | (a) Không: client xem chuyến qua API của Trip; (b) Booking nghe sự kiện của Trip | (a) — bớt một đường nối. Chọn (b) thì `booking-service` thêm một subscribe | SV |
 | Q28 | Điểm trung bình của tài xế nằm ở đâu? | (a) Ở Rating; (b) Rating gọi Driver ghi điểm vào hồ sơ | (a) — không yêu cầu nào buộc Driver biết điểm (BRULE03 chỉ xét khoảng cách) | SV |
 | Q32 | FR30 (admin giám sát chuyến) có làm không khi phiếu chấm không yêu cầu? | (a) Làm tối thiểu ở `trip-service` sau khi xong 30 mục; (b) không làm | (a) | SV |
