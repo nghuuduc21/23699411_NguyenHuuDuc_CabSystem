@@ -5,7 +5,7 @@
 > Không thuộc file này: loại database và schema (file 03), đường dẫn REST chi tiết (file 04), field của `.proto` (spec).
 >
 > **Đã chốt (`CLAUDE.md`):** 8 service; Kafka + Kafka UI; Redis ở Gateway, không Nginx; **Auth và Customer không gọi nhau** (2026-10-03); Booking → Trip `CreateTrip` đồng bộ; Booking → Payment đồng bộ để tính cước và tạo thanh toán; kết quả thanh toán và hoàn tiền đi bằng event; UUID; `FAILED_PRECONDITION` → 409; ba hệ thống ngoài giả lập đơn giản nhất sau adapter.
-> **Sửa 2026-10-03** theo góp ý giảng viên: **bỏ đường S1** (`auth-service` → `customer-service` `CreateProfile`) — ADR-013 thay ADR-004. **Giữ nguyên mã S2–S7**, không đánh số lại, để không phải đổi mã ở file 03, 04, 05 và ADR; mã S1 bỏ trống, không dùng lại. Hệ thống ngoài giả lập đơn giản: callback xác thực bằng khóa bí mật trong header, bỏ chữ ký HMAC — ADR-014. Đóng Q43, Q50.
+> **Sửa 2026-10-03** theo góp ý giảng viên: **bỏ đường S1** (`auth-service` → `customer-service` `CreateProfile`) — ADR-013 thay ADR-004. **Giữ nguyên mã S2–S7**, không đánh số lại, để không phải đổi mã ở file 03, 04, 05 và ADR; mã S1 bỏ trống, không dùng lại. Hệ thống ngoài giả lập đơn giản: callback xác thực bằng khóa bí mật trong header, bỏ chữ ký HMAC — ADR-014. Đóng Q43, Q50. Cùng ngày đóng Q56 (Booking không gọi Customer — mục 9), Q57 (`simulate_result: "MANUAL"` — mục 4.5, 8.2), Q58.
 > **Chưa chốt:** chỗ ghi **[GĐ-n]** là *giả định tạm*, liệt kê ở mục 11.
 > **Đồng bộ 2026-10-02 lần 4** (cùng lúc viết file 03, 04): Booking tính quãng đường, Payment tính cước (đóng Q38, GĐ-13); hạn thanh toán BRULE17 → K6 có thêm `CANCELED`; Redis dừng thì cho qua (đóng Q39); đăng xuất ở Gateway theo FR42 (đóng Q40); tìm tài xế bằng Haversine (ADR-011). Chỉ sửa các dòng bị ảnh hưởng.
 
@@ -219,7 +219,7 @@ Không có đường mạng nào đi ra ngoài Compose, không có container gi�
 
 | Hệ thống ngoài | Adapter nằm ở | Dùng cho | Giả lập bằng |
 |---|---|---|---|
-| Payment Provider — thu tiền | `payment-service` | Thanh toán điện tử trả trước (FR18, FR19) | Nhận yêu cầu thu (A31) → sinh `provider_transaction_id` → **gọi ngay phần xử lý callback** trong cùng tiến trình, mặc định `SUCCESS`. Field `simulate_result: "FAILED"` trong body A31 **chỉ có hiệu lực khi `SIMULATION_MODE=true`** để demo thanh toán lỗi; tắt chế độ giả lập thì field bị bỏ qua |
+| Payment Provider — thu tiền | `payment-service` | Thanh toán điện tử trả trước (FR18, FR19) | Nhận yêu cầu thu (A31) → sinh `provider_transaction_id` → **gọi ngay phần xử lý callback** trong cùng tiến trình, mặc định `SUCCESS`. Field `simulate_result: "FAILED"` trong body A31 **chỉ có hiệu lực khi `SIMULATION_MODE=true`** để demo thanh toán lỗi; `simulate_result: "MANUAL"` (cùng điều kiện) thì adapter **không** gọi callback, giao dịch và Payment đứng `PENDING` chờ callback A32 từ Postman (mục chấm 19, Q57); tắt chế độ giả lập thì field bị bỏ qua |
 | Payment Provider — hoàn tiền | `payment-service` | FR40 | Nhận yêu cầu hoàn → gọi ngay phần xử lý kết quả, luôn thành công |
 | Payment Provider — callback từ ngoài | `gateway` → `payment-service` (C2) | Mục 19, 30 | Endpoint A32 vẫn giữ, **cùng một hàm xử lý** với callback nội bộ. Xác thực bằng khóa bí mật cố định `PAYMENT_CALLBACK_SECRET` trong header `X-Callback-Secret`, so sánh thời gian hằng; **không HMAC**. Callback cho giao dịch đã có kết quả → trả response cũ (replay) |
 | Map / GPS Provider | `booking-service` (đã chốt) | Quãng đường ước tính điểm đón → điểm đến để tính cước (FR16) | Công thức khoảng cách Haversine × 1,3 |
@@ -428,14 +428,25 @@ sequenceDiagram
   KH->>GW: A31 thực hiện thanh toán (Idempotency-Key)
   GW->>P: gRPC PayPayment
   P->>P: ghi khóa chống lặp, tạo giao dịch CHARGE PENDING (lần thử n)
-  P->>P: adapter giả lập sinh provider_transaction_id, gọi ngay hàm xử lý callback (mặc định SUCCESS)
-  P->>P: giao dịch SUCCEEDED, Payment COMPLETED, lưu callback_response
-  P-->>GW: payment_status COMPLETED, provider_transaction_id
-  GW-->>KH: 200
+  P->>P: adapter giả lập sinh provider_transaction_id
+  alt mặc định (không simulate_result)
+    P->>P: gọi ngay hàm xử lý callback SUCCESS: giao dịch SUCCEEDED, Payment COMPLETED, lưu callback_response
+    P-->>GW: payment_status COMPLETED, provider_transaction_id
+    GW-->>KH: 200
+  else simulate_result MANUAL (chỉ khi SIMULATION_MODE=true, dùng ở mục 19)
+    P->>P: không gọi callback; giao dịch PENDING, Payment PENDING
+    P-->>GW: payment_status PENDING, provider_transaction_id
+    GW-->>KH: 200
+    PP->>GW: A32 callback SUCCESS cho provider_transaction_id đó (header X-Callback-Secret)
+    GW->>P: gRPC HandleProviderCallback
+    P->>P: cùng hàm xử lý callback: giao dịch SUCCEEDED, Payment COMPLETED, lưu callback_response
+    P-->>GW: 200 kết quả xử lý
+    GW-->>PP: 200
+  end
   P-)K: K6 payment.status-changed (COMPLETED)
   K-)B: Booking PENDING_PAYMENT sang SEARCHING
   K-)N: báo khách thanh toán thành công
-  PP->>GW: A32 callback cho provider_transaction_id đó (header X-Callback-Secret)
+  PP->>GW: A32 gửi lại callback cho giao dịch đã có kết quả (mục 30)
   GW->>P: gRPC HandleProviderCallback
   alt khóa sai hoặc thiếu
     P-->>GW: UNAUTHENTICATED
@@ -446,6 +457,8 @@ sequenceDiagram
     GW-->>PP: 200 Idempotency-Replayed true, không phát lại K6
   end
 ```
+
+`MANUAL` không thêm trạng thái, rpc hay đường giao tiếp nào: chỉ là adapter **bỏ bước tự gọi callback**, để callback A32 từ ngoài là callback đầu tiên làm Payment `PENDING → COMPLETED` (Q57, 2026-10-03). Trong lúc giao dịch còn `PENDING`, A31 với khóa mới → 409 `PAYMENT_IN_PROGRESS` (một booking chỉ một lần thử đang chờ — file 03 mục 8.4). Không ai gửi callback thì Payment hết hạn như thường (BRULE17).
 
 Booking **tiền mặt**: giống đến bước lưu Booking, nhưng lưu thẳng `SEARCHING` và bộ ghép chạy ngay; không có đoạn thanh toán. Thanh toán **thất bại** (A31 kèm `simulate_result: "FAILED"`, chỉ khi `SIMULATION_MODE=true`): giao dịch `FAILED`, Payment `FAILED`, phát K6 (`FAILED`), Notification báo khách, Booking vẫn `PENDING_PAYMENT`; khách thanh toán lại với khóa mới (FR19).
 
@@ -632,7 +645,7 @@ sequenceDiagram
 | Auth – Booking, Trip, Payment, Rating | Các service này chỉ cần `account_id` và role, Gateway đã chuyển sang |
 | Auth – Notification | Không FR nào yêu cầu thông báo khi đăng ký hay đăng nhập. OTP không đi qua Notification (Q43) |
 | Customer – Driver | Hai loại hồ sơ độc lập; không quy tắc nào cần cả hai |
-| Customer – Booking | Booking chỉ giữ `customer_id`; Gateway đã xác thực token có role `customer`. Không FR / BRULE nào buộc phải có hồ sơ mới đặt xe, nên không cần "kiểm tra khách hàng" (Q56) |
+| Customer – Booking | Booking chỉ giữ `customer_id`; Gateway đã xác thực token có role `customer`. **Đã chốt (Q56, 2026-10-03):** đặt xe không cần hồ sơ khách hàng, chỉ cần tài khoản `customer` và đủ dữ liệu yêu cầu, nên không có lời gọi "kiểm tra khách hàng" |
 | Customer – Trip | Trip chỉ giữ `customer_id`. UC22 (admin xem thông tin khách trong chuyến): client gọi thêm API khách hàng |
 | Customer – Payment | Payment chỉ cần `customer_id`, đã có trong S4 |
 | Customer – Rating | Rating chỉ cần `customer_id` từ token và từ Trip |
@@ -734,7 +747,7 @@ Nếu câu trả lời khác giả định, sửa đúng các dòng ở cột cu
 
 ## 12. Câu hỏi còn mở
 
-Q1–Q16, Q27–Q32, Q44, Q45, Q56 ở file 01. Q46–Q49 ở file 03. Q50–Q55, Q57, Q58 ở file 04.
+Q1–Q16, Q27–Q32, Q44, Q45 ở file 01. Q46–Q49 ở file 03. Q50–Q55 ở file 04. Q56, Q57, Q58 **đã đóng 2026-10-03** (file 01 mục 9.1, file 04 mục 9.2).
 
 ### 12.1 Đã đóng
 

@@ -2,7 +2,7 @@
 
 > Nguồn: `srs.md` (FR, BRULE, UC), `docs/design/01`–`04`, `CLAUDE.md`. Cập nhật 2026-10-03.
 > Mã API (A01–A38) theo `04-api.md`; mã gRPC giữa service (S2–S7; S1 đã bỏ) và topic Kafka (K1–K7) theo `02-kien-truc-giao-tiep.md`.
-> Sửa 2026-10-03 theo góp ý giảng viên: QT01 chỉ tạo tài khoản, QT04 thêm bước tạo hồ sơ (ADR-013); QT05, QT10, QT16, QT17 theo cách giả lập hệ thống ngoài mới (ADR-014); ma trận 4.1, 4.2.
+> Sửa 2026-10-03 theo góp ý giảng viên: QT01 chỉ tạo tài khoản, QT04 thêm bước tạo hồ sơ (ADR-013); QT05, QT10, QT16, QT17 theo cách giả lập hệ thống ngoài mới (ADR-014); ma trận 4.1, 4.2. Cùng ngày: QT09 ghi rõ đặt xe không cần hồ sơ (Q56); QT10 thêm `simulate_result: "MANUAL"` (Q57).
 
 ## 0. Mô hình 5 thành phần
 
@@ -114,7 +114,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 | **SW11** | PostgreSQL 16 (7 database), MongoDB 7 (1 database) | H5 | Lưu và truy vấn dữ liệu nghiệp vụ |
 | **SW12** | Redis 7 | H6 | Bộ đếm, danh sách token thu hồi |
 | **SW13** | Kafka, `kafka-init` (tạo 7 topic), **Kafka UI** (`http://localhost:8080`) | H7 | Chuyển event giữa service; xem topic, event, consumer |
-| **SW14** | Adapter giả lập (module trong service, ADR-014): cổng thanh toán (trong payment, gọi ngay xử lý callback, mặc định thành công); bản đồ (công thức khoảng cách, trong booking); kênh thông báo / SMS (chỉ lưu database và ghi log); kênh OTP (ghi log, trả mã trong response khi `SIMULATION_MODE=true`) | H4 | Thay cho hệ thống bên ngoài khi demo |
+| **SW14** | Adapter giả lập (module trong service, ADR-014): cổng thanh toán (trong payment, gọi ngay xử lý callback, mặc định thành công; `MANUAL` thì không gọi, chờ callback từ Postman); bản đồ (công thức khoảng cách, trong booking); kênh thông báo / SMS (chỉ lưu database và ghi log); kênh OTP (ghi log, trả mã trong response khi `SIMULATION_MODE=true`) | H4 | Thay cho hệ thống bên ngoài khi demo |
 | **SW15** | Docker Compose | Máy chủ | Dựng toàn bộ container; liệt kê container (mục chấm 5) |
 
 ### 2.4 Data — dữ liệu
@@ -238,7 +238,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách chọn điểm đón, điểm đến, loại xe, phương thức thanh toán. <br> 2. Booking tính quãng đường ước tính = khoảng cách đường thẳng × 1,3 (đơn vị mét). <br> 3. Booking gọi Payment (S4, gRPC đồng bộ): Payment áp bảng giá, tính **cước cố định** = giá mở cửa + đơn giá/km × quãng đường, làm tròn lên 1.000 đ, không thấp hơn cước tối thiểu (BRULE08); tạo thanh toán ở trạng thái chờ. <br> 4. Booking lưu yêu cầu kèm số tiền: **tiền mặt** → trạng thái đang tìm tài xế, chuyển sang QT11; **điện tử** → trạng thái chờ thanh toán, chuyển sang QT10. <br> 5. Booking phát K1; Notification báo khách "đã nhận yêu cầu". |
+| **Procedures** | 1. Khách chọn điểm đón, điểm đến, loại xe, phương thức thanh toán. Điều kiện chỉ là đã đăng nhập bằng tài khoản `customer` (số điện thoại ở Auth) và đủ bốn dữ liệu này; **không cần đã tạo hồ sơ** (QT04), Booking không gọi Customer (Q56, 2026-10-03). <br> 2. Booking tính quãng đường ước tính = khoảng cách đường thẳng × 1,3 (đơn vị mét). <br> 3. Booking gọi Payment (S4, gRPC đồng bộ): Payment áp bảng giá, tính **cước cố định** = giá mở cửa + đơn giá/km × quãng đường, làm tròn lên 1.000 đ, không thấp hơn cước tối thiểu (BRULE08); tạo thanh toán ở trạng thái chờ. <br> 4. Booking lưu yêu cầu kèm số tiền: **tiền mặt** → trạng thái đang tìm tài xế, chuyển sang QT11; **điện tử** → trạng thái chờ thanh toán, chuyển sang QT10. <br> 5. Booking phát K1; Notification báo khách "đã nhận yêu cầu". |
 | **People** | P1 |
 | **Hardware** | H1 (GPS điểm đón) · H4 · H5 booking-db, payment-db · H7 |
 | **Software** | SW2 `POST /api/v1/bookings` (A19) → SW6 `CreateBooking` → SW8 `CreatePayment` (S4) → SW13 K1 → SW9 |
@@ -248,7 +248,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách thực hiện thanh toán, gửi kèm khóa chống lặp (`Idempotency-Key`). <br> 2. Payment ghi khóa, tạo lần thử; gửi yêu cầu thu tiền đến cổng thanh toán giả lập (module trong `payment-service`). <br> 3. Cổng giả lập **gọi ngay phần xử lý callback**, mặc định thành công; khi `SIMULATION_MODE=true` khách có thể gửi `simulate_result: "FAILED"` để demo thất bại (ADR-014). <br> 4. Thành công → Payment chuyển **COMPLETED** (mục 19), phát K6; Booking nghe K6, chuyển sang tìm tài xế (QT11). Response của bước 1 đã có kết quả. <br> 5. Thất bại → `FAILED`, khách thử lại; tối đa 3 lần trong 10 phút (BRULE17). Quá hạn hoặc hết lượt → thanh toán bị hủy, Booking bị hủy. <br> 6. Callback từ ngoài (Postman đóng vai Provider) vào endpoint callback, xác thực bằng **khóa bí mật cố định trong header** (không HMAC); sai khóa → 401. Callback cho giao dịch đã có kết quả → trả kết quả cũ. <br> 7. Gửi lại đúng request cũ (cùng khóa chống lặp) hoặc callback cũ → trả lại kết quả cũ, **không thu tiền lần hai** (mục 30). <br> 8. Hệ thống không lưu số thẻ hay tài khoản ngân hàng (BRULE09). |
+| **Procedures** | 1. Khách thực hiện thanh toán, gửi kèm khóa chống lặp (`Idempotency-Key`). <br> 2. Payment ghi khóa, tạo lần thử; gửi yêu cầu thu tiền đến cổng thanh toán giả lập (module trong `payment-service`). <br> 3. Cổng giả lập **gọi ngay phần xử lý callback**, mặc định thành công. Khi `SIMULATION_MODE=true` khách có thể gửi `simulate_result`: `FAILED` để demo thất bại; `MANUAL` để cổng giả lập **không** gọi callback — lần thử và thanh toán đứng ở `PENDING`, chờ callback từ ngoài ở bước 6 (mục 19; Q57, ADR-014). <br> 4. Thành công → Payment chuyển **COMPLETED** (mục 19), phát K6; Booking nghe K6, chuyển sang tìm tài xế (QT11). Mặc định response của bước 1 đã có kết quả; với `MANUAL` thì kết quả có sau bước 6. <br> 5. Thất bại → `FAILED`, khách thử lại; tối đa 3 lần trong 10 phút (BRULE17). Quá hạn hoặc hết lượt → thanh toán bị hủy, Booking bị hủy. Đang có lần thử `PENDING` thì không mở lần thử mới (409). <br> 6. Callback từ ngoài (Postman đóng vai Provider) vào endpoint callback, xác thực bằng **khóa bí mật cố định trong header** (không HMAC); sai khóa → 401. Giao dịch đang `PENDING` (sau `MANUAL`) → xử lý như bước 4 / 5, Payment `PENDING → COMPLETED`. Giao dịch đã có kết quả → trả kết quả cũ. <br> 7. Gửi lại đúng request cũ (cùng khóa chống lặp) hoặc callback cũ → trả lại kết quả cũ, **không thu tiền lần hai** (mục 30). <br> 8. Hệ thống không lưu số thẻ hay tài khoản ngân hàng (BRULE09). |
 | **People** | P1 Khách hàng; P5 Nhà cung cấp thanh toán (giả lập; Postman đóng vai khi gửi callback từ ngoài) |
 | **Hardware** | H1 · H4 · H5 payment-db, booking-db · H7 |
 | **Software** | SW2 A31 `POST /payments/{id}/pay`, A32 `POST /payments/callback` (header `X-Callback-Secret`), A30 `GET /payments/{id}` → SW8 `PayPayment`, `HandleProviderCallback` (cùng một hàm xử lý callback) · SW14 cổng thanh toán giả lập · SW13 K6 → SW6, SW9 |

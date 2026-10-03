@@ -48,9 +48,9 @@ Chọn **D**.
 
 ## Đánh đổi
 
-- Có thể tồn tại tài khoản `customer` **chưa có hồ sơ**. Xem hồ sơ trả 404 cho đến khi khách tạo. Booking không kiểm tra hồ sơ (Q56: đề xuất cho đặt xe khi chưa có hồ sơ).
+- Có thể tồn tại tài khoản `customer` **chưa có hồ sơ**. Xem hồ sơ trả 404 cho đến khi khách tạo. Booking không kiểm tra hồ sơ: **đã chốt** khách chưa có hồ sơ vẫn đặt được xe, Booking không gọi Customer (Q56, 2026-10-03).
 - Mục chấm 11 dài thêm một request (A37); vẫn 4 request, vừa 30 giây.
-- Hồ sơ không có số điện thoại; màn hình hồ sơ muốn hiện số thì cần quyết định thêm (Q58).
+- Hồ sơ không có số điện thoại (Q58 **đã chốt** 2026-10-03: không lưu); màn hình hồ sơ không hiện số.
 - Customer tin metadata từ Gateway: nếu có đường vào mạng nội bộ không qua Gateway thì giả được `x-account-id`. Đây là giả định chung của mọi service (file 02 mục 2.2), không riêng Customer.
 
 ## Câu trả lời mẫu khi vấn đáp

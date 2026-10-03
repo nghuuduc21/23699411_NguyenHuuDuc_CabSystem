@@ -1,7 +1,7 @@
 # 03 — Dữ liệu
 
 > Vòng 1 (chỉ BA), viết 2026-10-02. Đầu vào: `CLAUDE.md`, `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29), file 01 (aggregate, quy tắc A/C/D/B/T/M/N/V), file 02 (S2–S7, K1–K7), ADR-001 … ADR-014. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md` mục 3.
-> Sửa 2026-10-03: hồ sơ khách tạo sau khi đăng nhập, bỏ `customer_profiles.phone_enc` (mục 4.1, ADR-013); seed thêm KH3 chưa có hồ sơ (mục 14); bỏ `notifications.status`; thêm biến `SIMULATION_MODE`, `PAYMENT_CALLBACK_SECRET` (mục 13) — ADR-014.
+> Sửa 2026-10-03: hồ sơ khách tạo sau khi đăng nhập, bỏ `customer_profiles.phone_enc` (mục 4.1, ADR-013); seed thêm KH3 chưa có hồ sơ (mục 14); bỏ `notifications.status`; thêm biến `SIMULATION_MODE`, `PAYMENT_CALLBACK_SECRET` (mục 13) — ADR-014. Cùng ngày: Q58 đóng (hồ sơ không lưu số điện thoại); `simulate_result: "MANUAL"` (Q57) giữ giao dịch `PENDING` chờ callback — không đổi schema (mục 8.4).
 > File này trả lời: **mỗi service lưu gì, ở đâu, kiểu gì, vì sao**. Đường dẫn REST và rpc: file 04.
 > Ký hiệu: **[ĐC]** = đã chốt trong `CLAUDE.md` / `srs.md`. **[BA]** = BA tự chọn, chưa ai xác nhận (gom ở mục 16). Tên trạng thái viết HOA vẫn là đề xuất như ở file 01, trừ tên đã có trong SRS.
 
@@ -127,7 +127,7 @@ Cột bắt buộc: `customer_id`, `full_name_enc` (cùng `created_at`, `updated
 
 | Lựa chọn | Ưu | Nhược |
 |---|---|---|
-| (a) **Bỏ: số điện thoại chỉ nằm ở Auth** (chọn) | Một nguồn duy nhất cho số điện thoại; không có hai bản lệch nhau; hồ sơ ít dữ liệu cá nhân hơn (NFR16) | Màn hình hồ sơ không hiện số điện thoại; muốn hiện thì client lấy từ chỗ khác (Q58) |
+| (a) **Bỏ: số điện thoại chỉ nằm ở Auth** (chọn) | Một nguồn duy nhất cho số điện thoại; không có hai bản lệch nhau; hồ sơ ít dữ liệu cá nhân hơn (NFR16) | Màn hình hồ sơ không hiện số điện thoại; muốn hiện thì client lấy từ chỗ khác (Q58 — **đã chốt (a)** 2026-10-03) |
 | (b) Client gửi số điện thoại khi tạo hồ sơ | Hồ sơ đủ thông tin liên lạc | Số đó chưa được xác thực và có thể khác số đăng nhập; trùng dữ liệu với Auth |
 | (c) Customer hỏi Auth lấy số | Số chính xác | Thêm lại đúng đường Auth – Customer mà giảng viên vừa yêu cầu bỏ |
 
@@ -508,7 +508,8 @@ Giả lập cổng thanh toán (ADR-014) **không đổi bảng này**:
 | Cột phục vụ chữ ký HMAC | Không có từ đầu (chữ ký chỉ được kiểm tra, không lưu). Bỏ HMAC không cần migration |
 | `provider_transaction_id` | Adapter giả lập sinh (ví dụ `SIM-<uuid>`); Provider thật thì do Provider cấp. Vẫn UNIQUE |
 | `callback_response` | **Vẫn cần**: callback nội bộ của adapter và callback từ ngoài (A32) đi qua cùng một hàm xử lý; lần đầu lưu response, lần sau trả lại nguyên văn (mục chấm 30) |
-| `status = PENDING` | Chỉ tồn tại trong khoảnh khắc giữa lúc tạo lần thử và lúc adapter gọi callback; vẫn giữ để dùng được với Provider thật (kết quả đến sau) |
+| `status = PENDING` | Mặc định chỉ tồn tại trong khoảnh khắc giữa lúc tạo lần thử và lúc adapter gọi callback. Với `simulate_result: "MANUAL"` (Q57, 2026-10-03) giao dịch **đứng `PENDING`** (Payment cũng `PENDING`, `callback_response` NULL) cho đến khi callback A32 tới → `SUCCEEDED` / `FAILED`. Giống hệt Provider thật (kết quả đến sau), nên **không cần cột hay migration mới** |
+| Lần thử `MANUAL` chưa có callback | UNIQUE `(payment_id) WHERE type = 'CHARGE' AND status = 'PENDING'` chặn mở lần thử mới → A31 khóa mới trả 409 `PAYMENT_IN_PROGRESS`. Không ai gửi callback thì Payment hết hạn như thường (mục 8.5); giao dịch giữ `PENDING`, callback `SUCCESS` đến muộn thì ghi nhận rồi hoàn ngay (M11) |
 
 ### 8.5 Hạn thanh toán và số lần thử (BRULE17, AC25) [BA — cách hiện thực]
 
@@ -799,7 +800,7 @@ Redis không lưu dữ liệu nghiệp vụ, không cache, không session (`CLAU
 | `JWT_TTL_SECONDS` | auth | 3600 [BA] | NFR06 |
 | `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_PUBLIC_MAX`, `RATE_LIMIT_ACCOUNT_MAX` | gateway | 60; 30; 120 [BA] | Mục 29 |
 | `OUTBOX_POLL_INTERVAL_MS` | 4 service phát event | 200 [BA] | NFR14 |
-| `SIMULATION_MODE` | auth, payment | `true` trong `.env.example` (demo); **`false` khi chạy thật** | ADR-014: auth trả OTP trong response; payment nhận `simulate_result` |
+| `SIMULATION_MODE` | auth, payment | `true` trong `.env.example` (demo); **`false` khi chạy thật** | ADR-014: auth trả OTP trong response; payment nhận `simulate_result` (`SUCCESS` / `FAILED` / `MANUAL`) |
 | `PAYMENT_CALLBACK_SECRET` | payment | Chuỗi ngẫu nhiên ≥ 32 ký tự; `.env.example` chỉ có giá trị giả | ADR-014: khóa bí mật cố định trong header `X-Callback-Secret` của A32 |
 
 ## 14. Dữ liệu seed
@@ -899,7 +900,7 @@ Mỗi Trip seed có đủ dòng `trip_status_history`; mỗi Payment `ONLINE` đ
 | D5 | Quãng đường lưu và truyền bằng **mét** (số nguyên); `CLAUDE.md` viết "số km" | S4 đổi kiểu field; công thức phải làm tròn số thực |
 | D6 | Mã loại xe `MOTORBIKE`, `CAR_4`, `CAR_7`; phương thức `CASH`, `ONLINE` | Tên hằng số |
 | D7 | Email là định danh đăng nhập tùy chọn; số điện thoại bắt buộc | Bỏ hai cột `email_*` |
-| D8 | Hồ sơ khách **không** giữ số điện thoại (sửa 2026-10-03, mục 4.1); mã hóa cả họ tên, ngày sinh | Thêm `phone_enc` do client gửi khi tạo hồ sơ (Q58) |
+| D8 | Hồ sơ khách **không** giữ số điện thoại (sửa 2026-10-03, mục 4.1 — sinh viên đã chốt, Q58 đóng); mã hóa cả họ tên, ngày sinh | Thêm `phone_enc` do client gửi khi tạo hồ sơ |
 | D9 | Mỗi tài xế một xe; số giấy phép duy nhất; hồ sơ nộp một lần | Bỏ UNIQUE tương ứng |
 | D10 | Chỉ lưu vị trí hiện tại của tài xế (Q11) | Thêm bảng lịch sử vị trí |
 | D11 | Payment giữ hạn 10 phút và đếm lượt; Booking biết qua K6 `CANCELED` (mục 8.5) | Chuyển `expires_at` sang Booking; K6, K4 đổi vai |

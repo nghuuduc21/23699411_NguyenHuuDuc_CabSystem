@@ -97,7 +97,7 @@ Mỗi mục chấm chỉ có khoảng **30 giây** để thực hiện trên Pos
 
 - Luồng thành công không có bước nào phải chờ: mọi thao tác phản hồi ngay, event Kafka được xử lý trong khoảng một giây.
 - Mọi giới hạn thời gian (hạn chờ thanh toán, hạn tài xế trả lời lời mời, cửa sổ rate limit) là **giới hạn trên** và đọc từ biến môi trường, để chỉnh ngắn lại khi cần demo trường hợp hết hạn.
-- Cổng thanh toán giả lập gửi callback ngay sau khi nhận yêu cầu thanh toán.
+- Cổng thanh toán giả lập gửi callback ngay sau khi nhận yêu cầu thanh toán, trừ khi gửi `simulate_result: "MANUAL"` (dùng cho mục chấm 19 để người demo tự gửi callback).
 - Dữ liệu cần có sẵn (tài khoản, tài xế đã duyệt và đang Online, booking mẫu) được tạo bằng seed, không tạo tay lúc chấm.
 - Postman collection chia thư mục theo số mục chấm; script của request tự lưu token và các ID vào biến để request sau dùng luôn.
 

@@ -2,7 +2,7 @@
 
 > Vòng 1 (chỉ BA), bản sửa 2026-10-02 lần 3: theo **8 service giảng viên chốt** và các quyết định mới trong `CLAUDE.md` (đổi tên `rating-service`; đồng bộ là mặc định; thanh toán trả trước với cước cố định; hoàn tiền; hủy; Redis ở Gateway).
 > Đồng bộ 2026-10-02 lần 4 (cùng lúc viết file 03, 04): công thức cước và ai tính quãng đường; hạn thanh toán 10 phút / 3 lần (BRULE17); đăng xuất (FR42, UC33); đóng Q10 (một phần), Q11, Q16, Q21, Q37. Chỉ sửa các dòng bị ảnh hưởng.
-> Sửa 2026-10-03 theo góp ý giảng viên: **tách đăng ký khỏi hồ sơ khách hàng** — Auth và Customer không còn quan hệ (R1 không nối, bỏ đường S1; quy tắc A8, C1, C4–C6; BRULE18) — ADR-013; hệ thống ngoài giả lập đơn giản — ADR-014.
+> Sửa 2026-10-03 theo góp ý giảng viên: **tách đăng ký khỏi hồ sơ khách hàng** — Auth và Customer không còn quan hệ (R1 không nối, bỏ đường S1; quy tắc A8, C1, C4–C6; BRULE18) — ADR-013; hệ thống ngoài giả lập đơn giản — ADR-014. Cùng ngày: đóng Q56 (đặt xe không cần hồ sơ — B1), Q57 (`simulate_result: "MANUAL"` — mục 6.6), Q58 (hồ sơ không lưu số điện thoại).
 > Nguồn sự thật: `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
 > File này trả lời: **chia hệ thống thành những phần nào, mỗi phần sở hữu gì, vì sao**. gRPC hay Kafka cho từng quan hệ: file 02. Loại database, schema: file 03.
 > Tên trạng thái viết HOA là **đề xuất**, trừ các tên đã có trong SRS và `CLAUDE.md` (`NO_DRIVER_FOUND`, `CANCELED`, `FAILED`, `COMPLETED`, Online/Offline, "chờ duyệt"). Tên chính thức chốt ở spec.
@@ -289,7 +289,7 @@ stateDiagram-v2
 
 | # | Quy tắc | Nguồn |
 |---|---|---|
-| B1 | Thiếu điểm đón, điểm đến, loại xe hoặc phương thức thanh toán thì không tạo Booking | FR35, AC01, AC02 |
+| B1 | Thiếu điểm đón, điểm đến, loại xe hoặc phương thức thanh toán thì không tạo Booking. **Không** đòi hồ sơ khách hàng: tài khoản `customer` (đã có số điện thoại ở Auth) và đủ dữ liệu yêu cầu là đặt được; Booking không gọi Customer (Q56, 2026-10-03) | FR35, AC01, AC02; `CLAUDE.md` |
 | B2 | Booking mới: tiền mặt → đang tìm tài xế ngay; điện tử → chờ thanh toán. Khách **không chờ** ghép xong | FR35, BRULE13, NFR01 |
 | B3 | Chỉ gửi Offer cho tài xế sẵn sàng, đúng loại xe | BRULE01, BRULE02, AC03, AC04 |
 | B4 | Trong các ứng viên, tài xế gần điểm đón nhất được hỏi trước | BRULE03, FR05, AC05 |
@@ -400,7 +400,7 @@ stateDiagram-v2
 | M12 | Mỗi lần Payment sang `COMPLETED`, `FAILED` hoặc `REFUNDED` đều được báo ra ngoài; `CANCELED` được báo ra khi lý do là quá hạn hoặc hết lượt (M13) | FR24, BRULE10, BRULE13, BRULE17 |
 | M13 | Thanh toán điện tử quá hạn, hoặc lần thử cuối thất bại, thì chuyển `CANCELED` kèm lý do; lần thử thất bại vẫn được lưu. Từ đó không nhận lần thử mới | BRULE17, BRULE10, AC25 |
 
-Fare và Payment chung một context và một aggregate: cước tính xong là thanh toán được tạo ngay trong cùng một thao tác. Payment Provider là hệ thống ngoài, **giả lập đơn giản sau một lớp adapter**: module trong `payment-service` gọi ngay phần xử lý callback, mặc định thành công (`CLAUDE.md`, ADR-014).
+Fare và Payment chung một context và một aggregate: cước tính xong là thanh toán được tạo ngay trong cùng một thao tác. Payment Provider là hệ thống ngoài, **giả lập đơn giản sau một lớp adapter**: module trong `payment-service` gọi ngay phần xử lý callback, mặc định thành công (`CLAUDE.md`, ADR-014). Riêng khi khách gửi `simulate_result: "MANUAL"` (chỉ ở chế độ giả lập), adapter **không** gọi callback: Payment đứng ở `PENDING` cho đến khi callback từ ngoài (A32) tới — vẫn là bước `PENDING → COMPLETED` / `PENDING → FAILED` của sơ đồ trên, không thêm trạng thái (Q57).
 
 ### 6.7 Notification
 
@@ -607,6 +607,9 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q16 | Bảng Entity trong `srs.md` chưa khớp thiết kế | Sinh viên đã sửa Booking, Trip, Fare, Payment theo trả trước và thêm dòng dẫn sang file 03. Phần còn khác (`password_hash` ở ba bảng, bảng Role, lịch sử vị trí): file 03 câu Q46 | `srs.md` |
 | Q10 (một phần) | Thêm mã mới vào `srs.md`? | Đã thêm FR42, UC33, BRULE17, AC25, AC26. **Còn thiếu** mã cho: trình tự trạng thái chuyến (mục 17), rate limit (mục 29), chống xử lý lặp (mục 30), D6, D8 — vẫn mở ở 9.2 | `srs.md` |
 | Q11 (BA đóng, chưa xác nhận) | ETA và lịch sử vị trí làm đến đâu? | Chỉ lưu vị trí hiện tại của tài xế; không có bảng lịch sử | File 03 mục 5.2 |
+| Q56 (đóng 2026-10-03) | Khách **chưa tạo hồ sơ** có được đặt xe không? | **Được.** Đủ điều kiện khi có tài khoản `customer` đã đăng ký (số điện thoại ở Auth) và đủ dữ liệu yêu cầu đặt xe. Booking chỉ dùng `customer_id` trong token, **không gọi Customer**; Customer vẫn không nối với service nào | `CLAUDE.md` dòng "Điều kiện đặt xe" |
+| Q57 (đóng 2026-10-03) | Callback từ ngoài có làm đổi trạng thái ở mục 19 không? | **Có**, bằng `simulate_result: "MANUAL"` (chỉ khi `SIMULATION_MODE=true`): giao dịch và Payment đứng `PENDING`, callback A32 từ Postman là callback đầu tiên → `COMPLETED`. Không gửi tham số thì vẫn tự callback thành công; `FAILED` như cũ | `CLAUDE.md` dòng "Hệ thống ngoài"; ADR-014 |
+| Q58 (đóng 2026-10-03) | Hồ sơ khách có lưu số điện thoại không? | **Không.** Hồ sơ chỉ họ tên (bắt buộc), ngày sinh (tùy chọn); số điện thoại chỉ ở tài khoản trong Auth | `CLAUDE.md` dòng "Hồ sơ khách hàng"; file 03 mục 4.1 |
 
 ### 9.2 Còn mở
 
@@ -626,4 +629,3 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q32 | FR30 (admin giám sát chuyến) có làm không khi phiếu chấm không yêu cầu? | (a) Làm tối thiểu ở `trip-service` sau khi xong 30 mục; (b) không làm | (a) | SV |
 | Q44 | Mục 15 và mục 19 demo theo thứ tự nào? Với trả trước, booking điện tử phải qua callback rồi mới có offer | (a) Mục 15, 16, 17 dùng booking tiền mặt; mục 19, 30 dùng một booking điện tử riêng; (b) một booking điện tử cho cả chuỗi, chạy mục 19 xen giữa mục 15 | (a) | GV |
 | Q45 | FR31: `admin` can thiệp chuyến lỗi **sau khi đã đón khách** thì làm gì, có hoàn tiền không? BRULE14, BRULE16 không nói | (a) Ngoài phạm vi; (b) thêm trạng thái và quy tắc hoàn tiền riêng | (a) | SV |
-| Q56 | Tách đăng ký khỏi hồ sơ (ADR-013): khách **chưa tạo hồ sơ** có được đặt xe không? | (a) Được: không FR / BRULE nào buộc có hồ sơ mới đặt xe; Booking chỉ cần `customer_id` trong token; (b) không: Booking phải hỏi Customer → thêm đường gRPC booking → customer | (a) — giữ Customer không nối với ai; nếu giảng viên muốn (b) thì cần thêm một BRULE và một đường gRPC | SV / GV |
