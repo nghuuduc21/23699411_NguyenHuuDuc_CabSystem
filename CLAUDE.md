@@ -21,6 +21,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Service, đường giao tiếp, topic Kafka, nhiệm vụ Gateway | `docs/design/02-kien-truc-giao-tiep.md` | Có |
 | Database từng service, bảng, kiểu dữ liệu, ERD, seed, mã hóa | `docs/design/03-du-lieu.md` | Có |
 | API REST của Gateway, ma trận phân quyền, chuỗi request từng mục chấm | `docs/design/04-api.md` | Có |
+| Quy trình nghiệp vụ theo mô hình 5 thành phần (Procedures, People, Hardware, Software, Data) | `docs/design/05-quy-trinh-5-thanh-phan.md` | Có |
 | Ảnh kiến trúc và ảnh bounded context / database (vẽ từ `docs/design/02` và `03`; sửa thiết kế thì sửa file `.html` cùng thư mục rồi xuất lại ảnh) | `docs/architecture/kien-truc.png`, `bounded-context-db.png` | Có |
 | Đặc tả từng phần việc | `docs/specs/` | Chưa có |
 | Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-012 |
