@@ -13,7 +13,7 @@
 | Địa chỉ | `http://localhost:3000` — cổng duy nhất cho nghiệp vụ. Postman tự thêm `http://` nên gõ `localhost:3000/...` cũng được | Mục chấm 8 |
 | Tiền tố | **Không có** (bỏ `/api/v1` từ 2026-10-03) [BA]. Ví dụ `POST http://localhost:3000/bookings` | Luật thi: mỗi request bớt 7 ký tự phải gõ. Đánh đổi: chưa có chỗ đánh phiên bản API; khi cần thì thêm `/v2` cho route mới, route cũ giữ nguyên (Q59) |
 | Định dạng | JSON, tên field `snake_case`, ngắn (mục 1.8). Gateway đọc body là JSON **bất kể `Content-Type`** (Postman chọn nhầm "Text" vẫn chạy) [BA] | Luật thi: bớt một chỗ dễ sai. Không mở lỗ CSRF vì token đi trong header `Authorization`, không dùng cookie |
-| Token | Header `Authorization: Bearer <JWT>` — trên Postman: tab **Authorization → Bearer Token → dán token**. JWT HS256 mang `sub` (= `account_id`, số), `role`, `jti`, `exp` | NFR06; ADR-016; `jti` để thu hồi khi đăng xuất (FR42) |
+| Token | Header `Authorization: Bearer <JWT>` — trên Postman: tab **Authorization → Bearer Token → dán token**. JWT HS256 mang `sub` (= `account_id` dạng chuỗi theo chuẩn JWT, ví dụ `"1"`; response `account_id` vẫn là số), `role`, `jti`, `exp` | NFR06; ADR-016; `jti` để thu hồi khi đăng xuất (FR42) |
 | ID | **Số nguyên dương** (`^[1-9][0-9]{0,15}$`). Sai (gồm `abc`, `1 OR 1=1`) → **400 `INVALID_ID`** ngay ở Gateway. Mã seed là số nhỏ (khách 1–9, tài xế 11–18, admin 99, booking = payment = trip 1–7); mã do API tạo bắt đầu từ **1000** | ADR-015; file 03 mục 2, 14; mục 25 |
 | Thời điểm | ISO 8601 UTC, ví dụ `2026-10-03T03:15:00Z` | File 03 mục 2 |
 | Tiền, quãng đường | Số nguyên: đồng; mét | File 03 mục 2 |
@@ -29,7 +29,7 @@
 | gRPC status | HTTP | Khi nào | Ví dụ mã lỗi |
 |---|---|---|---|
 | `OK` | 200 / 201 | | |
-| `INVALID_ARGUMENT` | 400 | Thiếu trường, sai kiểu, sai giá trị | `INVALID_INPUT`, `INVALID_PHONE`, `INVALID_COORDINATES`, `INVALID_PAGINATION`, `TEXT_CONTAINS_HTML`, `OTP_INVALID`, `OTP_EXPIRED`, `REASON_REQUIRED`, `SAME_PICKUP_AND_DESTINATION` |
+| `INVALID_ARGUMENT` | 400 | Thiếu trường, sai kiểu, sai giá trị | `INVALID_INPUT`, `INVALID_PHONE`, `INVALID_EMAIL`, `INVALID_COORDINATES`, `INVALID_PAGINATION`, `TEXT_CONTAINS_HTML`, `OTP_INVALID`, `OTP_EXPIRED`, `REASON_REQUIRED`, `SAME_PICKUP_AND_DESTINATION` |
 | `UNAUTHENTICATED` | 401 | Sai thông tin đăng nhập; khóa callback sai / thiếu | `INVALID_CREDENTIALS`, `INVALID_CALLBACK_SECRET` |
 | `PERMISSION_DENIED` | 403 | Không phải chủ dữ liệu; tài khoản bị khóa | `NOT_OWNER`, `ACCOUNT_LOCKED` |
 | `NOT_FOUND` | 404 | Không có đối tượng | `CUSTOMER_NOT_FOUND`, `DRIVER_NOT_FOUND`, `BOOKING_NOT_FOUND`, `TRIP_NOT_FOUND`, `PAYMENT_NOT_FOUND`, `OFFER_NOT_FOUND`, `RATING_NOT_FOUND`, `TRANSACTION_NOT_FOUND` |
@@ -646,10 +646,10 @@ Tổng: **39 rpc nghiệp vụ** (auth 4, customer 3, driver 11, booking 7, trip
 | P11 | `simulate_result` nằm trong body A31 | Header riêng; khóa chống lặp phải tính cả header |
 | P12 | Bỏ tiền tố `/api/v1` | Mọi đường dẫn, spec 00, 09-10, 11 |
 | P13 | Tên field ngắn và giá trị mặc định ở mục 1.8; enum không phân biệt hoa thường | Mục 1.8, spec từng mục |
-| P14 | Gateway đọc body là JSON bất kể `Content-Type` | Mục 1; spec 09-10 (đang trả 400 `INVALID_JSON` khi sai `Content-Type`) |
+| P14 | Gateway đọc body là JSON bất kể `Content-Type` | Mục 1; spec 09-10 (đã khớp, 2026-10-03) |
 | P15 | A08 trả token | Mục 21 thêm một request đăng nhập |
 | P16 | Tách A17 / A39 thay vì một API có body | Gộp lại thành `PUT /drivers/me/availability` |
-| P17 | Khóa chống lặp so body **đã chuẩn hóa** | File 03 mục 8.6 đang ghi "SHA-256 của body" — cần ghi rõ là body đã chuẩn hóa |
+| P17 | Khóa chống lặp so body **đã chuẩn hóa** | File 03 mục 8.6 (đã khớp, 2026-10-03) |
 | P18 | A12 không có tham số bán kính | Thêm `radius` nếu giảng viên muốn thử bán kính khác |
 
 ### 9.2 Câu hỏi còn mở (đánh số tiếp Q58)

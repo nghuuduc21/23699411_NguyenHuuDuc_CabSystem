@@ -148,7 +148,7 @@ flowchart TB
   DRV -.->|K7 driver.application-reviewed| NOTI
 ```
 
-Sơ đồ cố ý **không có mũi tên nào nối `auth-service` và `customer-service`** với service khác (bỏ S1 ngày 2026-10-03, ADR-013). Cổng thanh toán giả lập là **module bên trong** `payment-service` (không phải container): nhận yêu cầu thu / hoàn rồi gọi ngay phần xử lý callback. Mũi tên `PP → gateway` là callback gửi từ ngoài vào khi Postman đóng vai Provider (mục 19, 30) — ADR-014.
+Sơ đồ cố ý **không có mũi tên nào nối `auth-service` và `customer-service`** với service khác (bỏ S1 ngày 2026-10-03, ADR-013). Cổng thanh toán giả lập là **module bên trong** `payment-service` (không phải container): nhận yêu cầu thu / hoàn rồi gọi ngay phần xử lý callback, **trừ khi** A31 gửi `simulate_result: "MANUAL"`. Mũi tên `PP → gateway` là callback gửi từ ngoài vào khi Postman đóng vai Provider: ở mục 19 dùng `MANUAL` nên callback này là callback đầu tiên làm Payment `COMPLETED`; mục 30 gửi lại nó — ADR-014, Q57.
 
 ## 4. Bảng mọi đường giao tiếp
 
@@ -157,7 +157,7 @@ Sơ đồ cố ý **không có mũi tên nào nối `auth-service` và `customer
 | Mã | Bên gửi | Bên nhận | Kiểu | Nội dung | Vì yêu cầu nào |
 |---|---|---|---|---|---|
 | C1 | Client (khách, tài xế, admin) | `gateway` :3000 | REST/JSON | Mọi thao tác của người dùng | `CLAUDE.md`; mục 8 |
-| C2 | Payment Provider (giả lập: Postman đóng vai) | `gateway` :3000 | REST/JSON, không JWT; header `X-Callback-Secret` chứa khóa bí mật cố định (không HMAC) | Callback kết quả giao dịch. Trong luồng thường adapter đã gọi phần xử lý callback ngay trong `payment-service`; đường này dùng để demo "hệ thống nhận callback" và replay | FR18, UC14, mục 19, 30; ADR-014 |
+| C2 | Payment Provider (giả lập: Postman đóng vai) | `gateway` :3000 | REST/JSON, không JWT; header `X-Callback-Secret` chứa khóa bí mật cố định (không HMAC) | Callback kết quả giao dịch. Mặc định adapter tự gọi phần xử lý callback ngay trong `payment-service`; với `simulate_result: "MANUAL"` (mục 19) adapter **không** gọi, nên đường này là callback đầu tiên làm Payment `PENDING → COMPLETED`; gửi lại để demo replay (mục 30) | FR18, UC14, mục 19, 30; ADR-014 |
 | C3 | Trình duyệt của người chấm | `kafka-ui` :8080 | HTTP | Xem topic, message, consumer group | Mục 7 |
 
 ### 4.2 Gateway → service (gRPC) và Gateway → Redis
@@ -350,8 +350,8 @@ Các bước demo:
 | 4 | Kafka UI → Consumers | Group `notification-service` đã đọc hai message đó (lag = 0) |
 | 5 | Postman: tài xế nhận chuyến (mục 16) | Response có `trip_id`; `trip.status-changed` có message `status = ACCEPTED` |
 | 6 | Postman: cập nhật trạng thái đến hoàn thành (mục 17) | `trip.status-changed` có thêm message; khi `COMPLETED`, group `payment-service` và `driver-service` đã đọc; `payment.status-changed` có message `COMPLETED` (tiền mặt) |
-| 7 | Postman: tạo booking **điện tử** (A19), rồi thực hiện thanh toán (A31 — adapter gọi callback ngay) (mục 19) | Sau A19: không có message mới ở `booking.offer-created`. Sau A31: `payment.status-changed` có `COMPLETED`; group `booking-service` đã đọc; `booking.offer-created` có message mới. Gửi lại callback (A32) **không** tạo message mới |
-| 8 | Postman: khách hủy booking điện tử đã trả (mục 18) | `booking.canceled` có message; `payment.status-changed` có `REFUNDED` |
+| 7 | Postman (mục 19, theo 04 mục 5.2): A31 `POST /payments/7/pay` cho booking seed B7 (điện tử, `PENDING_PAYMENT`) với `{"simulate_result":"MANUAL"}` — adapter **không** tự gọi callback; rồi A32 `POST /payments/callback` với `{"txn_id":"SIM-7-1"}` | Sau A31: Payment `PENDING`, **chưa** có message mới ở `payment.status-changed`, `booking.offer-created`. Sau A32: `payment.status-changed` có `COMPLETED`; group `booking-service` đã đọc; `booking.offer-created` có message mới (lời mời tới TX4). Gửi lại A32 (mục 30) **không** tạo message mới |
+| 8 | Postman (mục 18): khách hủy chuyến seed 5 (A29) | `trip.status-changed` có message `CANCELED`; group `payment-service`, `driver-service`, `notification-service` đã đọc; `payment.status-changed` có `REFUNDED`. Phụ: hủy booking điện tử chưa có tài xế (A22) → `booking.canceled` có message |
 
 Yêu cầu với Compose (dev-agent hiện thực): `kafka`, `kafka-init`, `redis` và các database không có `ports`; `kafka-ui` có `ports` 8080; `gateway` có `ports` 3000; không container nào khác có `ports`. Kafka UI không có đăng nhập, chỉ dùng cho môi trường học tập (Q22).
 

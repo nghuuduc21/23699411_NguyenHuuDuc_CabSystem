@@ -41,7 +41,7 @@ Chọn dòng đầu. Không container database nào có `ports` (mục chấm 8)
 | Container database | `<context>-db`, đặt bằng `container_name` trong Compose để `docker exec` dùng thẳng tên ngắn | `auth-db`, `customer-db`, `driver-db`, `booking-db`, `trip-db`, `payment-db`, `rating-db`, `notification-db` |
 | Container service | Tên service, cũng đặt `container_name` | `auth-service`, …, `gateway`, `kafka`, `kafka-ui`, `redis` |
 | Database | Tên context, không hậu tố | `auth`, `customer`, `driver`, `booking`, `trip`, `payment`, `rating`; MongoDB: `notification` |
-| User | **`cab`** ở mọi database; mật khẩu chung `DB_PASSWORD` | `docker exec customer-db psql -U cab -d customer -c "select * from customer_profiles"` |
+| User | **`cab`** ở mọi database; mật khẩu chung `DB_PASSWORD` | `docker exec customer-db psql -U cab -d customer -c "table customer_profiles"` (`table` = `select *`) |
 
 Đánh đổi của mật khẩu chung: lộ một mật khẩu là vào được mọi database. Chấp nhận vì không database nào mở cổng ra máy chủ (mục chấm 8) và mỗi service vẫn chỉ được cấu hình địa chỉ database của mình.
 
@@ -546,7 +546,7 @@ Giả lập cổng thanh toán (ADR-014) **không đổi bảng này**:
 |---|---|---|---|
 | `payment_id` | `bigint` | PK (cùng `idempotency_key`), FK → `payments` | **Đổi 2026-10-03** (trước là `account_id`): khóa có nghĩa trong phạm vi **một thanh toán**. Nhờ vậy khóa ngắn `k1` gõ tay dùng lại được cho mỗi thanh toán khác nhau (luật thi). Payment thuộc đúng một khách nên vẫn không lẫn giữa người dùng |
 | `idempotency_key` | `text` | PK, CHECK độ dài 1–100 | Giá trị header `Idempotency-Key`, ví dụ `k1` |
-| `request_hash` | `text` | NOT NULL | SHA-256 của body. Cùng khóa mà khác nội dung → 409 |
+| `request_hash` | `text` | NOT NULL | SHA-256 của body **đã chuẩn hóa** (đọc JSON rồi viết lại, khóa theo thứ tự chữ cái; body rỗng = `{}`) — như 04 mục 1.4. Gõ lại body khác khoảng trắng hoặc khác thứ tự khóa vẫn là cùng nội dung. Cùng khóa mà khác nội dung → 409 `IDEMPOTENCY_KEY_REUSED` |
 | `response` | `jsonb` | NULL | NULL = đang xử lý; có giá trị = response lần đầu, trả lại nguyên văn khi gặp lại khóa |
 
 Ghi dòng này **trong cùng giao dịch** với việc tạo `payment_transactions`. Hai request trùng khóa đến cùng lúc: PK chặn request thứ hai. Đánh đổi của phạm vi theo thanh toán: cùng khóa `k1` cho hai thanh toán là hai lần thử độc lập — đúng ý nghĩa, vì client không thể "lặp" một request sang thanh toán khác.
@@ -809,7 +809,7 @@ Nguyên tắc: chỉ giữ biến là **bí mật** hoặc **giới hạn thời
 | 4 | `CUSTOMER_DATA_KEY` | customer | 32 byte base64 cố định, ghi chú "chỉ cho máy demo" | ADR-012; mục chấm 24 |
 | 5 | `DRIVER_DATA_KEY` | driver | 32 byte base64 cố định, khác biến 4 | ADR-012 |
 | 6 | `PAYMENT_CALLBACK_SECRET` | payment | `cab-secret` | ADR-014; header `X-Callback-Secret` của A32 |
-| 7 | `SIMULATION_MODE` | auth, payment, **mọi service có seed** | `true`; **`false` khi chạy thật** | ADR-014: OTP trong response, `simulate_result`, **chạy seed khi khởi động** (thay `SEED_ON_START`) |
+| 7 | `SIMULATION_MODE` | auth, payment, **mọi service có seed** | `true`; **`false` khi chạy thật** | ADR-014: OTP trong response, `simulate_result`, **chạy seed khi khởi động** |
 | 8 | `SEED_PASSWORD` | auth | `12345678` | Mục 14 |
 | 9 | `PAYMENT_TIMEOUT_SECONDS` | payment | `600` [ĐC 10 phút] | BRULE17 |
 | 10 | `OFFER_TIMEOUT_SECONDS` | booking | **`300`** (demo: đủ để gõ tay từ mục 15 sang mục 16); giá trị nghiệp vụ đề xuất 20 (Q12) | BRULE04 |
@@ -818,7 +818,7 @@ Nguyên tắc: chỉ giữ biến là **bí mật** hoặc **giới hạn thời
 | 13 | `RATE_LIMIT_PUBLIC_MAX` | gateway | `5` | Mục 29 |
 | 14 | `RATE_LIMIT_ACCOUNT_MAX` | gateway | `30` | Mục 29 |
 
-Đã bỏ: `GATEWAY_PORT`, `KAFKA_UI_PORT`, `KAFKA_CLUSTER_ID`, `REDIS_PASSWORD`, `LOG_LEVEL` (đặt thẳng trong `compose.yaml` / code); 7 biến `*_DB_PASSWORD` (gộp thành `DB_PASSWORD`); `JWT_PRIVATE_KEY_B64`, `JWT_PUBLIC_KEY_B64`, `JWT_ISSUER` (ADR-016); `AUTH_DATA_KEY`, `AUTH_BLIND_INDEX_KEY`, `DRIVER_BLIND_INDEX_KEY` (ADR-012); `AUTH_OTP_HMAC_KEY` (OTP băm scrypt); `OUTBOX_POLL_INTERVAL_MS` (ADR-017); `SEED_ON_START` (gộp vào `SIMULATION_MODE`); các hằng số dưới.
+Đã bỏ: `GATEWAY_PORT`, `KAFKA_UI_PORT`, `KAFKA_CLUSTER_ID`, `REDIS_PASSWORD`, `LOG_LEVEL` (đặt thẳng trong `compose.yaml` / code); 7 biến `*_DB_PASSWORD` (gộp thành `DB_PASSWORD`); `JWT_PRIVATE_KEY_B64`, `JWT_PUBLIC_KEY_B64`, `JWT_ISSUER` (ADR-016); `AUTH_DATA_KEY`, `AUTH_BLIND_INDEX_KEY`, `DRIVER_BLIND_INDEX_KEY` (ADR-012); `AUTH_OTP_HMAC_KEY` (OTP băm scrypt); `OUTBOX_POLL_INTERVAL_MS` (ADR-017); biến bật seed riêng (gộp vào `SIMULATION_MODE`); các hằng số dưới.
 
 Hằng số trong code (không phải biến môi trường):
 

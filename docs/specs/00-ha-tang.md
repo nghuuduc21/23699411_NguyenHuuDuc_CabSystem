@@ -1,6 +1,6 @@
 # Spec 00 — Hạ tầng: cấu trúc mã nguồn, Compose, Kafka, Gateway health
 
-> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận.
+> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3:** không tiền tố đường dẫn, Gateway đọc body JSON bất kể `Content-Type`, lệnh `psql` dạng `table <bảng>`, tạo `.env` bằng `cp`.
 > Mục chấm **1, 2, 5, 6, 7, 8**.
 > Đầu vào: `CLAUDE.md` (Quy tắc kiến trúc, Quyết định kỹ thuật, Ràng buộc khi chấm, Ràng buộc khi thi, Cấu trúc thư mục, Quy ước code); `docs/design/02` mục 2, 6, 7; `docs/design/03` mục 1.1, 1.3, 11.3, 12, **13**, **14**; `docs/design/04` mục 1, 2.1; ADR-010, ADR-014, ADR-015, ADR-016, ADR-017.
 > Phạm vi: khung **chạy được, chưa có nghiệp vụ**. Mỗi service: khởi động → nối database của mình → chạy migration → chạy seed (nếu bật) → trả lời health gRPC. Gateway: ba endpoint health và bảng đổi lỗi gRPC → HTTP dùng chung cho các spec sau.
@@ -211,17 +211,17 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 
 | Việc | Lệnh | Mục chấm |
 |---|---|---|
-| Tạo `.env` (một lần) | `copy .env.example .env` (PowerShell / cmd) hoặc `cp .env.example .env` | 2 |
+| Tạo `.env` (một lần) | `cp .env.example .env` (chạy được ở PowerShell, Git Bash, Linux — như 06) | 2 |
 | Kiểm tra `.env` không lên Git | `git ls-files .env .env.example` → chỉ in `.env.example` | 2 |
 | Dựng hệ thống | `docker compose up -d --build` | 5 |
 | Xem container, cổng | `docker compose ps -a` | 5, 8 |
 | Xem topic | Trình duyệt `http://localhost:8080` → Topics | 7 |
-| Xem bảng hồ sơ khách | `docker exec customer-db psql -U cab -d customer -c "select * from customer_profiles"` | 24 |
-| Xem bảng tài khoản | `docker exec auth-db psql -U cab -d auth -c "select phone, password_hash from accounts"` | 24 |
+| Xem bảng hồ sơ khách | `docker exec customer-db psql -U cab -d customer -c "table customer_profiles"` | 24 |
+| Xem bảng tài khoản | `docker exec auth-db psql -U cab -d auth -c "table accounts"` | 24 |
 | Dừng / bật một service (demo 503) | `docker compose stop rating-service` / `docker compose start rating-service` | 6 |
 | Đặt lại dữ liệu về seed | `docker compose down -v` rồi `docker compose up -d --build` | Chấm lại |
 
-`psql` hiển thị cột `bytea` dạng `\x…` (hex) nên không cần `encode()`.
+`table <tên bảng>` là cách viết ngắn của `select * from <tên bảng>` (04 mục 5.3, 06). `psql` hiển thị cột `bytea` dạng `\x…` (hex) nên không cần `encode()`.
 
 ### 3.8 Thành phần nào sở hữu gì ở spec này
 
@@ -239,6 +239,8 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 | Điểm | Quy định |
 |---|---|
 | Header mọi response | `X-Content-Type-Options: nosniff`; `Content-Security-Policy: default-src 'none'`; `Cache-Control: no-store`; `X-Request-Id` (Gateway sinh, chuyển cho service qua metadata `x-request-id`) |
+| Đường dẫn | **Không có tiền tố** phiên bản: `http://localhost:3000/<route>` |
+| Body | Đọc là JSON **bất kể `Content-Type`** (Postman chọn "Text" vẫn chạy); body rỗng = `{}`; không phân tích được → 400 `INVALID_JSON` |
 | Route không tồn tại | 404 `{ "error": "ROUTE_NOT_FOUND" }` |
 | Lỗi không lường trước trong Gateway | 503 `{ "error": "SERVICE_UNAVAILABLE" }`, không stack trace |
 | Log | Một dòng mỗi request: method, path, status, thời gian, `request_id`. **Không** ghi header `Authorization`, body |
@@ -265,7 +267,7 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 | 200 | Cả 8 `SERVING`: `{ "status": "UP", "services": { "auth-service": "SERVING", …, "rating-service": "SERVING" } }` |
 | 503 | Có service khác `SERVING`: `{ "status": "DEGRADED", "services": { …, "rating-service": "UNREACHABLE" } }` |
 
-Ba endpoint health không có tiền tố `/api/v1`, không token, không rate limit; body không theo dạng `{ "error": … }` vì là báo cáo trạng thái.
+Ba endpoint health (như mọi route, không có tiền tố phiên bản — 04 mục 1) không token, không rate limit; body không theo dạng `{ "error": … }` vì là báo cáo trạng thái.
 
 ### 4.1 Bảng đổi lỗi gRPC → HTTP (dùng cho mọi spec sau) [ĐC]
 
@@ -386,5 +388,5 @@ Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư
 |---|---|---|---|---|
 | H-Q1 | Máy chấm có thể có PostgreSQL cài sẵn trên 5432, làm AC-HT-11 "kết nối được" nhầm | (a) Chứng minh bằng `docker compose ps -a` (không có `->`); (b) không làm gì | (a) | SV |
 | H-Q2 | `mem_limit` 256m cho PostgreSQL và tổng RAM (~6 GB) có vừa máy demo không | Đo sau khi chạy | Test-agent đo bằng `docker stats` | Test |
-| H-Q3 | Lệnh tạo `.env` trên Windows: `copy` (cmd / PowerShell) hay `cp` (PowerShell alias, Git Bash) | Cả hai đều chạy trong PowerShell | Học `cp .env.example .env` — chạy được ở PowerShell, Git Bash, Linux | SV |
+| ~~H-Q3~~ | Đã đóng: dùng `cp .env.example .env` (mục 3.7, 06) | — | — | — |
 | H-Q4 | Khóa mẫu trong `.env.example` nằm trên Git: giảng viên có coi là vi phạm mục 2 không | (a) Giữ, ghi rõ "chỉ cho máy demo"; (b) để trống, sinh viên tự điền khi thi | (a) — đã chốt ở 03 mục 11.4; cần nói được đánh đổi | GV |
