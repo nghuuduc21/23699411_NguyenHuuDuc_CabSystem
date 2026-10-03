@@ -85,9 +85,9 @@
   <div class="box ext" style="left:330px;top:310px;width:480px;height:172px;border-color:#555">
     <h3 style="font-size:21px"><span class="ic">🌐</span>Hệ thống ngoài <small>(giả lập)</small></h3>
     <ul>
-      <li><b>Payment Provider:</b> nhận yêu cầu thu / hoàn tiền, gọi lại callback</li>
+      <li><b>Payment Provider:</b> module trong payment-service, gọi ngay xử lý callback</li>
       <li><b>Map:</b> thay bằng công thức khoảng cách</li>
-      <li><b>Notification Provider:</b> thay bằng lưu thông báo</li>
+      <li><b>Thông báo, SMS, OTP:</b> lưu database và ghi log</li>
     </ul>
   </div>
 
@@ -117,7 +117,7 @@
 
   <div class="footer">
     <b>Đồng bộ (gRPC) là mặc định.</b> Kafka chỉ dùng khi bên phát không được chờ, không được lỗi theo bên nhận, hoặc nhiều bên cùng cần biết.
-    &nbsp;|&nbsp; <b>auth, customer, rating:</b> chỉ gRPC &nbsp;|&nbsp; <b>notification:</b> chỉ Kafka &nbsp;|&nbsp; Chỉ Gateway và Kafka UI mở cổng ra ngoài
+    &nbsp;|&nbsp; <b>auth, customer:</b> không giao tiếp với service nào &nbsp;|&nbsp; <b>rating:</b> chỉ gRPC &nbsp;|&nbsp; <b>notification:</b> chỉ Kafka &nbsp;|&nbsp; Chỉ Gateway và Kafka UI mở cổng ra ngoài
   </div>
 </div>
 
@@ -126,10 +126,10 @@ const W = 250, SY = 630, SH = 232, DBY = 985, DBW = 218, DBH = 138, KY = 1352;
 const X = { auth: 85, customer: 445, driver: 725, booking: 1085, trip: 1445, rating: 1805, payment: 2085, notification: 2365 };
 const services = [
   { id: 'auth', name: 'auth-service', ic: '🔐', bg: '#e8f2fd', bd: '#4a90d9',
-    items: ['Tài khoản, đăng nhập, cấp JWT', 'OTP đăng ký tài xế', 'Vai trò: customer, driver, admin'],
+    items: ['Đăng ký tài khoản, đăng nhập, cấp JWT', 'OTP đăng ký tài xế', 'Vai trò: customer, driver, admin'],
     db: { kind: 'pg', name: 'PostgreSQL', sub: 'auth-db', ent: ['accounts', 'otp_verifications'] } },
   { id: 'customer', name: 'customer-service', ic: '👥', bg: '#e9f8ea', bd: '#3fae4a',
-    items: ['Hồ sơ khách hàng', 'Xem / cập nhật hồ sơ'],
+    items: ['Hồ sơ khách hàng', 'Tạo / xem / cập nhật hồ sơ sau khi đăng nhập'],
     db: { kind: 'pg', name: 'PostgreSQL', sub: 'customer-db', ent: ['customer_profiles'] } },
   { id: 'driver', name: 'driver-service', ic: '🚗', bg: '#fff6e0', bd: '#e0a100',
     items: ['Hồ sơ tài xế và xe', 'Duyệt hồ sơ', 'Online / Offline, vị trí', 'Tìm tài xế trong 1 km'],
@@ -186,7 +186,8 @@ line(1350, 244, 1350, 298, '#2b6fd6', { 'marker-start': 'url(#blue)', 'marker-en
 label(1540, 272, 'REST API (HTTPS/JSON) + JWT', '#2b6fd6', 19);
 line(1752, 396, 1888, 396, '#222', { 'marker-start': 'url(#black)', 'marker-end': 'url(#black)', 'stroke-width': 3 });
 line(812, 396, 948, 396, '#2b6fd6', { 'marker-end': 'url(#blue)', 'stroke-width': 3.5 });
-label(880, 372, 'callback (REST)', '#2b6fd6', 14);
+label(880, 364, 'callback (REST)', '#2b6fd6', 14);
+label(880, 384, 'header khóa bí mật', '#2b6fd6', 12);
 
 services.forEach((s, i) => {
   const x = X[s.id];
@@ -241,7 +242,6 @@ function adjacent(fromId, toId, y, lines) {
   label(cx, y - 26, 'gRPC', '#e02424', 17);
   lines.forEach((t, k) => label(cx, y + 24 + k * 16, t, '#e02424', 11.5));
 }
-adjacent('auth', 'customer', 745, ['CreateProfile']);
 adjacent('booking', 'driver', 745, ['FindNearbyDrivers', 'ReserveDriver', 'ReleaseDriver']);
 adjacent('booking', 'trip', 745, ['CreateTrip']);
 adjacent('rating', 'trip', 745, ['GetTripFor', 'Rating']);

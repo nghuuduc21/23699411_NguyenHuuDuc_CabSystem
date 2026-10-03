@@ -135,4 +135,4 @@ Cả hai con số là **giới hạn trên**, đọc từ `PAYMENT_TIMEOUT_SECON
 
 ## Điều kiện xem lại
 
-Nghiệp vụ chỉ đổi khi sinh viên và giảng viên đổi `srs.md` / `CLAUDE.md`. Chi tiết đề xuất xem lại theo câu trả lời Q42, Q44 và Q50 (ai gửi callback giả lập — file 04).
+Nghiệp vụ chỉ đổi khi sinh viên và giảng viên đổi `srs.md` / `CLAUDE.md`. Chi tiết đề xuất xem lại theo câu trả lời Q42, Q44. Q50 (ai gửi callback giả lập) đã đóng 2026-10-03: adapter trong `payment-service` gọi ngay phần xử lý callback; callback từ ngoài xác thực bằng khóa bí mật trong header (ADR-014). Luồng trạng thái Payment trong ADR này không đổi.

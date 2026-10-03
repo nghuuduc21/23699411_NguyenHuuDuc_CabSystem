@@ -7,13 +7,13 @@ Sinh viên phải tự giải thích được mọi quyết định. Vì vậy m
 
 ## Trạng thái
 
-Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã có đủ bốn file** `docs/design/01`–`04` và ADR-001 đến ADR-012; sinh viên chưa rà hết và chưa hỏi giảng viên. Chưa có đặc tả trong `docs/specs/` và chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
+Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã xong:** `docs/design/01`–`05`, ADR-001 đến ADR-014 và hai ảnh sơ đồ. Đã đưa vào hai góp ý của giảng viên (2026-10-03): tách đăng ký khỏi hồ sơ khách hàng (ADR-013) và giả lập hệ thống ngoài thật đơn giản (ADR-014). Chưa có đặc tả trong `docs/specs/` và chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
 
 ## Tài liệu
 
 | Cần biết | Xem | Trạng thái |
 |---|---|---|
-| Nghiệp vụ: BG01–06, BR, FR01–FR42, BRULE01–17, NFR01–16, UC01–UC33, AC01–AC26, RTM01–RTM26 | `srs.md` | Có, đã rà |
+| Nghiệp vụ: BG01–06, BR, FR01–FR42, BRULE01–18, NFR01–16, UC01–UC33, AC01–AC29, RTM01–RTM28 | `srs.md` | Có, đã rà |
 | 30 mục phiếu chấm | `docs/study/00-ban-do-phieu-cham.md` | Có |
 | Truy vết yêu cầu → mục chấm; quyết định nghiệp vụ đã chốt | `docs/study/01-nghiep-vu-va-truy-vet.md` | Có |
 | Thiết kế tham chiếu đã được giảng viên duyệt (kiến trúc, bảng) và điều chỉnh của giảng viên | `docs/reference/thiet-ke-da-duyet.md` + hai ảnh cùng thư mục | Có |
@@ -24,7 +24,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Quy trình nghiệp vụ theo mô hình 5 thành phần (Procedures, People, Hardware, Software, Data) | `docs/design/05-quy-trinh-5-thanh-phan.md` | Có |
 | Ảnh kiến trúc và ảnh bounded context / database (vẽ từ `docs/design/02` và `03`; sửa thiết kế thì sửa file `.html` cùng thư mục rồi xuất lại ảnh) | `docs/architecture/kien-truc.png`, `bounded-context-db.png` | Có |
 | Đặc tả từng phần việc | `docs/specs/` | Chưa có |
-| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-012 |
+| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-014 |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
 
 ## Danh sách service (giảng viên chốt, không tự ý thêm bớt)
@@ -76,7 +76,7 @@ Không có service riêng cho ghép tài xế (dispatch), báo cáo (report) và
 
 | Điểm | Quyết định | Lý do | Đánh đổi |
 |---|---|---|---|
-| Đăng ký khách hàng | `auth-service` gọi gRPC đồng bộ sang `customer-service` để tạo hồ sơ | Mục chấm 11 chạy ngay sau mục 9: đăng ký xong phải xem được hồ sơ | Customer lỗi thì đăng ký lỗi theo |
+| Đăng ký và hồ sơ khách hàng | **Tách làm hai bước** (giảng viên đề xuất 2026-10-03). Đăng ký chỉ tạo tài khoản ở `auth-service` (số điện thoại, email, mật khẩu). Sau khi đăng nhập, khách mở màn hình khác để tạo và cập nhật hồ sơ ở `customer-service`; `customer_id` lấy từ mã tài khoản trong token. **`auth-service` và `customer-service` không gọi nhau** | Giống thực tế: đăng ký → đăng nhập → cập nhật hồ sơ. Không còn tình huống một bên lỗi giữa chừng khiến tài khoản có mà hồ sơ không, nên không cần xử lý bù trừ | Ngay sau đăng ký chưa có hồ sơ: xem hồ sơ trả 404 cho đến khi khách tạo. Mục chấm 11 cần thêm một request tạo hồ sơ, hoặc dùng tài khoản seed đã có hồ sơ |
 | Tài xế nhận chuyến | `booking-service` gọi gRPC đồng bộ `CreateTrip` sang `trip-service` | Tài xế nhận xong phải có ngay mã chuyến để cập nhật trạng thái (mục chấm 16 → 17). Một lần nhận chuyến mà không có Trip là vô nghĩa, nên Booking được phép chờ và lỗi theo Trip. Đúng nguyên tắc đồng bộ là mặc định | Trip lỗi thì tài xế không nhận được chuyến |
 | Đặt xe → cước và thanh toán | `booking-service` gọi gRPC đồng bộ sang `payment-service` để tính cước cố định và tạo thanh toán | Booking phải trả ngay cho khách số tiền và mã thanh toán | Payment lỗi thì không đặt được xe. Đây là hệ quả của trả trước và là đánh đổi so với NFR05; cần nêu khi trình bày |
 | Kết quả thanh toán, hoàn tiền | Payment phát event Kafka; Booking nghe kết quả thanh toán để bắt đầu tìm tài xế. Payment nghe event hủy và không tìm được tài xế để hoàn tiền | Tiền đã trừ thì Payment phải ghi nhận xong dù Booking đang lỗi; việc hủy phải thành công dù Payment đang lỗi (NFR05); nhiều bên cùng nghe | Có khoảng trễ ngắn giữa thanh toán xong và bắt đầu tìm tài xế |
@@ -87,7 +87,7 @@ Không có service riêng cho ghép tài xế (dispatch), báo cáo (report) và
 | Khóa chính | UUID (kiểu `uuid` của PostgreSQL, sinh bằng `gen_random_uuid()`) | Mỗi service tự sinh ID không cần nơi cấp số chung; ID không đoán được nên khó dò dữ liệu người khác; ID đi qua event và service khác vẫn duy nhất | Dài, khó đọc khi demo; index lớn hơn INT. Khác thiết kế tham chiếu (dùng INT) |
 | Phân quyền | Ba role cố định trong cột `role`; **không có bảng PERMISSION** | Phiếu chấm chỉ kiểm tra theo role (mục 28); quyền không đổi lúc chạy | Thêm quyền mới phải sửa code Gateway |
 | Lỗi sai trạng thái | gRPC `FAILED_PRECONDITION` → HTTP 409 | Thao tác hợp lệ nhưng sai thời điểm (ví dụ hoàn thành chuyến chưa bắt đầu, mục chấm 17) là lỗi của request, không phải lỗi hạ tầng | — |
-| Hệ thống ngoài | Bản đồ, cổng thanh toán, kênh gửi thông báo đều **giả lập**, đặt sau một lớp adapter | Demo không phụ thuộc mạng, tài khoản và khóa API bên ngoài; adapter giữ được NFR13 (đổi sang nhà cung cấp thật không sửa nghiệp vụ) | Không chứng minh được tích hợp thật |
+| Hệ thống ngoài | **Giả lập đơn giản nhất** để dễ chấm và dễ chạy (giảng viên, 2026-10-03), đặt sau một lớp adapter. **Cổng thanh toán:** module giả lập nằm trong `payment-service`; nhận yêu cầu thu hoặc hoàn tiền rồi gọi ngay phần xử lý callback, mặc định thành công; một tham số chỉ có hiệu lực khi bật chế độ giả lập cho phép cố ý làm thất bại để demo thanh toán lỗi. Endpoint callback vẫn giữ để demo "hệ thống nhận callback" (mục chấm 19), xác thực bằng một khóa bí mật cố định trong header, không dùng chữ ký HMAC. **Bản đồ:** công thức khoảng cách trên tọa độ. **Kênh thông báo và SMS:** chỉ lưu vào database và ghi log. **OTP:** ghi log; khi bật chế độ giả lập thì trả luôn mã trong response để Postman dùng tiếp | Demo không phụ thuộc mạng, tài khoản và khóa API bên ngoài; mỗi mục chấm làm được trong 30 giây; adapter giữ được NFR13 | Không chứng minh được tích hợp thật; chế độ giả lập phải tắt khi chạy thật |
 
 ## Ràng buộc khi chấm
 

@@ -2,6 +2,7 @@
 
 - Ngày: 2026-10-02. Trạng thái: **Đề xuất** — BA chọn, chờ sinh viên xác nhận.
 - Liên quan: `docs/design/03-du-lieu.md` mục 2, 3, 4, 5, 11.4; NFR08, NFR16, BR15; quy tắc A2, A4, C3; mục chấm 2, 9, 10, 24.
+- Rà lại 2026-10-03 theo ADR-013 (hồ sơ khách tạo sau khi đăng nhập): **quyết định không đổi**. Chỉ bớt một field: hồ sơ khách không còn giữ số điện thoại (`customer_profiles.phone_enc` đã bỏ), nên ở `customer-service` chỉ mã hóa họ tên và ngày sinh. Mã hóa diễn ra lúc khách tạo / sửa hồ sơ (A37, A10) thay vì lúc đăng ký. Bằng chứng mục 24 dùng tài khoản seed KH1 đã có hồ sơ.
 
 ## Bối cảnh
 
@@ -25,7 +26,7 @@ Chọn **C**.
 |---|---|---|
 | Mật khẩu | Băm scrypt, salt riêng | `accounts.password_hash` |
 | OTP | HMAC-SHA256 có khóa | `otp_verifications.otp_hash` |
-| Dữ liệu cá nhân cần đọc lại | AES-256-GCM, IV ngẫu nhiên từng giá trị, byte đầu là phiên bản khóa | Số điện thoại, email (auth); họ tên, số điện thoại, ngày sinh (customer); số giấy phép (driver) |
+| Dữ liệu cá nhân cần đọc lại | AES-256-GCM, IV ngẫu nhiên từng giá trị, byte đầu là phiên bản khóa | Số điện thoại, email (auth); họ tên, ngày sinh (customer); số giấy phép (driver) |
 | Field mã hóa cần tra cứu / UNIQUE | Thêm cột chỉ mục mù HMAC-SHA256 trên giá trị đã chuẩn hóa | Số điện thoại, email (auth); số giấy phép (driver) |
 
 Khóa: biến môi trường riêng của từng service, nạp từ `.env` (không commit); khóa mã hóa và khóa chỉ mục là hai khóa khác nhau; thiếu khóa thì service không khởi động.

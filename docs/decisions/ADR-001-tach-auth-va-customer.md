@@ -29,7 +29,7 @@ Chọn **B**.
 
 ## Đánh đổi
 
-- **Đăng ký khách không còn là một giao dịch.** Cách xử lý đã chốt: Auth gọi gRPC đồng bộ sang Customer (ADR-004, đường S1 của file 02), để mục chấm 11 chạy được ngay sau mục 9.
+- **Đăng ký khách không còn là một giao dịch.** Cách xử lý ban đầu: Auth gọi gRPC đồng bộ sang Customer (ADR-004, đường S1). **Đổi 2026-10-03** theo góp ý giảng viên: đăng ký chỉ tạo tài khoản, khách tạo hồ sơ sau khi đăng nhập; Auth và Customer không gọi nhau (ADR-013). Tách hai service vì thế càng rõ: mỗi service một thao tác, một database.
 - `customer-service` nhỏ: một FR chính, một đến hai mục chấm.
 - Thêm một service, một database, một file proto phải vận hành.
-- Phải quyết định số điện thoại / email nằm ở đâu (định danh đăng nhập ở Auth; thông tin liên lạc để hiển thị ở hồ sơ) — chốt ở file 03.
+- Phải quyết định số điện thoại / email nằm ở đâu — chốt ở file 03: từ 2026-10-03 **chỉ ở Auth** (định danh đăng nhập); hồ sơ khách không giữ bản sao (file 03 mục 4.1, Q58).

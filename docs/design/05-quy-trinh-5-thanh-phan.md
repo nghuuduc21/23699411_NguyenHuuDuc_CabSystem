@@ -1,7 +1,8 @@
 # 05 — Quy trình nghiệp vụ theo mô hình 5 thành phần
 
 > Nguồn: `srs.md` (FR, BRULE, UC), `docs/design/01`–`04`, `CLAUDE.md`. Cập nhật 2026-10-03.
-> Mã API (A01–A36) theo `04-api.md`; mã gRPC giữa service (S1–S7) và topic Kafka (K1–K7) theo `02-kien-truc-giao-tiep.md`.
+> Mã API (A01–A38) theo `04-api.md`; mã gRPC giữa service (S2–S7; S1 đã bỏ) và topic Kafka (K1–K7) theo `02-kien-truc-giao-tiep.md`.
+> Sửa 2026-10-03 theo góp ý giảng viên: QT01 chỉ tạo tài khoản, QT04 thêm bước tạo hồ sơ (ADR-013); QT05, QT10, QT16, QT17 theo cách giả lập hệ thống ngoài mới (ADR-014); ma trận 4.1, 4.2.
 
 ## 0. Mô hình 5 thành phần
 
@@ -23,10 +24,10 @@ Phần 2 liệt kê một lần bốn thành phần People, Hardware, Software, 
 
 | Mã | Quy trình | Nhóm | Use case | Yêu cầu | Mục chấm |
 |---|---|---|---|---|---|
-| **QT01** | Đăng ký tài khoản khách hàng | Tài khoản | UC01 | FR26, FR27 | 9 |
+| **QT01** | Đăng ký tài khoản khách hàng (chỉ tài khoản) | Tài khoản | UC01 | FR26 | 9 |
 | **QT02** | Đăng nhập | Tài khoản | UC02 | FR26 | 10, 25 |
 | **QT03** | Đăng xuất | Tài khoản | UC33 | FR42 | 27 (bổ trợ) |
-| **QT04** | Xem và cập nhật hồ sơ khách hàng | Tài khoản | UC03, UC19 | FR27 | 11, 24, 26 |
+| **QT04** | Tạo, xem và cập nhật hồ sơ khách hàng | Tài khoản | UC03, UC19 | FR27, BRULE18 | 11, 24, 26 |
 | **QT05** | Đăng ký tài xế (OTP, nộp hồ sơ) | Tài xế | UC29 | FR39, FR28, FR29 | 21 |
 | **QT06** | Duyệt hồ sơ tài xế | Tài xế | UC30, UC20 | FR39, BRULE12 | 22, 28 |
 | **QT07** | Bật / tắt nhận chuyến và gửi vị trí | Tài xế | UC28, UC12 | FR38, FR13, BRULE01 | 23 |
@@ -49,7 +50,9 @@ Phần 2 liệt kê một lần bốn thành phần People, Hardware, Software, 
 
 ```mermaid
 flowchart LR
-    QT02[QT02 Đăng nhập] --> QT09[QT09 Đặt xe, tính cước]
+    QT01[QT01 Đăng ký tài khoản] --> QT02[QT02 Đăng nhập]
+    QT02 -.->|màn hình khác, khi khách muốn| QT04[QT04 Tạo / sửa hồ sơ]
+    QT02 --> QT09[QT09 Đặt xe, tính cước]
     QT09 -->|Tiền mặt| QT11[QT11 Ghép tài xế]
     QT09 -->|Điện tử| QT10[QT10 Thanh toán trả trước] --> QT11
     QT11 -->|Có tài xế| QT13[QT13 Thực hiện chuyến]
@@ -77,7 +80,7 @@ flowchart LR
 | **P2** | Tài xế | `driver` | QT02, QT03, QT05, QT07, QT08, QT11, QT13, QT14, QT17 |
 | **P3** | Admin (SRS gọi là Operator, nhân viên vận hành) | `admin` | QT02, QT04, QT06, QT08, QT19 |
 | **P4** | Quản trị hệ thống (IT / DevOps) | Không đăng nhập ứng dụng; thao tác trên máy chủ | QT21 |
-| **P5** | Nhà cung cấp thanh toán | Tổ chức bên ngoài; trong project được **giả lập** | QT10, QT16 |
+| **P5** | Nhà cung cấp thanh toán | Tổ chức bên ngoài; trong project được **giả lập** bằng module trong `payment-service`; khi demo callback thì Postman đóng vai | QT10, QT16 |
 
 ### 2.2 Hardware — thiết bị và nơi lưu trữ
 
@@ -101,7 +104,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 | **SW1** | Ứng dụng client (khách, tài xế, admin). Khi chấm: **Postman** | H1, H2, H3 | Gửi request REST/JSON kèm token đến Gateway |
 | **SW2** | **API Gateway** (Node.js) | H4 | Kiểm tra JWT, kiểm tra role, rate limit, đăng xuất, đổi REST → gRPC, health check |
 | **SW3** | `auth-service` | H4 | Tài khoản, mật khẩu băm, đăng nhập, cấp JWT, OTP |
-| **SW4** | `customer-service` | H4 | Hồ sơ khách hàng (mã hóa họ tên, số điện thoại, ngày sinh) |
+| **SW4** | `customer-service` | H4 | Hồ sơ khách hàng do khách tạo sau khi đăng nhập (mã hóa họ tên, ngày sinh). Không gọi và không bị service nào gọi |
 | **SW5** | `driver-service` | H4 | Hồ sơ tài xế, xe, duyệt hồ sơ, Online/Offline, vị trí, tìm tài xế trong 1 km, giữ chỗ tài xế |
 | **SW6** | `booking-service` | H4 | Booking, tính quãng đường ước tính, ghép tài xế, lời mời, phân công |
 | **SW7** | `trip-service` | H4 | Chuyến đi, trình tự trạng thái, hủy chuyến, lịch sử trạng thái |
@@ -111,7 +114,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 | **SW11** | PostgreSQL 16 (7 database), MongoDB 7 (1 database) | H5 | Lưu và truy vấn dữ liệu nghiệp vụ |
 | **SW12** | Redis 7 | H6 | Bộ đếm, danh sách token thu hồi |
 | **SW13** | Kafka, `kafka-init` (tạo 7 topic), **Kafka UI** (`http://localhost:8080`) | H7 | Chuyển event giữa service; xem topic, event, consumer |
-| **SW14** | Adapter giả lập: cổng thanh toán, bản đồ (công thức khoảng cách), kênh gửi thông báo | H4 | Thay cho hệ thống bên ngoài khi demo |
+| **SW14** | Adapter giả lập (module trong service, ADR-014): cổng thanh toán (trong payment, gọi ngay xử lý callback, mặc định thành công); bản đồ (công thức khoảng cách, trong booking); kênh thông báo / SMS (chỉ lưu database và ghi log); kênh OTP (ghi log, trả mã trong response khi `SIMULATION_MODE=true`) | H4 | Thay cho hệ thống bên ngoài khi demo |
 | **SW15** | Docker Compose | Máy chủ | Dựng toàn bộ container; liệt kê container (mục chấm 5) |
 
 ### 2.4 Data — dữ liệu
@@ -120,14 +123,14 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 |---|---|---|---|---|
 | **D1** | `accounts` | auth | H5 (auth-db) | Mã tài khoản, số điện thoại và email (mã hóa), mật khẩu băm, role, trạng thái |
 | **D2** | `otp_verifications` | auth | H5 (auth-db) | OTP băm, hạn, số lần thử |
-| **D3** | `customer_profiles` | customer | H5 (customer-db) | Họ tên, số điện thoại, ngày sinh (mã hóa) |
+| **D3** | `customer_profiles` | customer | H5 (customer-db) | Họ tên (bắt buộc), ngày sinh (tùy chọn), đều mã hóa. Có thể chưa có dòng cho một tài khoản |
 | **D4** | `drivers`, `vehicles`, `vehicle_types` | driver | H5 (driver-db) | Hồ sơ, số giấy phép (mã hóa), trạng thái duyệt, Online/Offline, vị trí hiện tại; xe, biển số, loại xe |
 | **D5** | `bookings` | booking | H5 (booking-db) | Điểm đón, điểm đến, loại xe, phương thức, quãng đường ước tính, số tiền cước, trạng thái, lý do hủy |
 | **D6** | `driver_offers`, `driver_assignments` | booking | H5 (booking-db) | Lời mời cho từng tài xế, hạn trả lời, kết quả; phân công cuối cùng kèm mã chuyến |
 | **D7** | `trips`, `trip_status_history` | trip | H5 (trip-db) | Bản chụp booking, trạng thái chuyến, lý do hủy; lịch sử đổi trạng thái |
 | **D8** | `fare_rates`, `fares` | payment | H5 (payment-db) | Bảng giá theo loại xe; cước của từng booking và các thành phần |
 | **D9** | `payments`, `payment_transactions`, `idempotency_keys` | payment | H5 (payment-db) | Thanh toán theo booking, hạn, trạng thái; từng lần thu / hoàn; khóa chống gửi lặp |
-| **D10** | `notifications` (collection) | notification | H5 (notification-db, MongoDB) | Người nhận, loại, tiêu đề, nội dung, trạng thái |
+| **D10** | `notifications` (collection) | notification | H5 (notification-db, MongoDB) | Người nhận, loại, tiêu đề, nội dung, các mã liên quan |
 | **D11** | `ratings`, `driver_ratings` | rating | H5 (rating-db) | Số sao, nhận xét theo chuyến; tổng điểm và số lượt của tài xế |
 | **D12** | Key Redis `rl:*`, `revoked:{jti}` | Gateway | H6 | Bộ đếm rate limit; token đã đăng xuất |
 | **D13** | Event Kafka K1–K7 | Service phát | H7 | `event_id`, loại event, mã đối tượng, trạng thái mới |
@@ -155,11 +158,11 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách nhập họ tên, số điện thoại, email (tùy chọn), mật khẩu. <br> 2. Hệ thống kiểm tra dữ liệu; số điện thoại hoặc email đã có → từ chối (409). <br> 3. Auth băm mật khẩu, tạo tài khoản role `customer`. Đăng ký công khai **không** tạo được role khác. <br> 4. Auth gọi Customer tạo hồ sơ (S1, gRPC đồng bộ); tạo hồ sơ lỗi thì đăng ký không thành công. <br> 5. Trả về tài khoản (không có mật khẩu). |
+| **Procedures** | 1. Khách nhập số điện thoại, email (tùy chọn), mật khẩu. <br> 2. Hệ thống kiểm tra dữ liệu; số điện thoại hoặc email đã có → từ chối (409). <br> 3. Auth băm mật khẩu, tạo tài khoản role `customer`. Đăng ký công khai **không** tạo được role khác. <br> 4. Trả về tài khoản (không có mật khẩu). **Chưa có hồ sơ**: khách tạo hồ sơ sau khi đăng nhập (QT04). Auth không gọi service nào (ADR-013). |
 | **People** | P1 Khách hàng |
-| **Hardware** | H1 gửi request · H4 xử lý · H5 lưu tài khoản (auth-db) và hồ sơ (customer-db) |
-| **Software** | SW1 → SW2 `POST /api/v1/auth/register` (A04) → SW3 `RegisterCustomer` → SW4 `CreateProfile` (S1) → SW11 |
-| **Data** | Tạo D1 `accounts`, D3 `customer_profiles`. `customer_id` = `account_id` |
+| **Hardware** | H1 gửi request · H4 xử lý · H5 lưu tài khoản (auth-db) |
+| **Software** | SW1 → SW2 `POST /api/v1/auth/register` (A04) → SW3 `RegisterCustomer` → SW11 |
+| **Data** | Tạo D1 `accounts` |
 
 ### QT02 — Đăng nhập
 
@@ -181,24 +184,24 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Software** | SW1 → SW2 `POST /api/v1/auth/logout` (A06) → SW12 |
 | **Data** | Tạo D12 `revoked:{jti}` · D14 hết hiệu lực |
 
-### QT04 — Xem và cập nhật hồ sơ khách hàng
+### QT04 — Tạo, xem và cập nhật hồ sơ khách hàng
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách xem hồ sơ theo mã của mình; admin xem được mọi hồ sơ (mục 11). Khách xem hồ sơ người khác → 403. <br> 2. Customer giải mã họ tên, số điện thoại, ngày sinh rồi trả về. <br> 3. Khách sửa hồ sơ: văn bản chứa `<` hoặc `>` bị từ chối 400 (chống XSS, mục 26). <br> 4. Customer mã hóa lại trước khi lưu. |
-| **People** | P1 (chủ hồ sơ), P3 (chỉ xem) |
+| **Procedures** | Tiền điều kiện: khách đã đăng nhập (QT02). <br> 1. Khách mở màn hình hồ sơ. Chưa có hồ sơ → 404 (chưa có). <br> 2. **Tạo hồ sơ**: khách nhập họ tên (bắt buộc), ngày sinh (tùy chọn). Customer lấy `customer_id` = mã tài khoản trong token, không nhận mã từ client; mã hóa rồi lưu. Đã có hồ sơ → 409 (BRULE18). <br> 3. **Xem**: khách xem hồ sơ của mình (theo mã hoặc `/me`); admin xem được mọi hồ sơ (mục 11). Khách xem hồ sơ người khác → 403. Customer giải mã họ tên, ngày sinh rồi trả về. <br> 4. **Sửa**: chỉ hồ sơ của mình; chưa có → 404; văn bản chứa `<` hoặc `>` bị từ chối 400 (chống XSS, mục 26). Customer mã hóa lại trước khi lưu. <br> Customer không gọi Auth: token đã đủ để biết ai đang thao tác (ADR-013). |
+| **People** | P1 (chủ hồ sơ: tạo, xem, sửa), P3 (chỉ xem) |
 | **Hardware** | H1/H3 · H4 · H5 customer-db (dữ liệu nằm trên đĩa ở dạng **mã hóa**, mục 24) |
-| **Software** | SW2 `GET /api/v1/customers/{id}` (A09), `PUT …` (A10) → SW4 `GetCustomer`, `UpdateCustomer` |
-| **Data** | Đọc, sửa D3. Khóa mã hóa lấy từ biến môi trường của customer-service |
+| **Software** | SW2 `POST /api/v1/customers/me` (A37), `GET /api/v1/customers/me` (A38), `GET /api/v1/customers/{id}` (A09), `PUT /api/v1/customers/me` (A10) → SW4 `CreateCustomer`, `GetCustomer`, `UpdateCustomer` |
+| **Data** | Tạo, đọc, sửa D3. Khóa mã hóa lấy từ biến môi trường của customer-service |
 
 ### QT05 — Đăng ký tài xế
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Tài xế nhập số điện thoại, xin OTP. <br> 2. Auth tạo OTP, lưu bản băm kèm hạn, gửi qua kênh thông báo giả lập. <br> 3. Tài xế nhập OTP và thông tin tài khoản; OTP đúng và còn hạn → Auth tạo tài khoản role `driver`. <br> 4. Tài xế đăng nhập (QT02), nộp hồ sơ cá nhân và xe. <br> 5. Hồ sơ ở trạng thái **chờ duyệt** (`PENDING`). |
+| **Procedures** | 1. Tài xế nhập số điện thoại, xin OTP. <br> 2. Auth tạo OTP, lưu bản băm kèm hạn; kênh gửi giả lập **ghi log** mã OTP, và khi `SIMULATION_MODE=true` thì **trả luôn mã trong response** để Postman dùng tiếp (ADR-014). <br> 3. Tài xế nhập OTP và thông tin tài khoản; OTP đúng và còn hạn → Auth tạo tài khoản role `driver`. <br> 4. Tài xế đăng nhập (QT02), nộp hồ sơ cá nhân và xe. <br> 5. Hồ sơ ở trạng thái **chờ duyệt** (`PENDING`). |
 | **People** | P2 Tài xế |
 | **Hardware** | H2 · H4 · H5 auth-db (tài khoản, OTP), driver-db (hồ sơ, xe) |
-| **Software** | SW2 A07 `POST /auth/driver/otp`, A08 `POST /auth/driver/register`, A11 `POST /drivers/applications` → SW3 `RequestDriverOtp`, `RegisterDriver` → SW5 `SubmitApplication` · SW14 gửi OTP |
+| **Software** | SW2 A07 `POST /auth/driver/otp`, A08 `POST /auth/driver/register`, A11 `POST /drivers/applications` → SW3 `RequestDriverOtp`, `RegisterDriver` → SW5 `SubmitApplication` · SW14 kênh OTP giả lập (log) |
 | **Data** | Tạo D2, D1 (role `driver`), D4 (`drivers` với `approval_status = PENDING`, `vehicles`) |
 
 ### QT06 — Duyệt hồ sơ tài xế
@@ -245,10 +248,10 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách thực hiện thanh toán, gửi kèm khóa chống lặp (`Idempotency-Key`). <br> 2. Payment ghi khóa; gửi yêu cầu thu tiền đến cổng thanh toán giả lập. <br> 3. Cổng thanh toán gọi lại **callback** có chữ ký HMAC; chữ ký sai → 401. <br> 4. Thành công → Payment chuyển **COMPLETED** (mục 19), phát K6; Booking nghe K6, chuyển sang tìm tài xế (QT11). <br> 5. Thất bại → `FAILED`, khách thử lại; tối đa 3 lần trong 10 phút (BRULE17). Quá hạn hoặc hết lượt → thanh toán bị hủy, Booking bị hủy. <br> 6. Gửi lại đúng request cũ (cùng khóa) → trả lại kết quả cũ, **không thu tiền lần hai** (mục 30). <br> 7. Hệ thống không lưu số thẻ hay tài khoản ngân hàng (BRULE09). |
-| **People** | P1 Khách hàng; P5 Nhà cung cấp thanh toán (giả lập) |
+| **Procedures** | 1. Khách thực hiện thanh toán, gửi kèm khóa chống lặp (`Idempotency-Key`). <br> 2. Payment ghi khóa, tạo lần thử; gửi yêu cầu thu tiền đến cổng thanh toán giả lập (module trong `payment-service`). <br> 3. Cổng giả lập **gọi ngay phần xử lý callback**, mặc định thành công; khi `SIMULATION_MODE=true` khách có thể gửi `simulate_result: "FAILED"` để demo thất bại (ADR-014). <br> 4. Thành công → Payment chuyển **COMPLETED** (mục 19), phát K6; Booking nghe K6, chuyển sang tìm tài xế (QT11). Response của bước 1 đã có kết quả. <br> 5. Thất bại → `FAILED`, khách thử lại; tối đa 3 lần trong 10 phút (BRULE17). Quá hạn hoặc hết lượt → thanh toán bị hủy, Booking bị hủy. <br> 6. Callback từ ngoài (Postman đóng vai Provider) vào endpoint callback, xác thực bằng **khóa bí mật cố định trong header** (không HMAC); sai khóa → 401. Callback cho giao dịch đã có kết quả → trả kết quả cũ. <br> 7. Gửi lại đúng request cũ (cùng khóa chống lặp) hoặc callback cũ → trả lại kết quả cũ, **không thu tiền lần hai** (mục 30). <br> 8. Hệ thống không lưu số thẻ hay tài khoản ngân hàng (BRULE09). |
+| **People** | P1 Khách hàng; P5 Nhà cung cấp thanh toán (giả lập; Postman đóng vai khi gửi callback từ ngoài) |
 | **Hardware** | H1 · H4 · H5 payment-db, booking-db · H7 |
-| **Software** | SW2 A31 `POST /payments/{id}/pay`, A32 `POST /payments/callback`, A30 `GET /payments/{id}` → SW8 `PayPayment`, `HandleProviderCallback` · SW14 cổng thanh toán giả lập · SW13 K6 → SW6, SW9 |
+| **Software** | SW2 A31 `POST /payments/{id}/pay`, A32 `POST /payments/callback` (header `X-Callback-Secret`), A30 `GET /payments/{id}` → SW8 `PayPayment`, `HandleProviderCallback` (cùng một hàm xử lý callback) · SW14 cổng thanh toán giả lập · SW13 K6 → SW6, SW9 |
 | **Data** | Tạo D9 `idempotency_keys`, `payment_transactions` (loại thu) · Sửa D9 `payments` (`COMPLETED` / `FAILED` / `CANCELED`), D5 (trạng thái booking) · Tạo D13 (K6) |
 
 ### QT11 — Ghép tài xế
@@ -305,7 +308,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Payment nhận một trong các event: không tìm được tài xế (K3), khách hủy booking (K4), chuyến bị hủy bởi khách hoặc tài xế (K5 `CANCELED`). <br> 2. Thanh toán điện tử đã `COMPLETED` → gửi yêu cầu hoàn đến cổng thanh toán giả lập, hoàn **đủ** tiền, chuyển `REFUNDED` (BRULE14). Mỗi thanh toán chỉ hoàn một lần (ràng buộc database). <br> 3. Chưa thu (đang chờ, thất bại) → chuyển `CANCELED`, không có gì để hoàn. <br> 4. **Không hoàn** khi chuyến đã hoàn thành, và khi tài xế chỉ từ chối lời mời, vì trường hợp này không phát event nào (BRULE15). <br> 5. Payment phát K6; Notification báo khách. |
+| **Procedures** | 1. Payment nhận một trong các event: không tìm được tài xế (K3), khách hủy booking (K4), chuyến bị hủy bởi khách hoặc tài xế (K5 `CANCELED`). <br> 2. Thanh toán điện tử đã `COMPLETED` → gửi yêu cầu hoàn đến cổng thanh toán giả lập; cổng giả lập gọi ngay phần xử lý kết quả, **luôn thành công** (ADR-014); hoàn **đủ** tiền, chuyển `REFUNDED` (BRULE14). Mỗi thanh toán chỉ hoàn một lần (ràng buộc database). <br> 3. Chưa thu (đang chờ, thất bại) → chuyển `CANCELED`, không có gì để hoàn. <br> 4. **Không hoàn** khi chuyến đã hoàn thành, và khi tài xế chỉ từ chối lời mời, vì trường hợp này không phát event nào (BRULE15). <br> 5. Payment phát K6; Notification báo khách. |
 | **People** | P1 nhận tiền; P5 (giả lập) |
 | **Hardware** | H4 · H5 payment-db · H7 |
 | **Software** | SW13 K3, K4, K5 → SW8 → SW14 cổng thanh toán giả lập · SW8 phát K6 → SW9 |
@@ -315,10 +318,10 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Notification nghe cả 7 topic. <br> 2. Với mỗi event: xác định người nhận, tạo thông báo, gửi qua kênh giả lập. Event bị giao lặp không tạo thông báo trùng (ràng buộc duy nhất theo mã event và người nhận). <br> 3. Người dùng xem thông báo của mình, mới nhất trước, có phân trang. <br> 4. Notification lỗi không làm hỏng đặt xe hay chuyến đi, vì bên phát không chờ (NFR05). |
+| **Procedures** | 1. Notification nghe cả 7 topic. <br> 2. Với mỗi event: xác định người nhận, tạo thông báo. Kênh gửi (thông báo, SMS) là giả lập: **chỉ lưu vào database và ghi một dòng log** (loại, người nhận, mã event; không dữ liệu cá nhân) — ADR-014. Event bị giao lặp không tạo thông báo trùng (ràng buộc duy nhất theo mã event và người nhận). <br> 3. Người dùng xem thông báo của mình, mới nhất trước, có phân trang. <br> 4. Notification lỗi không làm hỏng đặt xe hay chuyến đi, vì bên phát không chờ (NFR05). |
 | **People** | P1, P2, P3 (người nhận) |
 | **Hardware** | H7 · H4 · H5 notification-db (MongoDB) · H1/H2/H3 hiển thị |
-| **Software** | SW13 → SW9 → SW14 kênh gửi giả lập · SW2 A33 `GET /notifications` → SW9 `ListNotifications` |
+| **Software** | SW13 → SW9 → SW14 kênh gửi giả lập (log) · SW2 A33 `GET /notifications` → SW9 `ListNotifications` |
 | **Data** | Đọc D13 · Tạo D10 `notifications` |
 
 ### QT18 — Đánh giá chuyến đi
@@ -371,10 +374,10 @@ C = tạo dữ liệu · R = đọc · U = sửa · E = chỉ phát hoặc nhậ
 
 | Quy trình | auth | customer | driver | booking | trip | payment | notification | rating | Gateway / Redis |
 |---|---|---|---|---|---|---|---|---|---|
-| QT01 Đăng ký khách | C | C (G) | | | | | | | ✓ |
+| QT01 Đăng ký khách | C | | | | | | | | ✓ |
 | QT02 Đăng nhập | R | | | | | | | | ✓ |
 | QT03 Đăng xuất | | | | | | | | | ✓ (C) |
-| QT04 Hồ sơ khách | | R U | | | | | | | ✓ |
+| QT04 Hồ sơ khách | | C R U | | | | | | | ✓ |
 | QT05 Đăng ký tài xế | C | | C | | | | | | ✓ |
 | QT06 Duyệt tài xế | | | U | | | | C (E) | | ✓ |
 | QT07 Online, vị trí | | | U | | | | | | ✓ |
@@ -395,7 +398,7 @@ C = tạo dữ liệu · R = đọc · U = sửa · E = chỉ phát hoặc nhậ
 
 | Quy trình | Thiết bị người dùng | Đĩa database (H5) | RAM Redis (H6) | Đĩa Kafka (H7) |
 |---|---|---|---|---|
-| QT01 | Gửi dữ liệu đăng ký | auth-db, customer-db | | |
+| QT01 | Gửi dữ liệu đăng ký | auth-db | | |
 | QT02 | **Lưu token** | auth-db | | |
 | QT03 | Xóa token | | `revoked:{jti}` | |
 | QT04 | | customer-db (mã hóa) | | |
@@ -424,4 +427,5 @@ C = tạo dữ liệu · R = đọc · U = sửa · E = chỉ phát hoặc nhậ
 - **"Ai làm gì?"** → cột People của từng quy trình, hoặc bảng 2.1.
 - **"Dữ liệu này nằm ở đâu?"** → bảng 2.2 (thiết bị lưu gì) và ma trận 4.2.
 - **"Vì sao bước này gọi đồng bộ, bước kia dùng event?"** → dòng Procedures của QT09 (S4), QT11 (S5), QT13 (K5), QT14; lý do đầy đủ ở `02-kien-truc-giao-tiep.md` và ADR-008.
+- **"Vì sao đăng ký không tạo luôn hồ sơ?"** → QT01 và QT04 là hai quy trình riêng của người dùng; lý do và câu trả lời mẫu ở ADR-013.
 - **"Thiết bị nào hỏng thì mất gì?"** → cột cuối bảng 2.2: máy chủ ứng dụng không lưu dữ liệu nghiệp vụ nên dựng lại được; database và Kafka là nơi cần sao lưu.

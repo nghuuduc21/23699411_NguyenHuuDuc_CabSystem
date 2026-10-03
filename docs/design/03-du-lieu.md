@@ -1,6 +1,7 @@
 # 03 — Dữ liệu
 
-> Vòng 1 (chỉ BA), viết 2026-10-02. Đầu vào: `CLAUDE.md`, `srs.md` (FR01–FR42, BRULE01–17, UC01–UC33, AC01–AC26), file 01 (aggregate, quy tắc A/C/D/B/T/M/N/V), file 02 (S1–S7, K1–K7), ADR-001 … ADR-012. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md` mục 3.
+> Vòng 1 (chỉ BA), viết 2026-10-02. Đầu vào: `CLAUDE.md`, `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29), file 01 (aggregate, quy tắc A/C/D/B/T/M/N/V), file 02 (S2–S7, K1–K7), ADR-001 … ADR-014. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md` mục 3.
+> Sửa 2026-10-03: hồ sơ khách tạo sau khi đăng nhập, bỏ `customer_profiles.phone_enc` (mục 4.1, ADR-013); seed thêm KH3 chưa có hồ sơ (mục 14); bỏ `notifications.status`; thêm biến `SIMULATION_MODE`, `PAYMENT_CALLBACK_SECRET` (mục 13) — ADR-014.
 > File này trả lời: **mỗi service lưu gì, ở đâu, kiểu gì, vì sao**. Đường dẫn REST và rpc: file 04.
 > Ký hiệu: **[ĐC]** = đã chốt trong `CLAUDE.md` / `srs.md`. **[BA]** = BA tự chọn, chưa ai xác nhận (gom ở mục 16). Tên trạng thái viết HOA vẫn là đề xuất như ở file 01, trừ tên đã có trong SRS.
 
@@ -11,7 +12,7 @@
 | Service | Database | Container | Bảng nghiệp vụ | Bảng kỹ thuật | Lý do chọn loại này | Đánh đổi | So với tham chiếu |
 |---|---|---|---|---|---|---|---|
 | `auth-service` | PostgreSQL 16 | `auth-db` | 2: `accounts`, `otp_verifications` | `schema_migrations` | Định danh đăng nhập phải **duy nhất tuyệt đối** (A2): cần ràng buộc UNIQUE và giao dịch | — | Giữ loại; bớt 4 bảng (mục 12) |
-| `customer-service` | PostgreSQL 16 | `customer-db` | 1: `customer_profiles` | `schema_migrations` | Một bảng có cấu trúc cố định, tra theo khóa chính; `CreateProfile` gọi lặp cần `ON CONFLICT` (C1) | Service nhỏ mà vẫn một database riêng | Giữ |
+| `customer-service` | PostgreSQL 16 | `customer-db` | 1: `customer_profiles` | `schema_migrations` | Một bảng có cấu trúc cố định, tra theo khóa chính; PK = `account_id` chặn tạo hồ sơ lần hai ngay trong database (C1, BRULE18) | Service nhỏ mà vẫn một database riêng | Giữ |
 | `driver-service` | PostgreSQL 16 (**không PostGIS**) | `driver-db` | 3: `drivers`, `vehicles`, `vehicle_types` | `outbox`, `schema_migrations` | Giữ chỗ tài xế phải là một lệnh UPDATE có điều kiện, nguyên tử (D8); tìm trong 1 km bằng công thức Haversine trên cột `lat`/`lng` (ADR-011) | Không có index không gian; đủ cho quy mô demo | **Đổi**: bỏ PostGIS |
 | `booking-service` | PostgreSQL 16 | `booking-db` | 3: `bookings`, `driver_offers`, `driver_assignments` | `outbox`, `schema_migrations` | Tranh chấp hủy — nhận giải quyết bằng khóa dòng (B12); "một Offer đang chờ", "một Offer được nhận" bảo vệ bằng index duy nhất có điều kiện (B8, B10) | — | Giữ |
 | `trip-service` | PostgreSQL 16 | `trip-db` | 2: `trips`, `trip_status_history` | `outbox`, `schema_migrations` | Đổi trạng thái + ghi lịch sử + ghi outbox phải cùng một giao dịch (T2, T4, T8) | — | Giữ |
@@ -35,7 +36,7 @@ Chọn dòng đầu. Không container database nào có `ports` (mục chấm 8)
 
 | Dữ liệu | Kiểu chọn | Vì sao kiểu này | Vì sao không chọn kiểu kia |
 |---|---|---|---|
-| Khóa chính | `uuid`, `DEFAULT gen_random_uuid()` [ĐC] | Mỗi service tự sinh ID, không cần nơi cấp số chung; ID không đoán được; đi qua event vẫn duy nhất. Service sinh ID **trước khi ghi** được: Auth sinh `account_id` rồi mới gọi S1, Booking sinh `booking_id` rồi mới gọi S4 | `INT` tự tăng: phải ghi xong mới có ID; đoán được ID người khác. `varchar(36)`: 36 byte thay vì 16, so sánh chậm hơn |
+| Khóa chính | `uuid`, `DEFAULT gen_random_uuid()` [ĐC] | Mỗi service tự sinh ID, không cần nơi cấp số chung; ID không đoán được; đi qua event vẫn duy nhất. Service sinh ID **trước khi ghi** được: Booking sinh `booking_id` rồi mới gọi S4 | `INT` tự tăng: phải ghi xong mới có ID; đoán được ID người khác. `varchar(36)`: 36 byte thay vì 16, so sánh chậm hơn |
 | Tiền VND | `integer`, đơn vị **đồng**, `CHECK (> 0)` | VND không có đơn vị lẻ; số nguyên cộng trừ chính xác tuyệt đối; tối đa ~2,1 tỷ đ là thừa cho một cuốc xe; thư viện `pg` trả về kiểu số của JavaScript | `float`/`double`: sai số nhị phân (0,1 + 0,2 ≠ 0,3). `NUMERIC(10,2)`: có 2 chữ số lẻ không bao giờ dùng, và `pg` trả về chuỗi. `bigint`: `pg` trả về chuỗi |
 | Quãng đường | `integer`, đơn vị **mét** | Cùng lý do với tiền: công thức cước chỉ còn phép tính số nguyên (mục 6.3). API hiển thị thêm `distance_km` cho người đọc | `NUMERIC` km hoặc `float` km: nhân với đơn giá rồi làm tròn lên 1.000 đ có thể lệch đúng 1.000 đ vì sai số số thực |
 | Tọa độ | `double precision` + `CHECK` khoảng (vĩ độ −90…90, kinh độ −180…180) | Tọa độ là **số đo**, không phải số đếm: sai số của số thực 64 bit nhỏ hơn 1 mm, vô nghĩa so với sai số GPS (vài mét). Hàm lượng giác của PostgreSQL và JavaScript làm việc trực tiếp với kiểu này | `DECIMAL(10,7)` (tham chiếu): chính xác thập phân nhưng không cần, phải ép kiểu trong mọi phép tính, `pg` trả về chuỗi. `geography` của PostGIS: xem ADR-011 |
@@ -110,24 +111,34 @@ Hai bảng không có khóa ngoại với nhau (xem lý do ở trên).
 
 ## 4. `customer-service` — `customer-db`
 
-### 4.1 `customer_profiles` (FR27; C1–C3; mục 9, 11, 24, 26)
+### 4.1 `customer_profiles` (FR27, BRULE18; C1–C6; mục 11, 24, 26)
+
+Từ 2026-10-03 (ADR-013): một dòng **chỉ xuất hiện khi khách tự tạo hồ sơ** sau khi đăng nhập (A37), không còn tạo lúc đăng ký. Tài khoản `customer` chưa có dòng nào ở đây là trạng thái hợp lệ ("chưa có hồ sơ" → 404).
 
 | Field | Kiểu | Ràng buộc | Ghi chú / vì sao |
 |---|---|---|---|
-| `customer_id` | `uuid` | PK, **không DEFAULT** | **Bằng `account_id`** của Auth [BA] (đóng Q21 theo phương án a). Không có cột `account_id` riêng: bớt một lần đổi mã ở mọi service khác. PK cũng đảm bảo "mỗi tài khoản một hồ sơ" (C1) |
-| `full_name_enc` | `bytea` | NOT NULL | Họ tên, mã hóa. Giới hạn 100 ký tự kiểm tra ở ứng dụng trước khi mã hóa |
-| `phone_enc` | `bytea` | NOT NULL | Bản chụp số điện thoại lúc đăng ký, nhận qua S1 [BA]; chỉ để hiển thị, không tra cứu nên không cần chỉ mục mù |
-| `date_of_birth_enc` | `bytea` | NULL | Ngày sinh (`YYYY-MM-DD`), mã hóa |
+| `customer_id` | `uuid` | PK, **không DEFAULT** | **Bằng `account_id`** trong token, lấy từ metadata `x-account-id` do Gateway chuyển (C4) [BA, Q21]. Không có cột `account_id` riêng. PK đảm bảo "mỗi tài khoản nhiều nhất một hồ sơ": tạo lần hai vi phạm PK → 409 (C1, BRULE18) |
+| `full_name_enc` | `bytea` | NOT NULL | Họ tên, mã hóa. **Bắt buộc khi tạo** (C6). Giới hạn 100 ký tự kiểm tra ở ứng dụng trước khi mã hóa |
+| `date_of_birth_enc` | `bytea` | NULL | Ngày sinh (`YYYY-MM-DD`), mã hóa. **Tùy chọn** (C6) |
+
+Cột bắt buộc: `customer_id`, `full_name_enc` (cùng `created_at`, `updated_at`). Ngày sinh để NULL được vì UC03 không bắt buộc và không quy tắc nào dùng tới.
+
+**Bỏ `phone_enc`** (bản trước giữ bản chụp số điện thoại nhận qua S1):
+
+| Lựa chọn | Ưu | Nhược |
+|---|---|---|
+| (a) **Bỏ: số điện thoại chỉ nằm ở Auth** (chọn) | Một nguồn duy nhất cho số điện thoại; không có hai bản lệch nhau; hồ sơ ít dữ liệu cá nhân hơn (NFR16) | Màn hình hồ sơ không hiện số điện thoại; muốn hiện thì client lấy từ chỗ khác (Q58) |
+| (b) Client gửi số điện thoại khi tạo hồ sơ | Hồ sơ đủ thông tin liên lạc | Số đó chưa được xác thực và có thể khác số đăng nhập; trùng dữ liệu với Auth |
+| (c) Customer hỏi Auth lấy số | Số chính xác | Thêm lại đúng đường Auth – Customer mà giảng viên vừa yêu cầu bỏ |
 
 Không có index ngoài PK: mọi truy vấn đều theo `customer_id`. Hệ quả của việc mã hóa cả họ tên: **không tìm khách theo tên được** — không FR nào trong 30 mục chấm cần.
 
 ```mermaid
 erDiagram
   customer_profiles {
-    uuid customer_id PK "bằng account_id của auth, không có khóa ngoại"
-    bytea full_name_enc
-    bytea phone_enc
-    bytea date_of_birth_enc
+    uuid customer_id PK "bằng account_id trong token, không có khóa ngoại"
+    bytea full_name_enc "bắt buộc"
+    bytea date_of_birth_enc "tùy chọn"
   }
 ```
 
@@ -490,6 +501,15 @@ Không có cột `currency` (tham chiếu có): hệ thống chỉ dùng VND. Kh
 | UNIQUE `(payment_id) WHERE type = 'CHARGE' AND status = 'PENDING'` | Không mở lần thử mới khi lần trước chưa có kết quả |
 | UNIQUE `(payment_id) WHERE type = 'REFUND'` | M8: mỗi Payment hoàn nhiều nhất một lần |
 
+Giả lập cổng thanh toán (ADR-014) **không đổi bảng này**:
+
+| Điểm | Ghi chú |
+|---|---|
+| Cột phục vụ chữ ký HMAC | Không có từ đầu (chữ ký chỉ được kiểm tra, không lưu). Bỏ HMAC không cần migration |
+| `provider_transaction_id` | Adapter giả lập sinh (ví dụ `SIM-<uuid>`); Provider thật thì do Provider cấp. Vẫn UNIQUE |
+| `callback_response` | **Vẫn cần**: callback nội bộ của adapter và callback từ ngoài (A32) đi qua cùng một hàm xử lý; lần đầu lưu response, lần sau trả lại nguyên văn (mục chấm 30) |
+| `status = PENDING` | Chỉ tồn tại trong khoảnh khắc giữa lúc tạo lần thử và lúc adapter gọi callback; vẫn giữ để dùng được với Provider thật (kết quả đến sau) |
+
 ### 8.5 Hạn thanh toán và số lần thử (BRULE17, AC25) [BA — cách hiện thực]
 
 | Điểm | Thiết kế | Vì sao |
@@ -580,15 +600,16 @@ Collection `notifications` (FR21–FR24; N2–N5; mục 16, 18, 22):
 | `type` | string | Có | Ví dụ `BOOKING_CREATED`, `OFFER_CREATED`, `TRIP_ACCEPTED`, `TRIP_CANCELED`, `PAYMENT_COMPLETED`, `PAYMENT_REFUNDED`, `NO_DRIVER_FOUND`, `APPLICATION_APPROVED`; danh sách chốt ở spec |
 | `title`, `body` | string | Có | Nội dung do service tự soạn theo `type`; **không** chứa dữ liệu cá nhân vì event chỉ mang ID, trạng thái, số tiền |
 | `data` | object | Có | Các ID liên quan: `booking_id`, `trip_id`, `payment_id`, `offer_id`… — khác nhau theo `type` (lý do chọn kiểu tài liệu) |
-| `status` | string | Có | `SENT` / `FAILED`: kết quả của adapter kênh gửi (giả lập) |
 | `created_at` | date | Có | |
+
+Bỏ field `status` (`SENT` / `FAILED`) của bản trước: kênh gửi giả lập **chỉ lưu vào database và ghi log** (ADR-014), không có kết quả gửi nào để ghi. Khi nối kênh thật thì thêm lại field này (MongoDB không cần migration).
 
 | Index | Phục vụ |
 |---|---|
 | UNIQUE `(event_id, recipient_id)` | N4: một event nhận hai lần không tạo hai thông báo; một event vẫn tạo được thông báo cho hai người (khách và tài xế) |
 | `(recipient_id, created_at: -1)` | N2: người dùng xem thông báo của mình, mới nhất trước, phân trang |
 
-Không có `NOTIFICATION_DELIVERY` (tham chiếu có): kênh gửi là giả lập, chỉ lưu thông báo trong ứng dụng; kết quả gửi là một field `status`.
+Không có `NOTIFICATION_DELIVERY` (tham chiếu có): kênh gửi là giả lập, chỉ lưu thông báo trong ứng dụng và ghi log.
 
 ```mermaid
 erDiagram
@@ -600,7 +621,6 @@ erDiagram
     string title
     string body
     object data
-    string status
     date created_at
   }
 ```
@@ -653,7 +673,7 @@ erDiagram
 
 | Cột | Ở service | Trỏ tới dữ liệu của | Nhận ID bằng cách nào |
 |---|---|---|---|
-| `customer_profiles.customer_id` | customer | auth (`account_id`) | S1 |
+| `customer_profiles.customer_id` | customer | auth (`account_id`) | Token (metadata từ Gateway) khi khách tạo hồ sơ |
 | `drivers.driver_id`, `drivers.reviewed_by` | driver | auth | Token (metadata từ Gateway) |
 | `drivers.current_booking_id` | driver | booking | S3 |
 | `bookings.customer_id` | booking | auth / customer | Token |
@@ -673,7 +693,7 @@ Hệ quả phải nói được khi vấn đáp:
 | Database không tự chặn ID "mồ côi" | ID luôn đến từ nguồn đã kiểm tra: token do Gateway xác thực, hoặc kết quả của một lời gọi gRPC |
 | Không JOIN được giữa hai service | Sao bản chụp (mục 11.2), hoặc gọi gRPC lúc cần (S6), hoặc client gọi hai API |
 | Không xóa dây chuyền | Hệ thống không có chức năng xóa tài khoản, booking, chuyến (không FR nào yêu cầu) |
-| Hai nơi có thể lệch nhau khi lỗi giữa chừng | Lời gọi lặp lại được theo ID (S1, S3, S4, S5) + outbox cho event (mục 11.3) |
+| Hai nơi có thể lệch nhau khi lỗi giữa chừng | Lời gọi lặp lại được theo ID (S3, S4, S5) + outbox cho event (mục 11.3). Đăng ký và tạo hồ sơ không còn ghi hai database trong một thao tác nên không có khe hở này |
 
 ### 11.2 Bản chụp dữ liệu
 
@@ -683,7 +703,8 @@ Hệ quả phải nói được khi vấn đáp:
 | Loại xe, tọa độ, địa chỉ, `payment_method`, `fare_amount` | booking | `trips` | S5 | Trip chạy hết chuyến mà không hỏi lại Booking (NFR05); tài xế thấy phải thu bao nhiêu (FR17) | Không: Booking không đổi sau bàn giao |
 | Bảng giá | payment (`fare_rates`) | `fares.base_fare`, `per_km_rate`, `min_fare` | Lúc tính cước | Giải thích được con số cuối dù giá đã đổi | Cố ý khác bảng giá hiện hành |
 | `customer_id`, `driver_id` của chuyến | trip | `ratings` | S7 | Tính điểm theo tài xế, kiểm tra chủ đánh giá | Không |
-| Số điện thoại lúc đăng ký | auth | `customer_profiles.phone_enc` | S1 | Hiển thị trong hồ sơ (UC03) | Không trong phạm vi này: không có chức năng đổi số điện thoại |
+
+Bản chụp số điện thoại từ Auth sang hồ sơ khách **đã bỏ** 2026-10-03 (mục 4.1).
 
 **Không** sao: tên / biển số / vị trí tài xế sang Trip (lấy sống qua S6); trạng thái Payment sang Booking hay Trip (client hỏi Payment); điểm trung bình sang Driver (GĐ-11).
 
@@ -712,7 +733,7 @@ Outbox và ràng buộc 30 giây: tiến trình gửi outbox được **đánh t
 |---|---|---|---|
 | **Băm** | `accounts.password_hash` | scrypt, salt ngẫu nhiên từng mật khẩu | Không |
 | **Băm có khóa** | `otp_verifications.otp_hash` | HMAC-SHA256, khóa `AUTH_OTP_HMAC_KEY` | Không |
-| **Mã hóa** | `accounts.phone_enc`, `email_enc`; `customer_profiles.full_name_enc`, `phone_enc`, `date_of_birth_enc`; `drivers.license_number_enc` | AES-256-GCM, IV 12 byte ngẫu nhiên cho **từng giá trị** | Có, khi có khóa |
+| **Mã hóa** | `accounts.phone_enc`, `email_enc`; `customer_profiles.full_name_enc`, `date_of_birth_enc`; `drivers.license_number_enc` | AES-256-GCM, IV 12 byte ngẫu nhiên cho **từng giá trị** | Có, khi có khóa |
 | **Chỉ mục mù** | `accounts.phone_bidx`, `email_bidx`; `otp_verifications.phone_bidx`; `drivers.license_number_bidx` | HMAC-SHA256(giá trị đã chuẩn hóa), khóa riêng | Không |
 
 Định dạng một giá trị đã mã hóa (`bytea`): `phiên bản khóa (1 byte) ‖ IV (12 byte) ‖ dữ liệu mã hóa ‖ thẻ xác thực (16 byte)`. GCM vừa giữ bí mật vừa phát hiện dữ liệu bị sửa.
@@ -778,6 +799,8 @@ Redis không lưu dữ liệu nghiệp vụ, không cache, không session (`CLAU
 | `JWT_TTL_SECONDS` | auth | 3600 [BA] | NFR06 |
 | `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_PUBLIC_MAX`, `RATE_LIMIT_ACCOUNT_MAX` | gateway | 60; 30; 120 [BA] | Mục 29 |
 | `OUTBOX_POLL_INTERVAL_MS` | 4 service phát event | 200 [BA] | NFR14 |
+| `SIMULATION_MODE` | auth, payment | `true` trong `.env.example` (demo); **`false` khi chạy thật** | ADR-014: auth trả OTP trong response; payment nhận `simulate_result` |
+| `PAYMENT_CALLBACK_SECRET` | payment | Chuỗi ngẫu nhiên ≥ 32 ký tự; `.env.example` chỉ có giá trị giả | ADR-014: khóa bí mật cố định trong header `X-Callback-Secret` của A32 |
 
 ## 14. Dữ liệu seed
 
@@ -797,10 +820,13 @@ Yêu cầu chung:
 | Mã | Role | Trạng thái | Hồ sơ ở | Dùng cho mục |
 |---|---|---|---|---|
 | AD1 | admin | ACTIVE | — | 22, 28 |
-| KH1 | customer | ACTIVE | customer | 11, 14, 15–20 |
-| KH2 | customer | ACTIVE | customer | 11 (xem hồ sơ người khác → 403), 28 |
+| KH1 | customer | ACTIVE | customer — **có sẵn hồ sơ** | 11 (dự phòng khi không chạy chuỗi tạo hồ sơ), 14, 15–20, 24, 26 |
+| KH2 | customer | ACTIVE | customer — có sẵn hồ sơ | 11 (xem hồ sơ người khác → 403), 28 |
+| KH3 | customer | ACTIVE | **Chưa có hồ sơ** | 11 (dự phòng: xem → 404, tạo → 201) khi không chạy mục 9 trước |
 | KH9 | customer | **LOCKED** | customer | 10 (đường lỗi tài khoản khóa) |
 | TX1–TX8 | driver | ACTIVE | driver | Bảng dưới |
+
+Hồ sơ seed là hồ sơ **khách đã tự tạo** (cùng định dạng dữ liệu với A37); seed của `customer-service` chỉ cần biết `account_id` cố định của KH1, KH2, KH9 — không gọi `auth-service`.
 
 **Tài xế (driver) — mục 13 cần ≥ 5 tài xế ở các trạng thái khác nhau:**
 
@@ -855,7 +881,8 @@ Mỗi Trip seed có đủ dòng `trip_status_history`; mỗi Payment `ONLINE` đ
 | Bảng giá | Không thấy | `fare_rates` | [ĐC] Payment giữ bảng giá |
 | `PAYMENT_TRANSACTION` | Có | `payment_transactions` + `type`, `attempt_no`, `callback_response` | Hoàn tiền (FR40), giới hạn lượt (BRULE17), replay (mục 30) |
 | Khóa chống lặp, outbox | Không thấy | `idempotency_keys`, `outbox` | Mục 30; NFR14 |
-| `NOTIFICATION_DELIVERY` | Có | Field `status` | Kênh gửi giả lập |
+| `NOTIFICATION_DELIVERY` | Có | Không có (chỉ lưu và ghi log) | Kênh gửi giả lập (ADR-014) |
+| Thời điểm tạo hồ sơ khách | — | Khách tự tạo sau khi đăng nhập; không có đường Auth → Customer | Góp ý giảng viên 2026-10-03 (ADR-013) |
 | `DRIVER_RATING` + `REVIEW` | `rating_score DECIMAL(3,2)` | `driver_ratings` (tổng, số lượng) + `ratings` | Số nguyên cộng dồn không trôi sai số |
 | Redis | Cache token, session, rate limit, cache chung | Rate limit + token đã thu hồi | [ĐC] |
 
@@ -872,7 +899,7 @@ Mỗi Trip seed có đủ dòng `trip_status_history`; mỗi Payment `ONLINE` đ
 | D5 | Quãng đường lưu và truyền bằng **mét** (số nguyên); `CLAUDE.md` viết "số km" | S4 đổi kiểu field; công thức phải làm tròn số thực |
 | D6 | Mã loại xe `MOTORBIKE`, `CAR_4`, `CAR_7`; phương thức `CASH`, `ONLINE` | Tên hằng số |
 | D7 | Email là định danh đăng nhập tùy chọn; số điện thoại bắt buộc | Bỏ hai cột `email_*` |
-| D8 | Hồ sơ khách giữ bản chụp số điện thoại; mã hóa cả họ tên, ngày sinh | Bỏ `phone_enc`; S1 bớt tham số |
+| D8 | Hồ sơ khách **không** giữ số điện thoại (sửa 2026-10-03, mục 4.1); mã hóa cả họ tên, ngày sinh | Thêm `phone_enc` do client gửi khi tạo hồ sơ (Q58) |
 | D9 | Mỗi tài xế một xe; số giấy phép duy nhất; hồ sơ nộp một lần | Bỏ UNIQUE tương ứng |
 | D10 | Chỉ lưu vị trí hiện tại của tài xế (Q11) | Thêm bảng lịch sử vị trí |
 | D11 | Payment giữ hạn 10 phút và đếm lượt; Booking biết qua K6 `CANCELED` (mục 8.5) | Chuyển `expires_at` sang Booking; K6, K4 đổi vai |

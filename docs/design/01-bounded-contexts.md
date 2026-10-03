@@ -2,7 +2,8 @@
 
 > Vòng 1 (chỉ BA), bản sửa 2026-10-02 lần 3: theo **8 service giảng viên chốt** và các quyết định mới trong `CLAUDE.md` (đổi tên `rating-service`; đồng bộ là mặc định; thanh toán trả trước với cước cố định; hoàn tiền; hủy; Redis ở Gateway).
 > Đồng bộ 2026-10-02 lần 4 (cùng lúc viết file 03, 04): công thức cước và ai tính quãng đường; hạn thanh toán 10 phút / 3 lần (BRULE17); đăng xuất (FR42, UC33); đóng Q10 (một phần), Q11, Q16, Q21, Q37. Chỉ sửa các dòng bị ảnh hưởng.
-> Nguồn sự thật: `srs.md` (FR01–FR42, BRULE01–17, UC01–UC33, AC01–AC26) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
+> Sửa 2026-10-03 theo góp ý giảng viên: **tách đăng ký khỏi hồ sơ khách hàng** — Auth và Customer không còn quan hệ (R1 không nối, bỏ đường S1; quy tắc A8, C1, C4–C6; BRULE18) — ADR-013; hệ thống ngoài giả lập đơn giản — ADR-014.
+> Nguồn sự thật: `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
 > File này trả lời: **chia hệ thống thành những phần nào, mỗi phần sở hữu gì, vì sao**. gRPC hay Kafka cho từng quan hệ: file 02. Loại database, schema: file 03.
 > Tên trạng thái viết HOA là **đề xuất**, trừ các tên đã có trong SRS và `CLAUDE.md` (`NO_DRIVER_FOUND`, `CANCELED`, `FAILED`, `COMPLETED`, Online/Offline, "chờ duyệt"). Tên chính thức chốt ở spec.
 
@@ -31,6 +32,7 @@ Thay đổi của bản sửa này so với bản trước:
 | Tài xế nhận chuyến: Booking gọi Trip tạo chuyến và chờ kết quả | `CLAUDE.md` — đã chốt | ADR-008 |
 | Hủy: chỉ trước khi chuyến bắt đầu; tài xế cũng hủy được chuyến đã nhận | BRULE16, FR36, FR41 | ADR-009 |
 | Trip không còn tính quãng đường, thời lượng để tính cước | Cước đã cố định từ lúc đặt (BRULE08) | ADR-009 |
+| (2026-10-03) Đăng ký chỉ tạo tài khoản; khách tạo hồ sơ sau khi đăng nhập; Auth và Customer không gọi nhau | Góp ý giảng viên; FR26, FR27, BRULE18 | ADR-013 (thay ADR-004) |
 
 ## 2. Phân loại subdomain
 
@@ -96,7 +98,7 @@ Với thanh toán điện tử, Payment `COMPLETED` xảy ra **trước** khi c�
 
 ## 4. Sơ đồ quan hệ giữa các context (mức khái niệm)
 
-Mũi tên `A --> B` nghĩa là **A cần một điều gì đó từ B hoặc báo cho B**. Đây chưa phải gRPC hay Kafka; file 02 quyết định từng đường. Quan hệ đã xét và **quyết định không nối** (R2, R9, R11, R13) chỉ có trong bảng.
+Mũi tên `A --> B` nghĩa là **A cần một điều gì đó từ B hoặc báo cho B**. Đây chưa phải gRPC hay Kafka; file 02 quyết định từng đường. Quan hệ đã xét và **quyết định không nối** (R1, R2, R9, R11, R13) chỉ có trong bảng.
 
 ```mermaid
 flowchart LR
@@ -118,7 +120,6 @@ flowchart LR
   end
 
   GW -. kiểm tra token, role .-> AUTH
-  AUTH -- R1: tài khoản customer mới --> CUS
   BK -- R3: tài xế phù hợp quanh điểm đón --> DRV
   BK -- R4: giữ chỗ tài xế khi nhận --> DRV
   BK -- R14: tính cước, tạo thanh toán --> PAY
@@ -137,7 +138,7 @@ flowchart LR
 
 | Mã | Bên cần | Cần gì từ bên nào | Vì yêu cầu nào | Bên khởi phát có phải chờ kết quả mới làm tiếp không? |
 |---|---|---|---|---|
-| R1 | Auth | Customer tạo hồ sơ cho tài khoản `customer` vừa đăng ký | FR26, FR27; mục 9, 11 | **Có** — đã chốt (`CLAUDE.md`, ADR-004) |
+| R1 | Customer | Biết tài khoản `customer` nào vừa đăng ký để tạo hồ sơ | FR26, FR27; mục 9, 11 | **Không nối** — đã chốt 2026-10-03 (`CLAUDE.md`, ADR-013): khách tự tạo hồ sơ sau khi đăng nhập; `customer_id` lấy từ `account_id` trong token mà Gateway đã xác thực. (Bản trước: Auth gọi đồng bộ — ADR-004, đã bị thay thế) |
 | R2 | Driver | Tài xế đã qua OTP và `account_id` | FR39; mục 21 | **Không nối**: token đã mang `account_id` và role `driver` — Q4 |
 | R3 | Booking | Danh sách tài xế sẵn sàng, đúng loại xe, trong 1 km, kèm khoảng cách | FR02–FR05, BRULE01–03 | Có: không có danh sách thì không gửi lời mời được |
 | R4 | Booking | Tài xế vừa bấm nhận **còn rảnh không**; nếu còn thì giữ chỗ | BRULE01, FR07, NFR14 | Có: chưa chắc tài xế còn rảnh thì không được xác nhận |
@@ -154,13 +155,13 @@ flowchart LR
 | R15 | Booking | Thanh toán điện tử của booking này đã thành công chưa | FR18, BRULE13, AC21 | Không: Payment đã thu tiền thì phải ghi nhận xong dù Booking đang lỗi; kết quả đến từ Provider vào lúc không biết trước |
 | R16 | Payment | Booking đã bị hủy, hoặc không tìm được tài xế → hoàn tiền | FR40, BRULE14, AC22 | Không: việc hủy phải thành công dù Payment đang lỗi (NFR05) |
 
-Cặp **không có quan hệ**: Customer với mọi context trừ Auth; Auth với mọi context trừ Customer; Rating với mọi context trừ Trip; Payment ↔ Driver; Notification không gọi ai (chỉ nhận). Danh sách đầy đủ kèm lý do: file 02, mục 9.
+Cặp **không có quan hệ**: Customer với **mọi** context; Auth với **mọi** context (cả hai chỉ được Gateway gọi); Rating với mọi context trừ Trip; Payment ↔ Driver; Notification không gọi ai (chỉ nhận). Danh sách đầy đủ kèm lý do: file 02, mục 9.
 
 ## 5. Thuật ngữ mang nghĩa khác nhau giữa các context
 
 | Thuật ngữ | Auth | Customer | Driver | Booking | Trip | Payment | Rating |
 |---|---|---|---|---|---|---|---|
-| **Khách hàng** | Account có role `customer` | Hồ sơ cá nhân | — | Người đặt (`customer_id`) | Hành khách của chuyến | Người trả tiền, người được hoàn | Người chấm điểm |
+| **Khách hàng** | Account có role `customer` | Hồ sơ cá nhân (có thể **chưa tạo**) | — | Người đặt (`customer_id`) | Hành khách của chuyến | Người trả tiền, người được hoàn | Người chấm điểm |
 | **Tài xế** | Account có role `driver` | — | Hồ sơ, giấy phép, xe, trạng thái duyệt, trạng thái nhận chuyến, vị trí | **Ứng viên**, rồi người được phân công | Người thực hiện chuyến | — | Người được chấm |
 | **Trạng thái** | Tài khoản: hoạt động / bị khóa | — | **Duyệt hồ sơ** và **nhận chuyến** (Offline / Online / bận) | Trạng thái Booking; trạng thái Offer | Trạng thái Trip | Trạng thái giao dịch | — |
 | **Hoàn thành / COMPLETED** | — | — | — | Không có: Booking kết thúc khi đã phân công | Tài xế xác nhận đã đến nơi | **Đã thu tiền thành công** (mục 19) | Điều kiện để được đánh giá |
@@ -177,8 +178,8 @@ Cặp **không có quan hệ**: Customer với mọi context trừ Auth; Auth v�
 
 | Mục | Nội dung |
 |---|---|
-| Trách nhiệm | Tạo tài khoản; kiểm tra thông tin đăng nhập; cấp token chứa `account_id` và `role`; xác thực số điện thoại bằng OTP; giữ role của tài khoản; khi đăng ký khách thì yêu cầu Customer tạo hồ sơ |
-| **Không** làm | Không giữ hồ sơ cá nhân. Không biết gì về booking, chuyến, tiền. Không giữ danh sách token đã thu hồi (Gateway giữ trong Redis — file 02) |
+| Trách nhiệm | Tạo tài khoản; kiểm tra thông tin đăng nhập; cấp token chứa `account_id` và `role`; xác thực số điện thoại bằng OTP; giữ role của tài khoản |
+| **Không** làm | Không giữ hồ sơ cá nhân và **không gọi Customer** khi đăng ký (ADR-013). Không biết gì về booking, chuyến, tiền. Không giữ danh sách token đã thu hồi (Gateway giữ trong Redis — file 02) |
 | Ngôn ngữ chung | **Account**: danh tính đăng nhập (định danh + mật khẩu đã băm + role + trạng thái). **Role**: `customer` / `driver` / `admin`, là một cột của Account, **không có bảng PERMISSION** (`CLAUDE.md`). **Token**: JWT. **OTP**. **Khóa** |
 | Aggregate gốc | **Account**; **OtpVerification** |
 | FR / UC | FR26, FR32, FR39 (phần OTP) / UC01, UC02, UC25 (phần role), UC29 (bước OTP) |
@@ -193,24 +194,27 @@ Cặp **không có quan hệ**: Customer với mọi context trừ Auth; Auth v�
 | A5 | Token mang role; mọi thao tác quản trị dựa vào role này | BRULE12, NFR07, FR32 |
 | A6 | OTP có hạn dùng và chỉ dùng một lần; tài khoản `driver` chỉ được tạo sau khi OTP đúng | FR39, mục 21 |
 | A7 | Tài khoản `admin` không tạo qua API công khai (tạo sẵn bằng seed) | BRULE12 — **suy đoán**, Q8 |
-| A8 | Đăng ký khách chỉ báo thành công khi Customer đã tạo xong hồ sơ; không tạo được thì không có tài khoản | FR26, FR27; mục 9 → 11; ADR-004 |
+| A8 | Đăng ký khách **chỉ tạo Account** (số điện thoại, email tùy chọn, mật khẩu); không tạo hồ sơ, không gọi service nào. Thành công khi Account đã lưu | FR26, UC01, AC27; mục 9; ADR-013 (thay bản cũ theo ADR-004) |
 
 ### 6.2 Customer
 
 | Mục | Nội dung |
 |---|---|
-| Trách nhiệm | Giữ và cho xem / sửa hồ sơ cá nhân của khách hàng; cho tra cứu khách hàng theo mã |
-| **Không** làm | Không giữ mật khẩu, không đăng nhập. Không giữ booking của khách |
-| Ngôn ngữ chung | **CustomerProfile**: thông tin cá nhân của một khách. **Mã khách hàng**: tham chiếu tới Account bằng ID |
+| Trách nhiệm | Cho khách **đã đăng nhập** tạo hồ sơ một lần, rồi xem / sửa hồ sơ của mình; cho tra cứu khách hàng theo mã (chính chủ, `admin`) |
+| **Không** làm | Không giữ mật khẩu, không đăng nhập, không giữ số điện thoại đăng nhập (thuộc Auth). Không biết tài khoản nào vừa đăng ký: chỉ tin `account_id` trong metadata do Gateway chuyển. Không giữ booking của khách. **Không gọi và không bị service nào gọi** |
+| Ngôn ngữ chung | **CustomerProfile**: thông tin cá nhân của một khách (họ tên, ngày sinh). **Mã khách hàng** = `account_id` của tài khoản đang đăng nhập. **Chưa có hồ sơ**: tài khoản đã đăng ký nhưng chưa tạo hồ sơ |
 | Aggregate gốc | **CustomerProfile** |
-| FR / UC | FR27; FR26 (phần tạo hồ sơ khi đăng ký) / UC03; UC01 (phần hồ sơ); UC19 |
-| Mục chấm | 11; 9 (đăng ký xong phải có hồ sơ); 24; 26 (họ tên là text do người dùng nhập) |
+| FR / UC | FR27, BRULE18 / UC03, UC19 |
+| Mục chấm | 11; 24; 26 (họ tên là text do người dùng nhập) |
 
 | # | Quy tắc | Nguồn |
 |---|---|---|
-| C1 | Mỗi tài khoản `customer` có đúng một hồ sơ; tạo lặp cho cùng tài khoản trả lại hồ sơ cũ | FR26, FR27, NFR14 |
-| C2 | Khách chỉ xem / sửa hồ sơ của chính mình; `admin` xem được mọi hồ sơ | NFR08, NFR16, BRULE12 — Q9 |
+| C1 | Mỗi tài khoản `customer` có **nhiều nhất** một hồ sơ; tạo lần hai → 409 | BRULE18, FR27, AC28, NFR14 |
+| C2 | Khách chỉ xem / sửa hồ sơ của chính mình; `admin` xem được mọi hồ sơ, không sửa | BRULE18, NFR08, NFR16, BRULE12 — Q9 |
 | C3 | Dữ liệu cá nhân được bảo vệ khi lưu | NFR08, NFR16, mục 24 |
+| C4 | `customer_id` của hồ sơ **là** `account_id` trong token; khi tạo / sửa không nhận mã khách từ client | BRULE18, NFR07; ADR-013 |
+| C5 | Chưa tạo hồ sơ thì xem và sửa đều trả 404 | FR27, UC03, AC28 |
+| C6 | Họ tên bắt buộc khi tạo; ngày sinh tùy chọn, định dạng `YYYY-MM-DD`, không ở tương lai | FR27, UC03 |
 
 ### 6.3 Driver & Vehicle
 
@@ -396,7 +400,7 @@ stateDiagram-v2
 | M12 | Mỗi lần Payment sang `COMPLETED`, `FAILED` hoặc `REFUNDED` đều được báo ra ngoài; `CANCELED` được báo ra khi lý do là quá hạn hoặc hết lượt (M13) | FR24, BRULE10, BRULE13, BRULE17 |
 | M13 | Thanh toán điện tử quá hạn, hoặc lần thử cuối thất bại, thì chuyển `CANCELED` kèm lý do; lần thử thất bại vẫn được lưu. Từ đó không nhận lần thử mới | BRULE17, BRULE10, AC25 |
 
-Fare và Payment chung một context và một aggregate: cước tính xong là thanh toán được tạo ngay trong cùng một thao tác. Payment Provider là hệ thống ngoài, **giả lập sau một lớp adapter** (`CLAUDE.md`).
+Fare và Payment chung một context và một aggregate: cước tính xong là thanh toán được tạo ngay trong cùng một thao tác. Payment Provider là hệ thống ngoài, **giả lập đơn giản sau một lớp adapter**: module trong `payment-service` gọi ngay phần xử lý callback, mặc định thành công (`CLAUDE.md`, ADR-014).
 
 ### 6.7 Notification
 
@@ -444,8 +448,8 @@ Danh sách do giảng viên chốt; bảng này ghi **lý do nghiệp vụ** và
 
 | Context → service | Lý do nghiệp vụ là context riêng | Đánh đổi |
 |---|---|---|
-| Auth → `auth-service` | Phục vụ cả ba role; "khách hàng" ở đây là Account có role, không phải hồ sơ. Mật khẩu tách khỏi dữ liệu cá nhân (NFR08, mục 24). ADR-001 | Đăng ký khách chạm hai service (ADR-004) |
-| Customer → `customer-service` | Hồ sơ chỉ của khách; đối xứng với hồ sơ tài xế ở Driver | Service nhỏ (1 FR, 1–2 mục chấm) |
+| Auth → `auth-service` | Phục vụ cả ba role; "khách hàng" ở đây là Account có role, không phải hồ sơ. Mật khẩu tách khỏi dữ liệu cá nhân (NFR08, mục 24). ADR-001 | Khách phải thêm một bước tạo hồ sơ sau khi đăng nhập (ADR-013) |
+| Customer → `customer-service` | Hồ sơ chỉ của khách; đối xứng với hồ sơ tài xế ở Driver. Không gọi và không bị service nào gọi: dừng thì chỉ mất chức năng hồ sơ | Service nhỏ (1 FR, 1–2 mục chấm); có thể tồn tại tài khoản `customer` chưa có hồ sơ |
 | Driver & Vehicle → `driver-service` | BRULE01, BRULE02 cần trạng thái, loại xe, vị trí trong **một** truy vấn (mục 13) | Vị trí cập nhật rất thường xuyên, hồ sơ thì hiếm; hai kiểu tải nằm chung |
 | Booking → `booking-service` | Giai đoạn "chưa có tài xế": ngôn ngữ riêng (chờ thanh toán, ứng viên, Offer, hết giờ), BRULE01–07 và BRULE13, có việc chạy nền đếm giờ. ADR-006 | Là nơi điều phối: phải gọi Driver, Payment, Trip; ba service đó lỗi thì từng bước của đặt xe lỗi theo (ADR-008, ADR-009) |
 | Trip → `trip-service` | Giai đoạn "đã có tài xế": tác nhân khác (tài xế điều khiển), quy tắc khác (trình tự trạng thái, BRULE16). Booking dừng thì chuyến đang chạy vẫn hoàn thành được. ADR-006 | Một chuyến xe nằm ở hai service: phải bàn giao (ADR-008); có hai thao tác hủy; danh sách booking không tự hiện kết cục chuyến (Q27) |
@@ -507,8 +511,8 @@ Giảng viên đã bỏ `report-service` và `audit-service`. **Phiếu chấm k
 | FR23 Thông báo trạng thái chuyến | Notification | Trip | |
 | FR24 Thông báo thanh toán | Notification | Payment | |
 | FR25 Đánh giá tài xế | Rating | Trip (kiểm tra BRULE11) | |
-| FR26 Đăng ký và đăng nhập | Auth | Customer (hồ sơ) | |
-| FR27 Hồ sơ khách hàng | Customer | — | |
+| FR26 Đăng ký tài khoản và đăng nhập | Auth | — | Đăng ký chỉ tạo tài khoản (A8) |
+| FR27 Hồ sơ khách hàng | Customer | — | Khách tạo hồ sơ sau khi đăng nhập (BRULE18, C1–C6) |
 | FR28 Hồ sơ tài xế | Driver | — | |
 | FR29 Phương tiện | Driver | — | |
 | FR30 Giám sát chuyến | Trip | — | Role `admin`; ngoài phiếu chấm |
@@ -539,9 +543,9 @@ Kết quả: 39/42 FR có context chính; FR42 do Gateway xử lý. **FR33 khôn
 | 6 | `/health`, `/ready`, `/health/services` | Gateway | Cả 8 service phải trả lời được health |
 | 7 | Kafka | Hạ tầng + Booking, Trip, Payment, Driver (phát); Booking, Driver, Payment, Notification (nghe) | File 02 |
 | 8 | Mọi request qua Gateway | Gateway / Compose | |
-| 9 | Đăng ký khách hàng → đăng nhập được | Auth, Customer | |
+| 9 | Đăng ký khách hàng → đăng nhập được | Auth | Chỉ tạo tài khoản (ADR-013) |
 | 10 | Đăng nhập → token | Auth | |
-| 11 | Xem khách hàng theo mã | Customer | |
+| 11 | Xem khách hàng theo mã | Customer | Tạo hồ sơ rồi xem; hoặc dùng KH1 seed đã có hồ sơ (file 04 mục 5.2) |
 | 12 | Xem tài xế theo mã | Driver | |
 | 13 | Tài xế quanh tọa độ 1 km | Driver | |
 | 14 | Booking của khách, limit + paging | Booking | |
@@ -578,7 +582,9 @@ Kết quả: **30/30 mục có nơi nhận.** Mỗi service trong 8 service gán
 | "Chỉ tài xế đã duyệt mới Online" — D6 | Suy ra từ FR39 | BRULE mới |
 | "Một tài xế chỉ bị giữ cho một booking" — D8 | BRULE01, NFR14 | Có thể ghi rõ thành BRULE mới |
 
-BA không sửa `srs.md` trong vòng này; xem Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE18, NFR17, FR43, UC34, AC27** (BRULE17, FR42, UC33, AC26 đã được dùng).
+| Hồ sơ khách tạo sau đăng nhập (2026-10-03) | **BRULE18, AC27–AC29, RTM27, RTM28** (đã thêm vào `srs.md`); FR26, FR27, UC01, UC03 viết lại | Đủ |
+
+Các dòng còn thiếu ở trên vẫn chờ Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE19, NFR17, FR43, UC34, AC30, RTM29** (BRULE18, FR42, UC33, AC29, RTM28 đã được dùng).
 
 ## 9. Câu hỏi còn mở
 
@@ -588,11 +594,11 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 
 | # | Câu hỏi | Kết luận | Nguồn |
 |---|---|---|---|
-| Q3 | Đăng ký khách chạm hai service thì nối thế nào? | Auth gọi đồng bộ sang Customer | `CLAUDE.md`; ADR-004 |
+| Q3 | Đăng ký khách chạm hai service thì nối thế nào? | **Đổi 2026-10-03:** không nối. Đăng ký chỉ tạo tài khoản; khách tạo hồ sơ sau khi đăng nhập (trước đó: Auth gọi đồng bộ — ADR-004, đã bị thay thế) | `CLAUDE.md`; ADR-013 |
 | Q6 | "COMPLETED" ở mục 19 là của ai? | Của giao dịch thanh toán | `CLAUDE.md` |
 | Q7 | Hủy được đến lúc nào? Tài xế có hủy được không? | Trước khi đón khách (BRULE16); tài xế hủy được chuyến đã nhận (FR41) | `srs.md` |
 | Q13 (một phần) | Tiền mặt: ai xác nhận đã thu? | Hệ thống tự ghi nhận khi chuyến hoàn thành (FR17). Số lần thanh toán lại: chuyển sang Q37 | `CLAUDE.md` |
-| Q14 | Ba hệ thống ngoài có tích hợp thật không? | Giả lập cả ba, sau lớp adapter | `CLAUDE.md` |
+| Q14 | Ba hệ thống ngoài có tích hợp thật không? | Giả lập cả ba **ở mức đơn giản nhất**, sau lớp adapter (cách giả lập từng hệ thống: file 02 mục 4.5) | `CLAUDE.md`; ADR-014 |
 | Q15 | Tách Dispatch? | Ghép tài xế nằm trong `booking-service` | `CLAUDE.md` |
 | Q29 | Hủy là hai thao tác hay một? | Hai: hủy Booking (chưa có tài xế), hủy Trip (đã có tài xế) | `CLAUDE.md` |
 | Q30 | Có bảng PERMISSION không? | Không; ba role cố định | `CLAUDE.md` |
@@ -612,7 +618,7 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q5 | Tài xế nhận Offer bằng cách nào khi không có push thật? | (a) Tài xế gọi API xem Offer đang chờ, kèm thông báo; (b) chỉ qua thông báo | (a) | SV |
 | Q8 | Tài khoản `admin` tạo bằng cách nào? | (a) Seed sẵn; (b) API đổi role | (a) | SV |
 | Q9 | Mục 11, 12: role nào được xem hồ sơ của người khác? | (a) Chỉ chính chủ và `admin`; (b) tài xế xem được khách của chuyến mình và ngược lại | (a) | SV |
-| Q10 | Có thêm mã mới vào `srs.md` cho các dòng **còn thiếu** ở 8.3 không (mục 17, 29, 30, D6, D8; AC cho FR42)? | (a) Thêm BRULE18…, NFR17, AC27 và cập nhật RTM; (b) giữ nguyên | (a); BA thêm khi được đồng ý | SV |
+| Q10 | Có thêm mã mới vào `srs.md` cho các dòng **còn thiếu** ở 8.3 không (mục 17, 29, 30, D6, D8; AC cho FR42)? | (a) Thêm BRULE19…, NFR17, AC30 và cập nhật RTM; (b) giữ nguyên | (a); BA thêm khi được đồng ý | SV |
 | Q11 | FR15 (ETA) tính thế nào? (Phần lịch sử vị trí đã đóng ở 9.1) | (a) ETA = khoảng cách / tốc độ trung bình; (b) không làm | (a), làm sau 30 mục | SV |
 | Q12 | Thời hạn tài xế trả lời Offer là bao lâu? | 15–30 giây | Biến môi trường `OFFER_TIMEOUT_SECONDS`, mặc định đề xuất 20 giây (file 03 mục 13) | SV |
 | Q27 | Booking có cần biết kết cục của Trip để danh sách booking (mục 14) hiện trạng thái cuối không? Rõ nhất khi tài xế hủy chuyến: Booking vẫn ghi `DRIVER_ASSIGNED` | (a) Không: client xem chuyến qua API của Trip; (b) Booking nghe sự kiện của Trip | (a) — bớt một đường nối. Chọn (b) thì `booking-service` thêm một subscribe | SV |
@@ -620,3 +626,4 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q32 | FR30 (admin giám sát chuyến) có làm không khi phiếu chấm không yêu cầu? | (a) Làm tối thiểu ở `trip-service` sau khi xong 30 mục; (b) không làm | (a) | SV |
 | Q44 | Mục 15 và mục 19 demo theo thứ tự nào? Với trả trước, booking điện tử phải qua callback rồi mới có offer | (a) Mục 15, 16, 17 dùng booking tiền mặt; mục 19, 30 dùng một booking điện tử riêng; (b) một booking điện tử cho cả chuỗi, chạy mục 19 xen giữa mục 15 | (a) | GV |
 | Q45 | FR31: `admin` can thiệp chuyến lỗi **sau khi đã đón khách** thì làm gì, có hoàn tiền không? BRULE14, BRULE16 không nói | (a) Ngoài phạm vi; (b) thêm trạng thái và quy tắc hoàn tiền riêng | (a) | SV |
+| Q56 | Tách đăng ký khỏi hồ sơ (ADR-013): khách **chưa tạo hồ sơ** có được đặt xe không? | (a) Được: không FR / BRULE nào buộc có hồ sơ mới đặt xe; Booking chỉ cần `customer_id` trong token; (b) không: Booking phải hỏi Customer → thêm đường gRPC booking → customer | (a) — giữ Customer không nối với ai; nếu giảng viên muốn (b) thì cần thêm một BRULE và một đường gRPC | SV / GV |

@@ -1,6 +1,7 @@
 # 04 — API REST của Gateway
 
-> Vòng 1 (chỉ BA), viết 2026-10-02. Đầu vào: `CLAUDE.md`, `srs.md` (FR01–FR42, BRULE01–17, UC01–UC33), file 01, file 02 (G1–G10, S1–S7, K1–K7), file 03, phiếu chấm 30 mục.
+> Vòng 1 (chỉ BA), viết 2026-10-02. Đầu vào: `CLAUDE.md`, `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29), file 01, file 02 (G1–G10, S2–S7, K1–K7), file 03, phiếu chấm 30 mục.
+> Sửa 2026-10-03: hồ sơ khách tạo sau khi đăng nhập — A04 chỉ tạo tài khoản; thêm **A37** `POST /customers/me`, **A38** `GET /customers/me`; **A10 đổi** thành `PUT /customers/me` (ADR-013). Callback A32 xác thực bằng khóa bí mật trong header, bỏ HMAC; adapter thanh toán gọi callback ngay trong A31; OTP trả trong response khi `SIMULATION_MODE=true` (ADR-014). Chuỗi request mục 9, 11, 19, 21, 24, 26, 30 viết lại. Đóng Q50.
 > File này trả lời: **client gọi gì, ai được gọi, service nào xử lý, mỗi mục chấm bấm những request nào**. Request / response từng field và `.proto`: spec của từng mục chấm.
 > Ký hiệu: **[ĐC]** = đã chốt trong `CLAUDE.md` / `srs.md`. **[BA]** = BA tự chọn, chưa ai xác nhận (gom ở mục 9).
 
@@ -27,10 +28,10 @@
 |---|---|---|---|
 | `OK` | 200 / 201 | | |
 | `INVALID_ARGUMENT` | 400 | Thiếu trường, sai kiểu, sai giá trị | `INVALID_INPUT`, `INVALID_PHONE`, `INVALID_COORDINATES`, `INVALID_PAGINATION`, `TEXT_CONTAINS_HTML`, `OTP_INVALID`, `OTP_EXPIRED`, `REASON_REQUIRED` |
-| `UNAUTHENTICATED` | 401 | Sai thông tin đăng nhập; chữ ký callback sai | `INVALID_CREDENTIALS`, `INVALID_SIGNATURE` |
+| `UNAUTHENTICATED` | 401 | Sai thông tin đăng nhập; khóa bí mật của callback sai hoặc thiếu | `INVALID_CREDENTIALS`, `INVALID_CALLBACK_SECRET` |
 | `PERMISSION_DENIED` | 403 | Không phải chủ dữ liệu; tài khoản bị khóa | `NOT_OWNER`, `ACCOUNT_LOCKED` |
 | `NOT_FOUND` | 404 | Không có đối tượng | `CUSTOMER_NOT_FOUND`, `DRIVER_NOT_FOUND`, `BOOKING_NOT_FOUND`, `TRIP_NOT_FOUND`, `PAYMENT_NOT_FOUND`, `OFFER_NOT_FOUND`, `RATING_NOT_FOUND`, `TRANSACTION_NOT_FOUND` |
-| `ALREADY_EXISTS` | 409 | Trùng | `PHONE_ALREADY_EXISTS`, `APPLICATION_ALREADY_EXISTS`, `LICENSE_PLATE_ALREADY_EXISTS`, `RATING_ALREADY_EXISTS` |
+| `ALREADY_EXISTS` | 409 | Trùng | `PHONE_ALREADY_EXISTS`, `CUSTOMER_ALREADY_EXISTS`, `APPLICATION_ALREADY_EXISTS`, `LICENSE_PLATE_ALREADY_EXISTS`, `RATING_ALREADY_EXISTS` |
 | `FAILED_PRECONDITION` | 409 | Đúng dữ liệu nhưng sai thời điểm / sai trạng thái | `INVALID_STATUS_TRANSITION`, `BOOKING_NOT_CANCELABLE`, `BOOKING_ALREADY_ASSIGNED`, `TRIP_NOT_CANCELABLE`, `TRIP_NOT_COMPLETED`, `OFFER_EXPIRED`, `DRIVER_NOT_APPROVED`, `DRIVER_NOT_AVAILABLE`, `PAYMENT_ALREADY_COMPLETED`, `PAYMENT_EXPIRED`, `PAYMENT_ATTEMPTS_EXHAUSTED`, `IDEMPOTENCY_KEY_REUSED` |
 | Còn lại (`UNAVAILABLE`, `DEADLINE_EXCEEDED`, `INTERNAL`, …) | 503 | Service không chạy, quá deadline, lỗi không lường trước | `SERVICE_UNAVAILABLE` |
 
@@ -86,7 +87,7 @@ API có phân trang: A12 (mục 13), A20 (mục 14), A13, A26, A33.
 |---|---|
 | Nhóm công khai (A04, A05, A07, A08) | Đếm theo **IP** của kết nối; ngưỡng `RATE_LIMIT_PUBLIC_MAX` mỗi `RATE_LIMIT_WINDOW_SECONDS` |
 | Nhóm có token | Đếm theo **`account_id`**; ngưỡng `RATE_LIMIT_ACCOUNT_MAX` |
-| Không giới hạn | A01–A03 (health) và A32 (callback: xác thực bằng chữ ký; Provider gửi nhiều callback từ cùng một IP là bình thường) |
+| Không giới hạn | A01–A03 (health) và A32 (callback: xác thực bằng khóa bí mật trong header; Provider gửi nhiều callback từ cùng một IP là bình thường) |
 | Header mọi response có giới hạn | `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` (số giây đến hết cửa sổ) |
 | Vượt ngưỡng | 429 `{ "error": "RATE_LIMITED" }` + `Retry-After: <giây>` |
 | IP lấy ở đâu | Địa chỉ của kết nối TCP. **Không** tin header `X-Forwarded-For` vì không có proxy nào đứng trước Gateway và client tự đặt được header đó |
@@ -108,11 +109,11 @@ Lý do chọn từ chối thay vì "lưu rồi escape khi hiển thị": API ch�
 
 ### 1.7 Danh tính chuyển cho service
 
-Gateway kiểm tra token xong thì chuyển cho service qua gRPC metadata: `x-account-id`, `x-role`, `x-request-id`, và `idempotency-key` (nếu có). Service **không** tự kiểm tra JWT; tin metadata vì chỉ Gateway vào được mạng nội bộ (file 02 mục 2.2).
+Gateway kiểm tra token xong thì chuyển cho service qua gRPC metadata: `x-account-id`, `x-role`, `x-request-id`, `idempotency-key` (nếu có), và `x-callback-secret` (chỉ A32, không có token). Service **không** tự kiểm tra JWT; tin metadata vì chỉ Gateway vào được mạng nội bộ (file 02 mục 2.2).
 
 ## 2. Bảng API
 
-Cột **Token**: "Không" = công khai; "Có" = cần JWT hợp lệ. Cột **Role**: role được Gateway cho qua; "(chủ)" = service còn kiểm tra đúng chủ dữ liệu (mục 4). Tổng: **36 API**.
+Cột **Token**: "Không" = công khai; "Có" = cần JWT hợp lệ. Cột **Role**: role được Gateway cho qua; "(chủ)" = service còn kiểm tra đúng chủ dữ liệu (mục 4). Tổng: **38 API** (A37, A38 thêm 2026-10-03; mã cũ giữ nguyên).
 
 ### 2.1 Gateway và xác thực
 
@@ -121,10 +122,10 @@ Cột **Token**: "Không" = công khai; "Có" = cần JWT hợp lệ. Cột **Ro
 | A01 | `GET /health` | Không | — | Gateway tự trả: tiến trình còn sống | 6 | — |
 | A02 | `GET /ready` | Không | — | Gateway: kiểm tra Redis và đã tạo kênh gRPC | 6 | — |
 | A03 | `GET /health/services` | Không | — | Cả 8 service — `grpc.health.v1.Health/Check` (G9) | 6 | NFR15 |
-| A04 | `POST /api/v1/auth/register` | Không | — | auth — `RegisterCustomer` (→ S1) | 9 | FR26 / UC01 |
+| A04 | `POST /api/v1/auth/register` | Không | — | auth — `RegisterCustomer` (chỉ tạo tài khoản, không gọi service khác) | 9 | FR26 / UC01, AC27 |
 | A05 | `POST /api/v1/auth/login` | Không | — | auth — `Login` | 10, 25 | FR26 / UC02 |
 | A06 | `POST /api/v1/auth/logout` | Có | Cả ba | **Gateway + Redis**, không gọi service | 27 (bổ trợ) | FR42 / UC33 |
-| A07 | `POST /api/v1/auth/driver/otp` | Không | — | auth — `RequestDriverOtp` | 21 | FR39 / UC29 |
+| A07 | `POST /api/v1/auth/driver/otp` | Không | — | auth — `RequestDriverOtp`. OTP ghi log; `SIMULATION_MODE=true` thì response có thêm `otp` (ADR-014) | 21 | FR39 / UC29 |
 | A08 | `POST /api/v1/auth/driver/register` | Không | — | auth — `RegisterDriver` (kiểm tra OTP, tạo tài khoản `driver`) | 21 | FR39, FR26 / UC29 |
 
 Ý nghĩa ba endpoint health:
@@ -139,8 +140,10 @@ Cột **Token**: "Không" = công khai; "Có" = cần JWT hợp lệ. Cột **Ro
 
 | Mã | Method, đường dẫn | Token | Role | Service — rpc | Mục chấm | FR / UC |
 |---|---|---|---|---|---|---|
-| A09 | `GET /api/v1/customers/{customer_id}` | Có | customer (chủ), admin | customer — `GetCustomer` | 11, 24 | FR27 / UC03, UC19 |
-| A10 | `PUT /api/v1/customers/{customer_id}` | Có | customer (chủ) | customer — `UpdateCustomer` | 26 | FR27 / UC03 |
+| A37 | `POST /api/v1/customers/me` | Có | customer | customer — `CreateCustomer` | **11**, 26 | FR27, BRULE18 / UC03, AC28 |
+| A38 | `GET /api/v1/customers/me` | Có | customer | customer — `GetCustomer` (mã = tài khoản trong token) | 11 (bổ trợ) | FR27 / UC03, AC28 |
+| A09 | `GET /api/v1/customers/{customer_id}` | Có | customer (chủ), admin | customer — `GetCustomer` | **11**, 24, 27 | FR27 / UC03, UC19, AC29 |
+| A10 | `PUT /api/v1/customers/me` (**đổi** 2026-10-03, trước là `/customers/{customer_id}`) | Có | customer | customer — `UpdateCustomer` | 26 | FR27, BRULE18 / UC03, AC29 |
 | A11 | `POST /api/v1/drivers/applications` | Có | driver | driver — `SubmitApplication` | 21 | FR39, FR28, FR29 / UC29 |
 | A12 | `GET /api/v1/drivers/nearby?lat&lng&radius_m&vehicle_type&page&limit` | Có | customer, admin | driver — `FindNearbyDrivers` | **13** | FR02–FR04 / UC06 |
 | A13 | `GET /api/v1/drivers?approval_status&page&limit` | Có | admin | driver — `ListDrivers` | 22 | FR28, FR39 / UC20, UC30 |
@@ -152,6 +155,12 @@ Cột **Token**: "Không" = công khai; "Có" = cần JWT hợp lệ. Cột **Ro
 
 Ghi chú:
 
+- A04 (mục 2.1) body: `phone` (bắt buộc), `email` (tùy chọn), `password` (bắt buộc). **Không có họ tên**: họ tên thuộc hồ sơ (A37). Response 201: `account_id`, `role = customer`; không có hồ sơ, không có mật khẩu.
+- A37 body: `full_name` (bắt buộc, ≤ 100 ký tự, không chứa `<` `>`), `date_of_birth` (tùy chọn, `YYYY-MM-DD`, không ở tương lai). **Không nhận `customer_id`** từ client: `customer-service` dùng `x-account-id` (C4). Response 201: `customer_id`, `full_name`, `date_of_birth`. Đã có hồ sơ → 409 `CUSTOMER_ALREADY_EXISTS` (C1, BRULE18).
+- A38: hồ sơ của tài khoản trong token. Chưa tạo → 404 `CUSTOMER_NOT_FOUND` (C5). Cùng rpc `GetCustomer` với A09; Gateway đặt mã = `sub` của token (chỉ đổi đường dẫn sang tham số, không phải logic nghiệp vụ).
+- A10 body: `full_name` và / hoặc `date_of_birth`, ít nhất một field → 400 nếu rỗng. Chưa tạo hồ sơ → 404 `CUSTOMER_NOT_FOUND` (C5). Đổi từ `/customers/{customer_id}` sang `/customers/me` để không thể sửa nhầm hồ sơ người khác.
+- A09: giữ cho mục 11 ("xem khách hàng theo mã") và cho admin. Khách xem mã của người khác → 403; mã chưa có hồ sơ → 404.
+- Route `/customers/me` được so khớp **trước** `/customers/{customer_id}` (`me` không phải UUID).
 - A12: `radius_m` mặc định 1000, tối đa 5000; `vehicle_type` tùy chọn. Kết quả chỉ gồm tài xế đã duyệt, đang `ONLINE` (D1–D3), sắp theo khoảng cách tăng dần, mỗi dòng có `distance_m`. Cùng rpc với S2 của `booking-service`.
 - A14 [BA]: tài xế xem chính mình và admin thấy đủ hồ sơ (kể cả số giấy phép đã giải mã, trạng thái duyệt). Role khác thấy **phần công khai**: họ tên, loại xe, biển số, trạng thái nhận chuyến.
 - A17: body `{ "status": "ONLINE" | "OFFLINE" }`; khi `ONLINE` kèm `lat`, `lng` (tài xế phải có vị trí mới tìm được). Chưa được duyệt → 409 `DRIVER_NOT_APPROVED` (D6). Đang `BUSY` mà tắt → 409.
@@ -199,7 +208,7 @@ Ghi chú:
 |---|---|---|---|---|---|---|
 | A30 | `GET /api/v1/payments/{payment_id}` | Có | customer (chủ), admin | payment — `GetPayment` | 18, 19, 30 | FR20 / UC24 |
 | A31 | `POST /api/v1/payments/{payment_id}/pay` | Có + `Idempotency-Key` | customer (chủ) | payment — `PayPayment` | **19, 30** | FR18, FR19 / UC14, UC15 |
-| A32 | `POST /api/v1/payments/callback` | **Không; chữ ký HMAC** | — | payment — `HandleProviderCallback` | **19, 30** | FR18 / UC14 |
+| A32 | `POST /api/v1/payments/callback` | **Không; header `X-Callback-Secret`** | — | payment — `HandleProviderCallback` | **19, 30** | FR18 / UC14 |
 | A33 | `GET /api/v1/notifications?page&limit` | Có | Cả ba | notification — `ListNotifications` | 16, 18, 22 | FR21–FR24 / UC16 |
 | A34 | `POST /api/v1/trips/{trip_id}/rating` | Có | customer (chủ) | rating — `CreateRating` (→ S7) | **20** | FR25 / UC17 |
 | A35 | `GET /api/v1/trips/{trip_id}/rating` | Có | customer (chủ), driver (chủ), admin | rating — `GetRatingByTrip` | 20 | FR25 |
@@ -208,25 +217,25 @@ Ghi chú:
 Ghi chú:
 
 - A30: response gồm trạng thái, số tiền, **từng thành phần cước** (`distance_m`, `base_fare`, `per_km_rate`, `min_fare`, `total_amount`), hạn thanh toán, và danh sách các lần giao dịch. Không field nào chứa thông tin thẻ (BRULE09).
-- A31: mỗi lần gọi (với khóa mới) là **một lần thử** (BRULE17). Response: `transaction_id`, `provider_transaction_id`, `attempt_no`, `attempts_remaining`, `expires_at`. Payment đã `COMPLETED` → 409; quá hạn → 409 `PAYMENT_EXPIRED`; hết lượt → 409 `PAYMENT_ATTEMPTS_EXHAUSTED`. Payment `CASH` → 409.
+- A31: mỗi lần gọi (với khóa mới) là **một lần thử** (BRULE17). Adapter giả lập gọi ngay hàm xử lý callback trong cùng request (ADR-014), nên response đã có kết quả: `transaction_id`, `provider_transaction_id`, `attempt_no`, `attempts_remaining`, `expires_at`, `transaction_status` (`SUCCEEDED` / `FAILED`), `payment_status` (`COMPLETED` / `FAILED` / `CANCELED`). Body tùy chọn `simulate_result: "SUCCESS" | "FAILED"` (mặc định `SUCCESS`) **chỉ có hiệu lực khi `SIMULATION_MODE=true`**; tắt thì bị bỏ qua. Payment đã `COMPLETED` → 409; quá hạn → 409 `PAYMENT_EXPIRED`; hết lượt → 409 `PAYMENT_ATTEMPTS_EXHAUSTED`. Payment `CASH` → 409.
 - A33: thông báo của chính người trong token, mới nhất trước.
 - A34: body `{ "score": 1…5, "comment": "…" }`. Chuyến chưa hoàn thành → 409 `TRIP_NOT_COMPLETED`; không phải khách của chuyến → 403; đã đánh giá → 409 `RATING_ALREADY_EXISTS`.
 
-### 2.6 Xác thực callback thanh toán (A32)
+### 2.6 Callback thanh toán (A32) và cổng thanh toán giả lập — ADR-014
 
 Callback không mang JWT của người dùng: bên gọi là Payment Provider, không phải người dùng.
 
 | Điểm | Thiết kế | Vì sao |
 |---|---|---|
-| Cách xác thực | Header `X-Provider-Signature: sha256=<hex>` = HMAC-SHA256 của **nguyên văn body** với khóa chung `PAYMENT_CALLBACK_SECRET` | Chứng minh callback do bên giữ khóa gửi và body không bị sửa |
-| Ai kiểm tra | `payment-service`. Gateway chuyển **nguyên byte body** và header chữ ký qua gRPC, không phân tích lại JSON | Khóa của Provider thuộc context Payment (file 02 mục 2.2). JSON bị ghi lại thì chữ ký không còn khớp |
-| Sai / thiếu chữ ký | 401 `INVALID_SIGNATURE` | |
-| So sánh chữ ký | So sánh thời gian hằng | Không lộ thông tin qua thời gian phản hồi |
+| Ai gửi callback | **Adapter giả lập trong `payment-service`** gọi ngay hàm xử lý callback khi nhận A31 (thu) hoặc yêu cầu hoàn tiền; mặc định thành công. A32 là cùng hàm đó nhưng gọi từ ngoài qua Gateway | `CLAUDE.md` dòng "Hệ thống ngoài": không có bước chờ, không cần Postman tính gì (đóng Q50) |
+| Cách xác thực A32 | Header `X-Callback-Secret: <PAYMENT_CALLBACK_SECRET>` — khóa bí mật cố định. **Không HMAC** | Giảng viên yêu cầu giả lập đơn giản; Postman chỉ cần đặt một biến môi trường |
+| Ai kiểm tra | `payment-service`, so sánh **thời gian hằng**. Gateway chuyển header vào gRPC metadata, body là JSON thường (không cần giữ nguyên byte như khi dùng HMAC) | Khóa thuộc context Payment; so sánh thời gian hằng để không lộ khóa qua thời gian phản hồi |
+| Sai / thiếu khóa | 401 `INVALID_CALLBACK_SECRET` | |
 | Body | `provider_transaction_id`, `result` (`SUCCESS` / `FAILED`), `amount` | `amount` khác số tiền của giao dịch → 400 |
 | Mã giao dịch lạ | 404 `TRANSACTION_NOT_FOUND` | |
-| Gửi lại (replay) | Trả response cũ, `Idempotency-Replayed: true` | Mục chấm 30 |
-| Không kiểm tra "callback quá cũ" | Không có giới hạn thời gian trên chữ ký | Phiếu chấm yêu cầu replay **trả response cũ**, không phải bị từ chối |
-| Giả lập [BA] | Postman đóng vai Provider: script trước request tính chữ ký bằng `PAYMENT_CALLBACK_SECRET` đặt trong môi trường Postman, gửi **ngay** sau A31, không có bước chờ | File 02 đường C2; xem Q50 |
+| Giao dịch đã có kết quả (đã được adapter xử lý, hoặc callback gửi lại) | 200, trả **response đã lưu**, `Idempotency-Replayed: true`; không đổi trạng thái, không phát lại K6 | Mục chấm 30 |
+| Không kiểm tra "callback quá cũ" | Không có giới hạn thời gian | Phiếu chấm yêu cầu replay **trả response cũ**, không phải bị từ chối |
+| Đánh đổi | Khóa cố định không chứng minh body không bị sửa (HMAC chứng minh được); lộ khóa là giả được callback | Chấp nhận cho môi trường học tập; chỉ Gateway mở ra ngoài; Provider thật thì đổi sang HMAC trong adapter (NFR13) |
 
 ## 3. Ma trận phân quyền (mục chấm 28)
 
@@ -240,8 +249,10 @@ Callback không mang JWT của người dùng: bên gọi là Payment Provider, 
 | A06 | Đăng xuất | 401 | 200 | 200 | 200 |
 | A07 | Xin OTP tài xế | 200 | 200 | 200 | 200 |
 | A08 | Đăng ký tài xế | 201 | 201 | 201 | 201 |
-| A09 | Xem khách hàng theo mã | 401 | 200\* | 403 | 200 |
-| A10 | Sửa hồ sơ khách | 401 | 200\* | 403 | 403 |
+| A09 | Xem khách hàng theo mã | 401 | 200\* (404 nếu chưa có hồ sơ) | 403 | 200 / 404 |
+| A10 | Sửa hồ sơ **của tôi** (`/customers/me`) | 401 | 200 (404 nếu chưa có hồ sơ) | 403 | 403 |
+| A37 | Tạo hồ sơ của tôi | 401 | 201 (409 nếu đã có) | 403 | 403 |
+| A38 | Xem hồ sơ của tôi | 401 | 200 (404 nếu chưa có) | 403 | 403 |
 | A11 | Nộp hồ sơ tài xế | 401 | 403 | 201 | 403 |
 | A12 | Tài xế quanh tọa độ | 401 | 200 | 403 | 200 |
 | A13 | Danh sách tài xế | 401 | 403 | 403 | 200 |
@@ -263,7 +274,7 @@ Callback không mang JWT của người dùng: bên gọi là Payment Provider, 
 | A29 | Hủy chuyến | 401 | 200\* | 200\* | 403 |
 | A30 | Xem thanh toán | 401 | 200\* | 403 | 200 |
 | A31 | Thực hiện thanh toán | 401 | 200\* | 403 | 403 |
-| A32 | Callback | 200 nếu chữ ký đúng; 401 nếu sai | — | — | — |
+| A32 | Callback | 200 nếu khóa bí mật đúng; 401 nếu sai / thiếu | — | — | — |
 | A33 | Thông báo của tôi | 401 | 200\* | 200\* | 200\* |
 | A34 | Đánh giá chuyến | 401 | 201\* | 403 | 403 |
 | A35 | Xem đánh giá của chuyến | 401 | 200\* | 200\* | 200 |
@@ -285,7 +296,8 @@ Nguyên tắc: **Gateway kiểm tra role; service kiểm tra chủ dữ liệu.*
 
 | API | Chủ dữ liệu là | Service so `x-account-id` với | Quy tắc (file 01) | Không phải chủ |
 |---|---|---|---|---|
-| A09, A10 | Khách có hồ sơ | `customer_profiles.customer_id` (admin được xem, không được sửa) | C2 | 403 |
+| A09 | Khách có hồ sơ | `customer_profiles.customer_id` (admin được xem) | C2 | 403 |
+| A10, A37, A38 | Khách trong token | Không nhận ID từ client: `customer_id` = `x-account-id` | C2, C4, BRULE18 | — |
 | A14 | Tài xế có hồ sơ | `drivers.driver_id` — khác thì trả phần công khai, không lỗi | NFR08 | — |
 | A17, A18 | Tài xế trong token | Không nhận ID từ client: dùng thẳng `x-account-id` | D6 | — |
 | A20, A23, A33 | Người trong token | Lọc theo `x-account-id`; không nhận ID người khác từ client | B14, N2 | — |
@@ -300,7 +312,7 @@ Nguyên tắc: **Gateway kiểm tra role; service kiểm tra chủ dữ liệu.*
 
 Trả 403 chứ không 404 khi không phải chủ: ID là UUID không đoán được nên không lo lộ "đối tượng có tồn tại"; 403 giúp demo mục 28 rõ ràng. Đối tượng không tồn tại thì 404 (service chưa biết chủ là ai).
 
-Cách thiết kế giảm chỗ phải kiểm tra: API "của tôi" (A17, A18, A20, A23, A33) **không có ID trong đường dẫn**, nên không thể gọi nhầm dữ liệu người khác.
+Cách thiết kế giảm chỗ phải kiểm tra: API "của tôi" (A10, A17, A18, A20, A23, A33, A37, A38) **không có ID trong đường dẫn**, nên không thể gọi nhầm dữ liệu người khác.
 
 ## 5. Mục chấm → chuỗi request Postman
 
@@ -313,14 +325,15 @@ Cách thiết kế giảm chỗ phải kiểm tra: API "của tôi" (A17, A18, A
 | 6 | A01 → A02 → A03 | 200; 200; 200 với 8 service `SERVING` | 3 | Compose đang chạy |
 | 7 | (Không phải Postman) Mở `http://localhost:8080` → Topics; sau đó chạy mục 15 và xem message | Thấy đủ 7 topic; `booking.created`, `booking.offer-created` có message; group `notification-service` lag 0 (file 02 mục 7) | 0 + mục 15 | — |
 | 8 | (Không phải Postman) `docker compose ps`; thử gọi thẳng một service từ máy chủ | Chỉ `gateway` :3000 và `kafka-ui` :8080 có cổng; gọi thẳng service thất bại | 0 | — |
-| 9 | A04 (số điện thoại mới) → A05 → A04 lần hai cùng số | 201 kèm `account_id`; 200 kèm token; 409 `PHONE_ALREADY_EXISTS` | 3 | — |
+| 9 | A04 (số điện thoại mới, email, mật khẩu) → A05 → A04 lần hai cùng số | 201 kèm `account_id` (chỉ tài khoản, chưa có hồ sơ); 200 kèm token — script lưu `token_new`, `account_id_new`; 409 `PHONE_ALREADY_EXISTS` | 3 | — |
 | 10 | A05 đúng → A05 sai mật khẩu → A05 thiếu mật khẩu → A05 bằng KH9 | 200 kèm token (lưu biến); 401 `INVALID_CREDENTIALS`; 400; 403 `ACCOUNT_LOCKED` | 4 | Mục 9 hoặc seed KH1; KH9 |
 
 ### 5.2 Thực hành 2 (mục 11–20)
 
 | Mục | Chuỗi request | Kết quả mong đợi | Số request | Cần trước |
 |---|---|---|---|---|
-| 11 | A09 (mã của mình) → A09 không token → A09 với mã của KH2 | 200 hồ sơ; 401; 403 | 3 | Token khách (mục 10); seed KH2 |
+| 11 | Dùng `token_new` của mục 9: A09 (`account_id_new`) → A37 (họ tên, ngày sinh) → A09 (`account_id_new`) → A09 với mã của KH2 | 404 `CUSTOMER_NOT_FOUND` (chưa tạo hồ sơ); 201 hồ sơ; 200 hồ sơ; 403 | 4 | Mục 9 trong cùng phiên; seed KH2. **Dự phòng:** token KH3 (chưa có hồ sơ) chạy y hệt; hoặc token KH1 (đã có hồ sơ) chỉ cần A09 → 200 |
+| 11 (phụ) | A37 lần hai → A38 | 409 `CUSTOMER_ALREADY_EXISTS`; 200 hồ sơ của mình | 2 | Sau chuỗi chính |
 | 12 | A14 (TX1) → A14 với UUID không tồn tại → A14 với mã `abc` | 200; 404 `DRIVER_NOT_FOUND`; 400 `INVALID_ID` | 3 | Token; seed TX1 |
 | 13 | A12 tại P0, `limit=2&page=1` → `page=2` → `vehicle_type=CAR_4` → `lat=999` | 200: TX1, TX3, `total=4`; 200: TX2, TX4; 200: TX1, TX2; 400 `INVALID_COORDINATES` | 4 | Seed TX1–TX8 ở trạng thái đầu |
 | 14 | A20 `limit=2&page=1` → `page=3` → `limit=abc` | 200, 2 dòng, `total ≥ 6`; 200; 400 `INVALID_PAGINATION` | 3 | Token KH1; seed B1–B6 |
@@ -329,34 +342,36 @@ Cách thiết kế giảm chỗ phải kiểm tra: API "của tôi" (A17, A18, A
 | 17 | A28 `ARRIVED` → A28 `COMPLETED` (nhảy cóc) → A28 `PICKED_UP` → A28 `IN_PROGRESS` → A28 `COMPLETED` → A27 | 200; **409 `INVALID_STATUS_TRANSITION`**; 200; 200; 200; 200 với đủ lịch sử | 6 | Mục 16 |
 | 18 | A29 (KH1 hủy chuyến seed T5, kèm lý do) → A27 → A05 (TX6) + A33 → A30 (payment của B5) | 200; `CANCELED` kèm `canceled_by`; tài xế có thông báo hủy; Payment `REFUNDED` | 5 | Seed B5 / T5 / TX6 **chưa bị hủy** (chạy lại thì đặt lại seed) |
 | 18 (phụ) | A19 (`CASH`) → A22 → A22 lần hai | 201; 200 `CANCELED`; 409 `BOOKING_NOT_CANCELABLE` | 3 | Token KH1 |
-| 19 | A19 (`ONLINE`, **`CAR_7`**) → A31 (kèm `Idempotency-Key`) → A32 (`SUCCESS`, chữ ký đúng) → A30 → A21 | 201 `PENDING_PAYMENT`; 200 kèm `provider_transaction_id`; 200; Payment **`COMPLETED`**; Booking đã sang `SEARCHING` (BRULE13) | 5 | Token KH1 |
+| 19 | A19 (`ONLINE`, **`CAR_7`**) → A31 (kèm `Idempotency-Key`, không `simulate_result`) → A32 (`provider_transaction_id` vừa nhận, `SUCCESS`, header `X-Callback-Secret` đúng) → A30 → A21 | 201 `PENDING_PAYMENT`; 200 `payment_status = COMPLETED` kèm `provider_transaction_id` (adapter đã gọi callback ngay); 200, cùng kết quả, `Idempotency-Replayed: true` — hệ thống nhận callback, không xử lý lần hai; Payment **`COMPLETED`**, một giao dịch `CHARGE` `SUCCEEDED`; Booking đã sang `SEARCHING` (BRULE13) | 5 | Token KH1; `SIMULATION_MODE=true` |
+| 19 (phụ) | A19 (`ONLINE`, `CAR_7`) → A31 với `simulate_result: "FAILED"` → A32 sai khóa → A30 | 201; 200 `transaction_status = FAILED`, `payment_status = FAILED`, `attempts_remaining = 2`; 401 `INVALID_CALLBACK_SECRET`; Payment `FAILED`, Booking vẫn `PENDING_PAYMENT` (FR19, BRULE10) | 4 | Như trên |
 | 20 | A34 (chuyến của mục 17, hoặc T4 seed) → A35 → A34 lần hai → A34 cho T5 | 201 kèm `rating_id`, `trip_id`; 200; 409 `RATING_ALREADY_EXISTS`; 409 `TRIP_NOT_COMPLETED` | 4 | Mục 17, hoặc seed T4 |
 
 ### 5.3 Thực hành 3 (mục 21–30)
 
 | Mục | Chuỗi request | Kết quả mong đợi | Số request | Cần trước |
 |---|---|---|---|---|
-| 21 | A07 → A08 → A05 → A11 | 200 (môi trường demo trả OTP trong response — Q43); 201; 200 token `driver`; 201 `approval_status = PENDING` | 4 | Số điện thoại mới |
+| 21 | A07 → A08 (OTP lấy từ biến do script A07 lưu) → A05 → A11 | 200 kèm `otp` (`SIMULATION_MODE=true`; mã cũng ghi log của `auth-service`); 201; 200 token `driver`; 201 `approval_status = PENDING`. Đường lỗi: A08 với OTP sai → 400 `OTP_INVALID` | 4 | Số điện thoại mới; `SIMULATION_MODE=true` |
 | 22 | A05 (AD1) → A13 `approval_status=PENDING` → A15 (tài xế của mục 21) → A16 (TX7, kèm lý do) → A33 (tài xế) | 200; 200 có hồ sơ chờ; 200 `APPROVED`; 200 `REJECTED`; có thông báo kết quả | 5 | Mục 21; seed AD1, TX7 |
 | 23 | A17 `ONLINE` kèm vị trí → A14 → A17 `OFFLINE` → A17 bằng tài xế chưa duyệt | 200; `availability = ONLINE`; 200; 409 `DRIVER_NOT_APPROVED` | 4 | Tài xế đã duyệt (mục 22 hoặc TX5) |
-| 24 | A04 → A09; rồi **ngoài Postman**: một lệnh `docker compose exec auth-db psql …` xem `accounts`, một lệnh với `customer-db`; mở `.env.example` | API trả số điện thoại rõ cho đúng chủ; trong database cột `phone_enc`, `full_name_enc` là byte, `password_hash` bắt đầu bằng `scrypt$`; `.env` không có trên Git | 2 + 2 lệnh | — (Q52) |
+| 24 | A09 (KH1, token KH1); rồi **ngoài Postman**: một lệnh `docker compose exec auth-db psql …` xem `accounts`, một lệnh với `customer-db` xem `customer_profiles`; mở `.env.example` | API trả họ tên rõ cho đúng chủ; trong database `accounts.phone_enc`, `customer_profiles.full_name_enc` là byte, `password_hash` bắt đầu bằng `scrypt$`; `.env` không có trên Git | 1 + 2 lệnh | Seed KH1 có hồ sơ (Q52) |
 | 25 | A05 với mật khẩu `' OR '1'='1` → A05 với định danh `' OR 1=1 --` → A09 với mã `1 OR 1=1` | 401 `INVALID_CREDENTIALS`; 400; 400 `INVALID_ID`. Không lần nào 200 hay 500 | 3 | — |
-| 26 | A10 với họ tên `<script>alert(1)</script>` → A34 / A22 với nội dung chứa thẻ HTML → A09 | 400 `TEXT_CONTAINS_HTML`; 400; hồ sơ không đổi, response có `nosniff` và CSP | 3 | Token KH1 |
+| 26 | A10 (`PUT /customers/me`) với họ tên `<script>alert(1)</script>` → A34 / A22 với nội dung chứa thẻ HTML → A38 | 400 `TEXT_CONTAINS_HTML`; 400; hồ sơ không đổi, response có `nosniff` và CSP | 3 | Token KH1 (đã có hồ sơ) |
 | 27 | A09 với token bị sửa một ký tự → A09 không token → A06 → A09 với token vừa đăng xuất | 401 `TOKEN_INVALID`; 401 `TOKEN_MISSING`; 200; 401 `TOKEN_REVOKED` | 4 | Một token riêng cho mục này (sau đó đăng nhập lại) |
 | 28 | A15 bằng token khách → A19 bằng token tài xế | 403 `FORBIDDEN`; 403 | 2 | Token khách, token tài xế |
 | 29 | Một request Postman có script gửi A05 liên tiếp quá `RATE_LIMIT_PUBLIC_MAX` lần | Các lần đầu 401 / 200 kèm `RateLimit-Remaining` giảm dần; lần vượt ngưỡng **429** kèm `Retry-After` | 1 (lặp bằng script) | Chạy **sau** các mục cần đăng nhập — xem ghi chú |
-| 30 | A32 **y hệt** request của mục 19 → A31 với **cùng** `Idempotency-Key` của mục 19 → A30 | 200, body giống lần đầu, `Idempotency-Replayed: true`; response giống lần đầu; vẫn đúng một giao dịch `CHARGE` `SUCCEEDED` | 3 | Mục 19 trong cùng phiên |
+| 30 | A31 với **cùng** `Idempotency-Key` và body của mục 19 → A32 **y hệt** request của mục 19 → A30 | 200, response y hệt lần đầu, `Idempotency-Replayed: true`, không tạo lần thử mới; 200, body giống lần đầu, `Idempotency-Replayed: true`; vẫn đúng một giao dịch `CHARGE` `SUCCEEDED`, Kafka UI không có message mới ở `payment.status-changed` | 3 | Mục 19 trong cùng phiên |
 
 ### 5.4 Ghi chú về thứ tự và thời gian
 
 | Điểm | Nội dung |
 |---|---|
-| Không mục nào vượt 30 giây | Mục dài nhất là 17 (6 request). Không chuỗi nào có bước chờ: Offer xuất hiện trong khoảng một giây sau khi đặt xe; callback do Postman gửi ngay |
+| Không mục nào vượt 30 giây | Mục dài nhất là 17 (6 request); mục 11 mới có 4 request, mục 19 có 5. Không chuỗi nào có bước chờ: Offer xuất hiện trong khoảng một giây sau khi đặt xe; adapter thanh toán gọi callback ngay trong A31 nên Postman không phải tính chữ ký hay chờ |
 | Mục 15 và 19 không tranh tài xế | Mục 15–18 dùng `CAR_4` (TX1, TX2); mục 19 dùng `CAR_7` (TX4). Nếu dùng chung loại xe, Offer của booking mục 19 sẽ chiếm TX1 và mục 15 chạy sau đó nhận tài xế khác |
 | Mục 19 để lại một booking đang tìm tài xế | Không ai nhận thì sau khi hết lượt mời booking thành `NO_DRIVER_FOUND` và Payment tự `REFUNDED`. Mục 30 chạy trong vài phút sau mục 19 vẫn thấy `COMPLETED`; dù trạng thái đã đổi, replay vẫn trả đúng response cũ |
 | Mục 29 làm khóa nhóm route công khai theo IP | Trong tối đa `RATE_LIMIT_WINDOW_SECONDS` sau đó, đăng ký / đăng nhập trả 429. Mục 30 chỉ dùng token có sẵn và callback (không giới hạn theo IP) nên không bị ảnh hưởng. Khi demo có thể hạ cửa sổ xuống 10–15 giây bằng biến môi trường |
 | Mục 27 thu hồi một token | Dùng token đăng nhập riêng cho mục này, không dùng token của các mục sau |
-| Mục phụ thuộc nhau | 16 ← 15; 17 ← 16; 30 ← 19; 22 ← 21. Mục 18, 20 có đường dự phòng bằng seed |
+| Mục phụ thuộc nhau | 11 ← 9; 16 ← 15; 17 ← 16; 30 ← 19; 22 ← 21. Mục 11 (KH3, KH1), 18, 20 có đường dự phòng bằng seed |
+| Mục 11 chạy lại | Tài khoản của mục 9 đã có hồ sơ sau lần chạy đầu: chạy lại thì đăng ký số mới ở mục 9, hoặc dùng KH3 sau lệnh đặt lại seed |
 | Trạng thái đổi sau khi demo | TX1 về `ONLINE` sau mục 17; TX6 về `ONLINE` sau mục 18 (kết quả mục 13 thành 5 tài xế). Chấm lại từ đầu thì chạy lệnh đặt lại seed |
 | Demo trường hợp hết hạn (không bắt buộc) | Hạ `PAYMENT_TIMEOUT_SECONDS` hoặc `OFFER_TIMEOUT_SECONDS` xuống vài giây rồi khởi động lại service tương ứng |
 
@@ -368,12 +383,12 @@ Tên file: `proto/<service>.proto`. Cột "Ai gọi": GW = Gateway; mã S là đ
 
 | Service | rpc | Ai gọi | API / đường |
 |---|---|---|---|
-| auth | `RegisterCustomer` | GW | A04 (bên trong gọi S1) |
+| auth | `RegisterCustomer` | GW | A04 (chỉ tạo tài khoản; không gọi service khác) |
 | | `Login` | GW | A05 |
 | | `RequestDriverOtp` | GW | A07 |
 | | `RegisterDriver` | GW | A08 |
-| customer | `CreateProfile` | **auth** | **S1** |
-| | `GetCustomer` | GW | A09 |
+| customer | `CreateCustomer` | GW | A37 (thay `CreateProfile` của S1 đã bỏ) |
+| | `GetCustomer` | GW | A09, A38 |
 | | `UpdateCustomer` | GW | A10 |
 | driver | `SubmitApplication` | GW | A11 |
 | | `FindNearbyDrivers` | GW; **booking** | A12; **S2** |
@@ -398,7 +413,7 @@ Tên file: `proto/<service>.proto`. Cột "Ai gọi": GW = Gateway; mã S là đ
 | payment | `CreatePayment` | **booking** | **S4** |
 | | `GetPayment` | GW | A30 |
 | | `PayPayment` | GW | A31 |
-| | `HandleProviderCallback` | GW | A32 (phát K6) |
+| | `HandleProviderCallback` | GW | A32 (phát K6 nếu là kết quả mới). Cùng hàm xử lý mà adapter giả lập gọi nội bộ trong `PayPayment` và khi hoàn tiền |
 | notification | `ListNotifications` | GW | A33 |
 | rating | `CreateRating` | GW | A34 (gọi S7) |
 | | `GetRatingByTrip`, `GetDriverRating` | GW | A35, A36 |
@@ -409,10 +424,10 @@ Tổng: **39 rpc nghiệp vụ** (auth 4, customer 3, driver 11, booking 7, trip
 
 | Kiểm tra | Kết quả |
 |---|---|
-| S1–S7 đều có rpc | Có: `CreateProfile`, `FindNearbyDrivers`, `ReserveDriver` / `ReleaseDriver`, `CreatePayment`, `CreateTrip`, `GetDriverSummary`, `GetTripForRating` |
-| Không rpc nào đi **vào** booking, notification, auth, rating từ service khác | Đúng |
-| rpc chỉ service khác gọi, **không có đường REST** | `CreateProfile`, `ReserveDriver`, `ReleaseDriver`, `GetDriverSummary`, `CreateTrip`, `CreatePayment`, `GetTripForRating` — Gateway không định tuyến tới chúng |
-| K1–K7 đều có thao tác phát | K1, K2: `CreateBooking` và bộ ghép; K3: bộ ghép; K4: `CancelBooking` và khi nhận K6 `CANCELED`; K5: `CreateTrip`, `UpdateTripStatus`, `CancelTrip`; K6: `HandleProviderCallback`, tiến trình hết hạn, và khi nhận K3 / K4 / K5; K7: `ApproveDriver`, `RejectDriver` |
+| S2–S7 đều có rpc (S1 đã bỏ) | Có: `FindNearbyDrivers`, `ReserveDriver` / `ReleaseDriver`, `CreatePayment`, `CreateTrip`, `GetDriverSummary`, `GetTripForRating` |
+| Không rpc nào đi **vào** booking, notification, auth, customer, rating từ service khác | Đúng |
+| rpc chỉ service khác gọi, **không có đường REST** | `ReserveDriver`, `ReleaseDriver`, `GetDriverSummary`, `CreateTrip`, `CreatePayment`, `GetTripForRating` — Gateway không định tuyến tới chúng |
+| K1–K7 đều có thao tác phát | K1, K2: `CreateBooking` và bộ ghép; K3: bộ ghép; K4: `CancelBooking` và khi nhận K6 `CANCELED`; K5: `CreateTrip`, `UpdateTripStatus`, `CancelTrip`; K6: hàm xử lý callback (gọi từ `PayPayment` qua adapter, hoặc từ `HandleProviderCallback`), tiến trình hết hạn, và khi nhận K3 / K4 / K5; K7: `ApproveDriver`, `RejectDriver` |
 | Đăng xuất | Không có rpc: Gateway tự xử lý với Redis [ĐC] |
 | Chờ spec mục 16 (Q35) | Có thể thêm `GetTripByBooking` (booking → trip) để xử lý khe hở "đã tạo Trip nhưng Booking chưa ghi phân công". Chưa đưa vào danh sách |
 
@@ -434,7 +449,7 @@ Tổng: **39 rpc nghiệp vụ** (auth 4, customer 3, driver 11, booking 7, trip
 
 | Điểm | Trước | Ở đây | Vì sao |
 |---|---|---|---|
-| `/customers/me` (`docs/study/01`) | Có | Chỉ `/customers/{customer_id}` | Phiếu chấm mục 11 là "xem theo mã"; một đường dẫn cho cả khách và admin |
+| `/customers/me` (`docs/study/01`) | Có | **Có lại** (2026-10-03): `POST`, `GET`, `PUT /customers/me` để khách tạo / xem / sửa hồ sơ của mình; **giữ** `GET /customers/{customer_id}` cho mục 11 và admin | Tạo và sửa không được nhận mã từ client (C4, BRULE18); mục 11 vẫn là "xem theo mã" |
 | `/driver-requests/{id}/accept` | Tên cũ | `/offers/{offer_id}/accept` | Theo ngôn ngữ chung "Offer" của Booking |
 | `/trips/{id}/payments`, `/trips/{id}/fare` | Thanh toán gắn chuyến | `/payments/{payment_id}/…` | Trả trước: thanh toán gắn booking, lúc đó chưa có Trip (ADR-009) |
 | `/operator/*` | Nhóm route riêng | Không có; admin dùng chung route, phân biệt bằng role | Một vai trò `admin` [ĐC] |
@@ -451,7 +466,9 @@ Tổng: **39 rpc nghiệp vụ** (auth 4, customer 3, driver 11, booking 7, trip
 | P3 | A14 cho mọi role xem phần công khai của tài xế (Q9 đề xuất chỉ chính chủ và admin) | Ma trận dòng A14; mục 12 phải dùng token admin |
 | P4 | Văn bản chứa `<`, `>` bị từ chối 400 | Mục 1.6; chuỗi mục 26 |
 | P5 | `/ready` trả 503 khi Redis dừng dù Gateway vẫn phục vụ | Bảng mục 2.1 |
-| P6 | Callback không bị rate limit; chữ ký HMAC do `payment-service` kiểm tra | Mục 1.5, 2.6 |
+| P6 | Callback không bị rate limit; khóa bí mật trong header do `payment-service` kiểm tra (không HMAC — ADR-014) | Mục 1.5, 2.6 |
+| P10 | Tạo hồ sơ (`POST`, 409 nếu đã có) và sửa hồ sơ (`PUT`, 404 nếu chưa có) là hai API riêng, không gộp thành một "tạo hoặc sửa" | Gộp thành một `PUT` upsert: mất đường lỗi "trùng" và "chưa có" mà quy tắc 6 của BA yêu cầu |
+| P11 | Tham số giả lập `simulate_result` nằm trong body A31 (không phải header) | Header `X-Simulate-Result`; khóa chống lặp phải tính cả header vào `request_hash` |
 | P7 | Không phải chủ dữ liệu trả 403 (không 404) | Mục 4 |
 | P8 | `limit` tối đa 50; sai thì 400 chứ không tự sửa | Mục 1.3 |
 | P9 | Mục 18 demo bằng chuyến seed T5; mục 19 dùng `CAR_7` | Mục 5 và seed |
@@ -460,11 +477,13 @@ Tổng: **39 rpc nghiệp vụ** (auth 4, customer 3, driver 11, booking 7, trip
 
 | # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
 |---|---|---|---|---|
-| Q50 | `CLAUDE.md`: "cổng thanh toán giả lập gửi callback ngay". Ai gửi? | (a) Postman đóng vai Provider, gửi A32 ngay sau A31 — thấy rõ bước callback, replay chỉ là bấm lại; (b) adapter trong `payment-service` tự xử lý callback trong tiến trình ngay khi nhận A31 — mục 19 còn 1 request nhưng không thấy callback, mục 30 vẫn cần A32 | (a) | SV |
+| ~~Q50~~ | **Đã đóng 2026-10-03** — ai gửi callback giả lập? | Chốt (b): adapter trong `payment-service` gọi ngay hàm xử lý callback khi nhận A31; A32 vẫn giữ để demo nhận callback và replay | `CLAUDE.md` dòng "Hệ thống ngoài"; ADR-014 |
 | Q51 | Chống XSS bằng cách nào? | (a) Từ chối `<`, `>`; (b) lưu nguyên, escape khi trả; (c) escape trước khi lưu | (a) | SV / GV |
 | Q52 | Mục 24 ghi "POSTMAN", nhưng dữ liệu "at rest" chỉ thấy được trong database. Chứng minh bằng gì? | (a) Postman cho thấy API hoạt động + 2 lệnh `psql` cho thấy cột đã mã hóa; (b) thêm một API admin trả dạng lưu trữ — không đề xuất vì đưa dữ liệu mã hóa ra ngoài chỉ để demo | (a) | GV |
 | Q53 | Phiếu chấm mục 12 chạy với token nào? Nếu là token khách thì P3 cần giữ | (a) Mọi role xem phần công khai; (b) chỉ chính chủ và admin | (a) | GV |
 | Q54 | Mục 18 "hủy chuyến": chấm hủy Trip (đã có tài xế) hay hủy Booking (chưa có tài xế)? | Cả hai đã có chuỗi request | Demo hủy Trip là chính, hủy Booking là phụ | GV |
 | Q55 | Có cần API danh mục loại xe cho client không? | (a) Không; (b) `GET /api/v1/vehicle-types` | (a) | SV |
+| Q57 | Vì adapter đã gọi callback ngay trong A31, A32 ở mục 19 luôn là callback **lần hai** (trả response cũ). Giảng viên có chấp nhận đó là "hệ thống nhận callback → COMPLETED" không? | (a) Giữ như `CLAUDE.md`: A31 cho thấy `COMPLETED`, A32 cho thấy endpoint nhận và xác thực callback; (b) thêm giá trị `simulate_result: "MANUAL"` (chỉ khi `SIMULATION_MODE=true`): adapter không gọi callback, giao dịch giữ `PENDING`, A32 từ Postman là callback **đầu tiên** đổi Payment sang `COMPLETED` | (a) — đúng quyết định đã chốt; (b) chỉ là mở rộng một giá trị của cùng tham số nếu giảng viên muốn thấy callback làm đổi trạng thái | GV |
+| Q58 | Hồ sơ khách có cần số điện thoại / email liên hệ không, khi số đăng nhập chỉ nằm ở Auth? | (a) Không: hồ sơ chỉ họ tên, ngày sinh (file 03 mục 4.1); (b) client gửi thêm số liên hệ khi tạo hồ sơ, không xác thực | (a) | SV |
 
-Chưa kiểm tra được ở vòng thiết kế: thời gian thực của từng chuỗi request; Postman tính được chữ ký HMAC trên đúng nguyên văn body mà Gateway nhận; độ trễ từ lúc đặt xe đến lúc A23 thấy Offer.
+Chưa kiểm tra được ở vòng thiết kế: thời gian thực của từng chuỗi request; độ trễ từ lúc đặt xe đến lúc A23 thấy Offer; độ trễ từ A31 đến lúc Booking sang `SEARCHING` (một nhịp K6).
