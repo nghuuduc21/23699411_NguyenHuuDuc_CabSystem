@@ -1,7 +1,7 @@
 // Hợp đồng gRPC của auth-service (spec 09-10 mục 5).
 // Gateway gọi hai rpc công khai này; auth-service không gọi service nào khác (A8, ADR-013).
 // Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi, ví dụ ALREADY_EXISTS + "PHONE_ALREADY_EXISTS".
-// Spec 21 sẽ thêm RequestDriverOtp, RegisterDriver vào cùng service.
+// Spec 12-13-21-23 thêm RequestDriverOtp, RegisterDriver (đăng ký tài xế bằng OTP, mục chấm 21).
 syntax = "proto3";
 
 package cab.auth.v1;
@@ -11,6 +11,11 @@ service AuthService {
   rpc RegisterCustomer (RegisterCustomerRequest) returns (RegisterCustomerResponse);
   // A05 POST /api/v1/auth/login — cả ba role đăng nhập cùng một rpc.
   rpc Login (LoginRequest) returns (LoginResponse);
+  // A07 POST /api/v1/otps — xin OTP cho số chưa có tài khoản. "Gửi SMS" = ghi log (ADR-014).
+  rpc RequestDriverOtp (RequestDriverOtpRequest) returns (RequestDriverOtpResponse);
+  // A08 POST /api/v1/driver-accounts — kiểm tra OTP rồi tạo tài khoản role `driver`; trả luôn token
+  // để tài xế nộp hồ sơ ngay, bớt một request đăng nhập (04 P15).
+  rpc RegisterDriver (RegisterDriverRequest) returns (RegisterDriverResponse);
 }
 
 message RegisterCustomerRequest {
@@ -37,4 +42,28 @@ message LoginResponse {
   int64 account_id = 2;
   string role = 3;
   int32 expires_in = 4;  // giây, bằng JWT_TTL_SECONDS
+}
+
+message RequestDriverOtpRequest {
+  string phone = 1;
+}
+
+message RequestDriverOtpResponse {
+  string phone = 1;          // số đã chuẩn hóa về 0 + 9 chữ số
+  int32 expires_in = 2;      // giây, bằng OTP_TTL_SECONDS
+  // Chỉ có khi SIMULATION_MODE=true (ADR-014): Postman dùng tiếp mà không cần SMS thật.
+  optional string otp = 3;
+}
+
+message RegisterDriverRequest {
+  string phone = 1;
+  string otp = 2;            // 6 chữ số
+  string password = 3;
+}
+
+message RegisterDriverResponse {
+  int64 account_id = 1;      // cũng là driver_id khi nộp hồ sơ (A11): hai service không gọi nhau
+  string role = 2;           // luôn "driver"
+  string token = 3;          // JWT HS256, cùng dạng với Login
+  int32 expires_in = 4;      // giây, bằng JWT_TTL_SECONDS
 }

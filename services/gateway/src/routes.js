@@ -4,14 +4,29 @@
 //   rpc:      null = Gateway tự trả lời, không gọi service.
 //   validate: kiểm tra hình thức body, trả mã lỗi hoặc null (không có = không có body).
 //   validateParams: kiểm tra tham số đường dẫn (ví dụ `:id` phải là số nguyên dương).
+//   select:   (chỉ đường dẫn có nhiều mã API — 04 mục 1.10) tra bảng theo body / query, trả
+//             { error } hoặc { roles, handler } của biến thể; message gRPC dựng sẵn ở req.rpcRequest.
 // A01–A03 nằm ngoài tiền tố /api/v1 vì không phải tài nguyên nghiệp vụ.
 import { ROLES } from './token.js';
 import {
-  validateCreateCustomer, validateIdParam, validateLogin, validateRegister, validateUpdateCustomer,
+  parseDriverMeBody, parseDriversQuery, parseReviewBody, validateCreateCustomer, validateIdParam, validateLogin,
+  validateRegister, validateRegisterDriver, validateRequestOtp, validateSubmitDriver, validateUpdateCustomer,
 } from './validate.js';
 
-// customers: handler hồ sơ khách (spec 11). Test chỉ thử health / auth thì không truyền → không có route này.
-export function buildRoutes({ health, auth, customers }) {
+// Biến bảng biến thể { mã: { roles, handler } } thành hàm `select` cho app.js:
+// `parse` trả { error } hoặc { variant, request }; request được gắn vào req để handler chuyển thẳng.
+function selectBy(parse, variants) {
+  return (req) => {
+    const parsed = parse(req);
+    if (parsed.error) return parsed;
+    req.rpcRequest = parsed.request;
+    return variants[parsed.variant];
+  };
+}
+
+// customers: handler hồ sơ khách (spec 11); drivers: handler tài xế (spec 12-13-21-23).
+// Test chỉ thử health / auth thì không truyền → không có các route này.
+export function buildRoutes({ health, auth, customers, drivers }) {
   return [
     { code: 'A01', method: 'GET', path: '/health', roles: null, rpc: null, handler: health.live },
     { code: 'A02', method: 'GET', path: '/ready', roles: null, rpc: null, handler: health.ready },
@@ -22,6 +37,10 @@ export function buildRoutes({ health, auth, customers }) {
     // Hai ngoại lệ có chủ đích (04 mục 1.9): đăng nhập, đăng xuất không tạo tài nguyên nào.
     { code: 'A05', method: 'POST', path: '/api/v1/auth/login', roles: null, rpc: 'cab.auth.v1.AuthService/Login', validate: validateLogin, handler: auth.login },
     { code: 'A06', method: 'POST', path: '/api/v1/auth/logout', roles: ROLES, rpc: null, handler: auth.logout },
+    // Spec 12-13-21-23. Mã OTP là một tài nguyên được tạo → POST /otps (04 R7). Đăng ký tài xế tạo một
+    // tài khoản tài xế → POST /driver-accounts. Cả hai công khai: người đăng ký chưa có token.
+    { code: 'A07', method: 'POST', path: '/api/v1/otps', roles: null, rpc: 'cab.auth.v1.AuthService/RequestDriverOtp', validate: validateRequestOtp, handler: auth.requestOtp },
+    { code: 'A08', method: 'POST', path: '/api/v1/driver-accounts', roles: null, rpc: 'cab.auth.v1.AuthService/RegisterDriver', validate: validateRegisterDriver, handler: auth.registerDriver },
 
     // Spec 11. Tạo hồ sơ = POST vào tập `customers`; không có mã trong đường dẫn vì mã = mã trong token.
     // Admin chỉ xem, tài xế không dùng hồ sơ khách (BRULE18) → hai role này bị 403 FORBIDDEN ngay ở Gateway.
@@ -33,6 +52,43 @@ export function buildRoutes({ health, auth, customers }) {
       { code: 'A09', method: 'GET', path: '/api/v1/customers/:id', roles: ['customer', 'admin'], rpc: 'cab.customer.v1.CustomerService/GetCustomer', validateParams: validateIdParam, handler: customers.byId },
       // PATCH = sửa một phần. Không có PATCH /customers/{id}: chỉ chủ được sửa hồ sơ của mình.
       { code: 'A10', method: 'PATCH', path: '/api/v1/customers/me', roles: ['customer'], rpc: 'cab.customer.v1.CustomerService/UpdateCustomer', validate: validateUpdateCustomer, handler: customers.update },
+    ] : []),
+
+    // Spec 12-13-21-23 — tài xế. Role của ĐƯỜNG DẪN kiểm trước khi đọc body / query (mục chấm 28);
+    // role của BIẾN THỂ kiểm sau khi chọn (04 mục 1.10).
+    ...(drivers ? [
+      // A11: nộp hồ sơ = POST vào tập `drivers`; mã = mã trong token.
+      { code: 'A11', method: 'POST', path: '/api/v1/drivers', roles: ['driver'], rpc: 'cab.driver.v1.DriverService/SubmitApplication', validate: validateSubmitDriver, handler: drivers.submit },
+      // GET /drivers: có lat / lng → A12 (khách, admin); không → A13 (chỉ admin). Tài xế bị 403 ngay.
+      {
+        code: 'A12|A13', method: 'GET', path: '/api/v1/drivers', roles: ['customer', 'admin'],
+        rpc: 'cab.driver.v1.DriverService/FindNearbyDrivers|ListDrivers',
+        select: selectBy((req) => parseDriversQuery(req.query), {
+          A12: { roles: ['customer', 'admin'], handler: drivers.nearby },
+          A13: { roles: ['admin'], handler: drivers.list },
+        }),
+      },
+      // `/drivers/me` khai báo TRƯỚC `/drivers/:id`: Express khớp theo thứ tự, nếu đảo thì "me" bị coi là mã → 400.
+      {
+        code: 'A17|A39|A18', method: 'PATCH', path: '/api/v1/drivers/me', roles: ['driver'],
+        rpc: 'cab.driver.v1.DriverService/SetAvailability|UpdateLocation',
+        select: selectBy((req) => parseDriverMeBody(req.body), {
+          A17: { handler: drivers.availability },
+          A39: { handler: drivers.availability },
+          A18: { handler: drivers.location },
+        }),
+      },
+      // A14: cả ba role; service quyết định phần công khai hay đầy đủ.
+      { code: 'A14', method: 'GET', path: '/api/v1/drivers/:id', roles: ROLES, rpc: 'cab.driver.v1.DriverService/GetDriver', validateParams: validateIdParam, handler: drivers.byId },
+      // A15 / A16: chỉ admin — khách, tài xế bị 403 dù body rỗng (AC-TX-17).
+      {
+        code: 'A15|A16', method: 'PATCH', path: '/api/v1/drivers/:id', roles: ['admin'],
+        rpc: 'cab.driver.v1.DriverService/ApproveDriver|RejectDriver', validateParams: validateIdParam,
+        select: selectBy((req) => parseReviewBody(req.body), {
+          A15: { handler: drivers.approve },
+          A16: { handler: drivers.reject },
+        }),
+      },
     ] : []),
   ];
 }

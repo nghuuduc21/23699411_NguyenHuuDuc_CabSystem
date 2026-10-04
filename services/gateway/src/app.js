@@ -87,6 +87,23 @@ function wrap(route, authenticate) {
       res.status(400).json({ error });
       return;
     }
+    // Một đường dẫn, nhiều mã API (04 mục 1.10): `select` TRA BẢNG theo một field của body / query để
+    // chọn biến thể, đồng thời kiểm tra hình thức của biến thể đó. Không quyết định nghiệp vụ nào.
+    //   10. sai hình thức / không chọn được biến thể → 400
+    //   11. role của BIẾN THỂ (sau role của đường dẫn) → 403, ví dụ khách gọi A13 chỉ dành cho admin
+    if (route.select) {
+      const variant = route.select(req);
+      if (variant.error) {
+        res.status(400).json({ error: variant.error });
+        return;
+      }
+      if (variant.roles && !variant.roles.includes(req.identity.role)) {
+        res.status(403).json({ error: 'FORBIDDEN' });
+        return;
+      }
+      await variant.handler(req, res);
+      return;
+    }
     await route.handler(req, res);
   };
 }

@@ -63,9 +63,12 @@ export function createGrpcServer({ health, auth, log }) {
   if (auth) {
     const authProto = loadProto('auth.proto');
     server.addService(authProto.cab.auth.v1.AuthService.service, {
-      // Hai rpc công khai: không đọc x-account-id / x-role trong metadata.
+      // Mọi rpc ở đây công khai: không đọc x-account-id / x-role trong metadata.
       RegisterCustomer: unary((req) => auth.registerCustomer(req), log),
       Login: unary((req) => auth.login(req), log),
+      // Spec 12-13-21-23: đăng ký tài xế bằng OTP; cũng công khai (người đăng ký chưa có token).
+      RequestDriverOtp: unary((req) => auth.requestDriverOtp(req), log),
+      RegisterDriver: unary((req) => auth.registerDriver(req), log),
     });
   }
   return server;

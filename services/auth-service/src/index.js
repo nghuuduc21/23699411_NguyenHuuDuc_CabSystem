@@ -9,8 +9,10 @@ import { runMigrations } from './migrate.js';
 import { runSeed } from './seed.js';
 import { createHealth } from './health.js';
 import { createGrpcServer, startGrpcServer } from './grpc/server.js';
+import { randomInt } from 'node:crypto';
 import { createAccountsRepo } from './accounts-repo.js';
-import { createAuthLogic } from './domain/auth.js';
+import { createOtpsRepo } from './otps-repo.js';
+import { createAuthLogic, randomOtp } from './domain/auth.js';
 import { hashPassword, verifyPassword } from './domain/password.js';
 import { createTokenSigner } from './domain/token.js';
 
@@ -37,6 +39,11 @@ const auth = createAuthLogic({
   passwords: { hash: hashPassword, verify: verifyPassword },
   tokens: createTokenSigner({ secret: config.jwtSecret, ttlSeconds: config.jwtTtlSeconds }),
   log,
+  // OTP đăng ký tài xế (spec 12-13-21-23): hạn đọc từ OTP_TTL_SECONDS để chỉnh ngắn khi demo hết hạn.
+  otps: createOtpsRepo(pool),
+  otpTtlSeconds: config.otpTtlSeconds,
+  simulationMode: config.simulationMode,
+  newOtp: () => randomOtp(randomInt),
 });
 const server = createGrpcServer({ health, auth, log });
 

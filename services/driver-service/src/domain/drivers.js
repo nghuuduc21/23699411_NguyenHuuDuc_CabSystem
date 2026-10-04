@@ -1,0 +1,233 @@
+// Logic nghiệp vụ của Driver & Vehicle (spec 12-13-21-23): nộp hồ sơ (UC29), duyệt / từ chối (UC30),
+// xem tài xế (UC20, UC21), tìm quanh tọa độ (UC06), bật / tắt và vị trí (UC28, UC12).
+// Mọi phụ thuộc (kho dữ liệu, bộ mã hóa, bộ phát event, log) truyền từ ngoài vào
+// nên test chạy được không cần PostgreSQL, Kafka hay gRPC.
+// `identity` = { accountId, role } dạng chuỗi lấy từ metadata do Gateway dựng (tầng gRPC đọc giúp).
+import {
+  APPROVAL_STATUSES, boundingBox, checkCoordinates, checkId, checkPagination, cleanReason, cleanText,
+  DriverError, invalid, isPresent, NAME_MAX, normalizeLicense, normalizePlate, normalizeVehicle,
+  pagination, requireRole, SEARCH_RADIUS_M, VEHICLE_TEXT_MAX,
+} from './rules.js';
+
+export const TOPIC_APPLICATION_REVIEWED = 'driver.application-reviewed'; // K7
+
+const notFound = () => new DriverError('NOT_FOUND', 'DRIVER_NOT_FOUND');
+
+// Tên ràng buộc trong migration 001 → mã lỗi (lỗi 23505 trùng, 23503 khóa ngoại).
+const CONSTRAINT_TO_ERROR = {
+  vehicles_license_plate_key: () => new DriverError('ALREADY_EXISTS', 'LICENSE_PLATE_ALREADY_EXISTS'),
+  vehicles_vehicle_type_fkey: () => invalid(), // loại xe không có trong vehicle_types
+};
+
+export function createDriverLogic({ drivers, cipher, events, log }) {
+  // Giải mã số giấy phép. Hỏng (sửa tay trong database, sai khóa) thì KHÔNG trả dữ liệu sai:
+  // ghi log kèm mã tài xế (không kèm dữ liệu) rồi báo INTERNAL → Gateway 503.
+  function decryptLicense(row) {
+    try {
+      return cipher.decrypt(row.license_number_enc);
+    } catch {
+      log.error('decrypt_failed', { driver_id: row.driver_id });
+      throw new DriverError('INTERNAL', 'INTERNAL');
+    }
+  }
+
+  // Phần CÔNG KHAI (FR14): ai đã đăng nhập cũng thấy — họ tên, loại xe, biển số, trạng thái.
+  const publicView = (row) => ({
+    driver_id: row.driver_id,
+    name: row.full_name,
+    vehicle: row.vehicle_type,
+    plate: row.license_plate,
+    status: row.availability,
+  });
+
+  // Dạng ĐẦY ĐỦ cho chính chủ và admin. Field NULL thì không đưa vào (proto `optional` → JSON không có key).
+  function fullView(row) {
+    const out = { ...publicView(row), approval_status: row.approval_status, license: decryptLicense(row) };
+    if (row.current_lat !== null) {
+      out.lat = row.current_lat;
+      out.lng = row.current_lng;
+    }
+    for (const [key, column] of [['brand', 'brand'], ['model', 'model'], ['color', 'color'], ['reason', 'reject_reason']]) {
+      if (row[column] !== null && row[column] !== undefined) out[key] = row[column];
+    }
+    return out;
+  }
+
+  // Phát K7 SAU KHI database đã ghi xong (ADR-017). Gửi lỗi thì KHÔNG hoàn tác việc duyệt và vẫn trả
+  // thành công: duyệt hồ sơ không được thất bại vì Kafka / Notification lỗi (NFR05). Chỉ ghi log để xử lý tay.
+  // Event chỉ mang mã và kết quả — không họ tên, không số giấy phép, không lý do (02 mục 6.1).
+  async function publishReviewed(driverId, result) {
+    try {
+      await events.publish(TOPIC_APPLICATION_REVIEWED, String(driverId), { driver_id: driverId, result });
+    } catch (err) {
+      log.error('EVENT_PUBLISH_FAILED', { topic: TOPIC_APPLICATION_REVIEWED, key: String(driverId), reason: err?.name ?? 'Error' });
+    }
+  }
+
+  // A15 / A16 dùng chung: một lệnh UPDATE có điều kiện PENDING → nếu không khớp thì phân biệt 404 / 409.
+  async function review(driverId, identity, approvalStatus, reason) {
+    const updated = await drivers.review({ driverId, approvalStatus, reviewedBy: identity.accountId, reason });
+    if (!updated) {
+      if (!(await drivers.exists(driverId))) throw notFound();
+      // Đã APPROVED / REJECTED: không xét lại, không nộp lại (D5, Q47 đã chốt).
+      throw new DriverError('FAILED_PRECONDITION', 'APPLICATION_ALREADY_REVIEWED');
+    }
+    // Chỉ ghi mã và kết quả, KHÔNG ghi lý do hay họ tên (NFR08, NFR10).
+    log.info('driver_reviewed', { driver_id: driverId, result: approvalStatus, reviewed_by: identity.accountId });
+    await publishReviewed(driverId, approvalStatus);
+    return updated;
+  }
+
+  return {
+    // A11: driver_id = mã tài khoản trong token (cùng mẫu ADR-013): tài xế không nộp hộ người khác,
+    // và auth-service không phải gọi sang đây.
+    async submitApplication(req, identity) {
+      const { accountId } = requireRole(identity, ['driver']);
+      // Kiểm tra hết TRƯỚC khi ghi: dữ liệu sai thì không có gì được tạo.
+      const fullName = cleanText(req.name, NAME_MAX);
+      const license = normalizeLicense(req.license);
+      const plate = normalizePlate(req.plate);
+      const vehicleType = normalizeVehicle(req.vehicle);
+      const extra = {};
+      for (const key of ['brand', 'model', 'color']) extra[key] = isPresent(req[key]) ? cleanText(req[key], VEHICLE_TEXT_MAX) : null;
+
+      let inserted;
+      try {
+        inserted = await drivers.insertApplication({
+          driverId: accountId, fullName, licenseEnc: cipher.encrypt(license), vehicleType, plate, ...extra,
+        });
+      } catch (err) {
+        const toError = (err.code === '23505' || err.code === '23503') && CONSTRAINT_TO_ERROR[err.constraint];
+        if (toError) throw toError();
+        throw err;
+      }
+      if (!inserted) throw new DriverError('ALREADY_EXISTS', 'DRIVER_ALREADY_EXISTS');
+      // Chỉ ghi mã: không ghi họ tên, số giấy phép (NFR08, NFR10).
+      log.info('driver_applied', { driver_id: accountId });
+      // Chủ hồ sơ → dạng đầy đủ (thấy lại số giấy phép mình vừa nhập, đã chuẩn hóa).
+      const out = {
+        driver_id: accountId, name: fullName, vehicle: vehicleType, plate, status: 'OFFLINE',
+        approval_status: 'PENDING', license,
+      };
+      for (const key of ['brand', 'model', 'color']) if (extra[key] !== null) out[key] = extra[key];
+      return out;
+    },
+
+    // A14: mọi role xem được; mức chi tiết tùy người xem (04 mục 4).
+    async getDriver({ driver_id: driverId }, identity) {
+      const { accountId, role } = requireRole(identity, ['customer', 'driver', 'admin']);
+      checkId(driverId);
+      const row = await drivers.findById(driverId);
+      if (!row) throw notFound();
+      const isOwnerOrAdmin = role === 'admin' || accountId === driverId;
+      if (isOwnerOrAdmin) return fullView(row);
+      // Hồ sơ chưa duyệt / bị từ chối chưa phải "tài xế của hệ thống": người khác nhận 404 như không có (TX3).
+      if (row.approval_status !== 'APPROVED') throw notFound();
+      return publicView(row);
+    },
+
+    // A13: danh sách hồ sơ cho admin, cũ nhất trước. Không giải mã số giấy phép (xem từng hồ sơ ở A14).
+    async listDrivers({ approval_status: approvalStatus, page, limit }, identity) {
+      requireRole(identity, ['admin']);
+      let filter = null;
+      if (isPresent(approvalStatus)) {
+        filter = String(approvalStatus).toUpperCase();
+        if (!APPROVAL_STATUSES.includes(filter)) throw invalid();
+      }
+      const paging = checkPagination(page, limit);
+      const { rows, total } = await drivers.list({ approvalStatus: filter, limit: paging.limit, offset: paging.offset });
+      return {
+        data: rows.map((row) => ({
+          ...publicView(row),
+          approval_status: row.approval_status,
+          created_at: new Date(row.created_at).toISOString(),
+        })),
+        pagination: pagination(paging.page, paging.limit, total),
+      };
+    },
+
+    // A12 (và S2 của booking ở spec 15): ONLINE + APPROVED + đúng loại xe + trong 1 km, gần nhất trước.
+    // Role: customer, admin. Lời gọi nội bộ của booking sẽ quyết ở spec 15 (TX-Q3).
+    async findNearbyDrivers({ lat, lng, vehicle, page, limit }, identity) {
+      requireRole(identity, ['customer', 'admin']);
+      checkCoordinates(lat, lng);
+      let vehicleType = null;
+      if (isPresent(vehicle)) {
+        vehicleType = normalizeVehicle(vehicle);
+        // Loại xe lạ (`BUS`) là lỗi của request, không phải "không có ai" — báo 400 thay vì trả rỗng.
+        if (!(await drivers.vehicleTypeExists(vehicleType))) throw invalid();
+      }
+      const paging = checkPagination(page, limit);
+      const { dLat, dLng } = boundingBox(lat);
+      const { rows, total } = await drivers.findNearby({
+        lat, lng, vehicle: vehicleType, dLat, dLng, radiusM: SEARCH_RADIUS_M, limit: paging.limit, offset: paging.offset,
+      });
+      return {
+        // Không trả tọa độ của tài xế (NFR08): khách chỉ cần biết cách bao xa.
+        data: rows.map((row) => ({
+          driver_id: row.driver_id,
+          name: row.full_name,
+          vehicle: row.vehicle_type,
+          plate: row.license_plate,
+          distance_m: Math.round(row.distance),
+        })),
+        pagination: pagination(paging.page, paging.limit, total),
+      };
+    },
+
+    // A15
+    async approveDriver({ driver_id: driverId }, identity) {
+      const caller = requireRole(identity, ['admin']);
+      checkId(driverId);
+      await review(driverId, caller, 'APPROVED', null);
+      return { driver_id: driverId, approval_status: 'APPROVED' };
+    },
+
+    // A16: lý do bắt buộc (FR36), lưu trong database để tài xế xem ở A14; KHÔNG đưa vào event.
+    async rejectDriver({ driver_id: driverId, reason }, identity) {
+      const caller = requireRole(identity, ['admin']);
+      checkId(driverId);
+      const cleanedReason = cleanReason(reason === '' ? undefined : reason);
+      await review(driverId, caller, 'REJECTED', cleanedReason);
+      return { driver_id: driverId, approval_status: 'REJECTED', reason: cleanedReason };
+    },
+
+    // A17 / A39: tài xế tự bật / tắt nhận chuyến. BUSY chỉ hệ thống đặt và nhả (D8).
+    async setAvailability({ status, lat, lng }, identity) {
+      const { accountId } = requireRole(identity, ['driver']);
+      const target = typeof status === 'string' ? status.toUpperCase() : '';
+      if (target !== 'ONLINE' && target !== 'OFFLINE') throw invalid();
+      const hasLat = isPresent(lat);
+      if (hasLat !== isPresent(lng)) throw invalid(); // tọa độ phải đủ cặp
+      if (hasLat && target === 'OFFLINE') throw invalid(); // A39 chỉ nhận `status`
+      if (hasLat) checkCoordinates(lat, lng);
+
+      const updated = await drivers.updateAvailabilityLocked(accountId, (row) => {
+        if (row.availability === 'BUSY') {
+          // Đang chở khách: không tự bật / tắt được, chỉ hệ thống nhả khi chuyến kết thúc (D8).
+          throw new DriverError('FAILED_PRECONDITION', 'DRIVER_NOT_AVAILABLE');
+        }
+        if (target === 'OFFLINE') return { availability: 'OFFLINE' }; // giữ vị trí; đã OFFLINE → vẫn 200
+        // D6: chưa được admin duyệt thì không nhận chuyến.
+        if (row.approval_status !== 'APPROVED') throw new DriverError('FAILED_PRECONDITION', 'DRIVER_NOT_APPROVED');
+        // Bật lần đầu phải có vị trí, nếu không thì không ai tìm thấy tài xế này.
+        if (!hasLat && row.current_lat === null) throw invalid();
+        return hasLat ? { availability: 'ONLINE', lat, lng } : { availability: 'ONLINE' };
+      });
+      if (!updated) throw notFound(); // tài khoản driver chưa nộp hồ sơ
+      // Không ghi tọa độ vào log (NFR08).
+      log.info('availability_changed', { driver_id: accountId, status: updated.availability });
+      if (updated.availability === 'OFFLINE') return { driver_id: accountId, status: 'OFFLINE' };
+      return { driver_id: accountId, status: updated.availability, lat: updated.current_lat, lng: updated.current_lng };
+    },
+
+    // A18: ghi vị trí mới nhất ở mọi trạng thái (tài xế cập nhật trước khi bật Online — TX9).
+    async updateLocation({ lat, lng }, identity) {
+      const { accountId } = requireRole(identity, ['driver']);
+      checkCoordinates(lat, lng);
+      const updated = await drivers.updateLocation({ driverId: accountId, lat, lng });
+      if (!updated) throw notFound();
+      return { driver_id: accountId, lat: updated.current_lat, lng: updated.current_lng };
+    },
+  };
+}

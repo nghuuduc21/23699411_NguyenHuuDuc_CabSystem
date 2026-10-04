@@ -1,0 +1,143 @@
+// Hợp đồng gRPC của driver-service (spec 12-13-21-23 mục 5.2). Mục chấm 12, 13, 21, 22, 23.
+// Gateway gọi 8 rpc dưới đây. Booking sẽ gọi FindNearbyDrivers ở spec 15 (S2);
+// ReserveDriver, ReleaseDriver (spec 16) và GetDriverSummary (spec sau) CHƯA khai báo ở đây.
+// Danh tính người gọi KHÔNG nằm trong message mà trong metadata `x-account-id`, `x-role` do Gateway
+// dựng từ token đã kiểm tra: tài xế không tự khai được mã của mình (driver_id = account_id).
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi, ví dụ NOT_FOUND + "DRIVER_NOT_FOUND".
+// Tên field trùng tên JSON của API (`name`, `plate`, `status`…) để Gateway chuyển thẳng;
+// cột database vẫn tên đầy đủ (`full_name`, `license_plate`, `availability`…).
+syntax = "proto3";
+
+package cab.driver.v1;
+
+service DriverService {
+  // A11 POST /api/v1/drivers — tài xế nộp hồ sơ và xe → PENDING. Chỉ role `driver`.
+  rpc SubmitApplication (SubmitApplicationRequest) returns (Driver);
+  // A14 GET /api/v1/drivers/{id} — cả ba role; người khác thấy phần công khai, chủ và admin thấy đầy đủ.
+  rpc GetDriver (GetDriverRequest) returns (Driver);
+  // A13 GET /api/v1/drivers?approval_status=… — danh sách hồ sơ cho admin, cũ nhất trước.
+  rpc ListDrivers (ListDriversRequest) returns (ListDriversResponse);
+  // A12 GET /api/v1/drivers?lat&lng — tài xế ONLINE, đã duyệt, đúng loại xe, trong 1 km, gần nhất trước.
+  rpc FindNearbyDrivers (FindNearbyDriversRequest) returns (FindNearbyDriversResponse);
+  // A15 PATCH /api/v1/drivers/{id} {"approval_status":"APPROVED"} — chỉ admin; phát K7.
+  rpc ApproveDriver (ApproveDriverRequest) returns (ReviewResult);
+  // A16 PATCH /api/v1/drivers/{id} {"approval_status":"REJECTED","reason":…} — chỉ admin; phát K7.
+  rpc RejectDriver (RejectDriverRequest) returns (ReviewResult);
+  // A17 / A39 PATCH /api/v1/drivers/me {"status":"ONLINE"|"OFFLINE"} — chỉ tài xế, của chính mình.
+  rpc SetAvailability (SetAvailabilityRequest) returns (Availability);
+  // A18 PATCH /api/v1/drivers/me {"lat","lng"} — ghi vị trí mới nhất.
+  rpc UpdateLocation (UpdateLocationRequest) returns (Location);
+}
+
+// `optional`: không có giá trị thì field vắng hẳn, Gateway không đưa key vào JSON.
+// Nhờ vậy phần công khai của A14 không có key `license`, `lat`, `lng` (NFR08).
+message Driver {
+  int64 driver_id = 1;
+  string name = 2;
+  string vehicle = 3;                  // MOTORBIKE | CAR_4 | CAR_7
+  string plate = 4;                    // biển số đã chuẩn hóa, ví dụ 59A-00001
+  string status = 5;                   // trạng thái nhận chuyến: ONLINE | OFFLINE | BUSY
+  optional string approval_status = 6; // PENDING | APPROVED | REJECTED (chỉ chủ, admin)
+  optional string license = 7;         // số giấy phép đã giải mã (chỉ chủ, admin)
+  optional double lat = 8;
+  optional double lng = 9;
+  optional string brand = 10;
+  optional string model = 11;
+  optional string color = 12;
+  optional string reason = 13;         // lý do từ chối, khi REJECTED
+  optional string created_at = 14;     // ISO 8601 UTC, dùng ở A13
+}
+
+message Pagination {
+  int32 page = 1;
+  int32 limit = 2;
+  int32 total = 3;
+  int32 total_pages = 4;
+}
+
+// Không có tọa độ của tài xế (NFR08): khách chỉ cần biết cách bao xa.
+message NearbyDriver {
+  int64 driver_id = 1;
+  string name = 2;
+  string vehicle = 3;
+  string plate = 4;
+  int32 distance_m = 5;                // mét, làm tròn
+}
+
+message SubmitApplicationRequest {
+  string name = 1;
+  string license = 2;
+  string plate = 3;
+  string vehicle = 4;                  // Gateway điền "CAR_4" khi client không gửi
+  optional string brand = 5;
+  optional string model = 6;
+  optional string color = 7;
+}
+
+message GetDriverRequest {
+  int64 driver_id = 1;
+}
+
+message ListDriversRequest {
+  optional string approval_status = 1; // không gửi = mọi trạng thái
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message ListDriversResponse {
+  repeated Driver data = 1;
+  Pagination pagination = 2;
+}
+
+// Không có field bán kính: 1 000 m là hằng số trong driver-service (03 mục 13, 04 P18).
+message FindNearbyDriversRequest {
+  double lat = 1;
+  double lng = 2;
+  optional string vehicle = 3;         // không gửi = mọi loại xe
+  int32 page = 4;
+  int32 limit = 5;
+}
+
+message FindNearbyDriversResponse {
+  repeated NearbyDriver data = 1;
+  Pagination pagination = 2;
+}
+
+message ApproveDriverRequest {
+  int64 driver_id = 1;
+}
+
+message RejectDriverRequest {
+  int64 driver_id = 1;
+  string reason = 2;                   // bắt buộc (FR36)
+}
+
+message ReviewResult {
+  int64 driver_id = 1;
+  string approval_status = 2;
+  optional string reason = 3;
+}
+
+message SetAvailabilityRequest {
+  string status = 1;                   // ONLINE | OFFLINE (BUSY chỉ hệ thống đặt — D8)
+  optional double lat = 2;             // cả hai hoặc không; chỉ dùng với ONLINE
+  optional double lng = 3;
+}
+
+message Availability {
+  int64 driver_id = 1;
+  string status = 2;
+  optional double lat = 3;             // OFFLINE không trả tọa độ
+  optional double lng = 4;
+}
+
+message UpdateLocationRequest {
+  double lat = 1;
+  double lng = 2;
+}
+
+message Location {
+  int64 driver_id = 1;
+  double lat = 2;
+  double lng = 3;
+}

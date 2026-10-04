@@ -4,9 +4,10 @@
 import { createLogger } from './log.js';
 import { BACKEND_SERVICES, ConfigError, loadConfig } from './config.js';
 import { createRedis, createRevocationStore, pingRedis } from './redis.js';
-import { createAuthClient, createCustomerClient, createHealthClients } from './grpc/clients.js';
+import { createAuthClient, createCustomerClient, createDriverClient, createHealthClients } from './grpc/clients.js';
 import { createAuthHandlers } from './handlers/auth.js';
 import { createCustomerHandlers } from './handlers/customers.js';
+import { createDriverHandlers } from './handlers/drivers.js';
 import { createAuthenticator } from './token.js';
 import { createHealthHandlers } from './health.js';
 import { buildRoutes } from './routes.js';
@@ -30,6 +31,7 @@ const redis = createRedis(config.redisUrl, log);
 const healthClients = createHealthClients(config.grpcAddrs);
 const authClient = createAuthClient(config.grpcAddrs['auth-service']);
 const customerClient = createCustomerClient(config.grpcAddrs['customer-service']);
+const driverClient = createDriverClient(config.grpcAddrs['driver-service']);
 const revocations = createRevocationStore(redis);
 
 const health = createHealthHandlers({
@@ -39,8 +41,9 @@ const health = createHealthHandlers({
 });
 const auth = createAuthHandlers({ authClient, revocations, log });
 const customers = createCustomerHandlers({ customerClient });
+const drivers = createDriverHandlers({ driverClient });
 const authenticate = createAuthenticator({ secret: config.jwtSecret, isRevoked: revocations.isRevoked, log });
-const app = createApp({ routes: buildRoutes({ health, auth, customers }), log, authenticate });
+const app = createApp({ routes: buildRoutes({ health, auth, customers, drivers }), log, authenticate });
 
 const server = app.listen(HTTP_PORT, '0.0.0.0', () => log.info('HTTP đang nghe', { port: HTTP_PORT }));
 
@@ -51,6 +54,7 @@ const shutdown = () => {
   for (const client of Object.values(healthClients)) client.close();
   authClient.close();
   customerClient.close();
+  driverClient.close();
   redis.disconnect();
   process.exit(0);
 };

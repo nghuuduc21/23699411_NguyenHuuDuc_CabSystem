@@ -1,4 +1,4 @@
-// Hàm xử lý A04, A05, A06 (spec 09-10 mục 4.2–4.4).
+// Hàm xử lý A04, A05, A06 (spec 09-10 mục 4.2–4.4) và A07, A08 (spec 12-13-21-23 mục 4.2, 4.3).
 // Không có logic nghiệp vụ: A04, A05 chỉ đổi REST ↔ gRPC; A06 chỉ ghi `jti` vào danh sách thu hồi.
 // Kiểm tra token, role, hình thức body đã làm ở app.js trước khi vào đây.
 import { buildMetadata, callUnary } from '../grpc/clients.js';
@@ -13,10 +13,12 @@ function pick(body, keys) {
 
 export function createAuthHandlers({ authClient, revocations, log, now = () => Date.now() }) {
   // Gọi rpc rồi trả JSON; lỗi gRPC đổi sang HTTP theo bảng chung (errors.js).
-  const forward = (method, keys, okStatus) => async (req, res) => {
+  // `outKeys`: chỉ trả các key này. Cần cho response có field `optional` (A07 `otp`): với oneofs: true,
+  // thư viện thêm key phụ `_otp` — không được lọt ra JSON.
+  const forward = (method, keys, okStatus, outKeys) => async (req, res) => {
     try {
       const response = await callUnary(authClient, method, pick(req.body, keys), buildMetadata(req));
-      res.status(okStatus).json(response);
+      res.status(okStatus).json(outKeys ? pick(response, outKeys) : response);
     } catch (err) {
       const { status, body } = grpcErrorToHttp(err);
       res.status(status).json(body);
@@ -28,6 +30,10 @@ export function createAuthHandlers({ authClient, revocations, log, now = () => D
     register: forward('RegisterCustomer', ['phone', 'email', 'password'], 201),
     // A05: 200, đăng nhập không tạo bản ghi nào (JWT không lưu phiên).
     login: forward('Login', ['phone', 'email', 'password'], 200),
+    // A07: 201 — mỗi lần xin là một mã OTP mới được tạo và lưu (TX-Q1 đã chốt). `otp` chỉ có khi giả lập.
+    requestOtp: forward('RequestDriverOtp', ['phone'], 201, ['phone', 'expires_in', 'otp']),
+    // A08: 201 vì tạo mới tài khoản tài xế; response có luôn token để nộp hồ sơ ngay.
+    registerDriver: forward('RegisterDriver', ['phone', 'otp', 'password'], 201, ['account_id', 'role', 'token', 'expires_in']),
 
     // A06: Gateway tự xử lý, không gọi auth-service (FR42).
     async logout(req, res) {
