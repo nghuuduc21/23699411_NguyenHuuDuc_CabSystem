@@ -411,7 +411,7 @@ Ghi chú:
 | A04 | `POST /api/v1/accounts` | 201 | 201 | 201 | 201 |
 | A05 | `POST /api/v1/auth/login` | 200 | 200 | 200 | 200 |
 | A06 | `POST /api/v1/auth/logout` | 401 | 200 | 200 | 200 |
-| A07 | `POST /api/v1/otps` | 200 | 200 | 200 | 200 |
+| A07 | `POST /api/v1/otps` | 201 | 201 | 201 | 201 |
 | A08 | `POST /api/v1/driver-accounts` | 201 | 201 | 201 | 201 |
 | A37 | `POST /api/v1/customers` | 401 | 201 (409 nếu đã có) | 403 | 403 |
 | A38 | `GET /api/v1/customers/me` | 401 | 200 (404 nếu chưa có) | 403 | 403 |
@@ -538,7 +538,7 @@ Ký hiệu: `[KH1]` = tab Authorization → Bearer Token → dán token của KH
 
 | Mục | # | Request | Kết quả mong đợi |
 |---|---|---|---|
-| 21 | 1 | `POST localhost:3000/api/v1/otps` — `{"phone":"0911111111"}` | 200 có `otp` |
+| 21 | 1 | `POST localhost:3000/api/v1/otps` — `{"phone":"0911111111"}` | 201 có `otp` |
 | | 2 | Sửa tab: URL `driver-accounts`, body `{"phone":"0911111111","otp":"<otp>","password":"12345678"}` | 201 `role` driver, `token` |
 | | 3 | Sửa tab: URL `drivers`, token `[token vừa nhận]`, body `{"name":"Tai Xe Moi","license":"GPLX-99","plate":"59A-99999"}` | 201 `approval_status` **`PENDING`**, `driver_id` D |
 | 22 | 1 | Sửa tab mục 21: method `PATCH`, URL `drivers/D`, token `[AD1]`, body `{"approval_status":"APPROVED"}` | 200 `APPROVED` |

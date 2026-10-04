@@ -264,7 +264,7 @@ Chạy lại thì đổi số `0911111112`.
 
 | # | Gõ | Copy | Kết quả |
 |---|---|---|---|
-| 1 | `POST localhost:3000/api/v1/otps`, body `{"phone":"0911111111"}` — **tab tài xế** | `otp` | 200 có `otp` |
+| 1 | `POST localhost:3000/api/v1/otps`, body `{"phone":"0911111111"}` — **tab tài xế** | `otp` | 201 có `otp` |
 | 2 | Sửa tab: URL `driver-accounts`, body `{"phone":"0911111111","otp":"<otp>","password":"12345678"}` | **`token`** | 201 `role` driver |
 | 3 | Sửa tab: URL `drivers`, `[token vừa nhận]`, body `{"name":"Tai Xe Moi","license":"GPLX-99","plate":"59A-99999"}` | **`driver_id`** (D) | 201 **`approval_status` `PENDING`** |
 
