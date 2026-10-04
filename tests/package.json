@@ -8,7 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 e2e/01-repo.test.js e2e/02-compose.test.js e2e/03-health.test.js e2e/04-health-degraded.test.js e2e/05-kafka.test.js e2e/06-config.test.js",
-    "test:e2e": "node --test --test-concurrency=1 e2e/01-repo.test.js e2e/02-compose.test.js e2e/03-health.test.js e2e/04-health-degraded.test.js e2e/05-kafka.test.js e2e/06-config.test.js"
+    "test": "node --test --test-concurrency=1 e2e/01-repo.test.js e2e/02-compose.test.js e2e/03-health.test.js e2e/04-health-degraded.test.js e2e/05-kafka.test.js e2e/06-config.test.js e2e/07-dang-ky-dang-nhap.test.js e2e/08-ho-so-khach-hang.test.js e2e/09-tai-xe-dang-ky-duyet.test.js e2e/10-tai-xe-xem-tim-bat-tat.test.js",
+    "test:e2e": "node --test --test-concurrency=1 e2e/01-repo.test.js e2e/02-compose.test.js e2e/03-health.test.js e2e/04-health-degraded.test.js e2e/05-kafka.test.js e2e/06-config.test.js e2e/07-dang-ky-dang-nhap.test.js e2e/08-ho-so-khach-hang.test.js e2e/09-tai-xe-dang-ky-duyet.test.js e2e/10-tai-xe-xem-tim-bat-tat.test.js",
+    "test:nghiep-vu": "node --test --test-concurrency=1 e2e/07-dang-ky-dang-nhap.test.js e2e/08-ho-so-khach-hang.test.js e2e/09-tai-xe-dang-ky-duyet.test.js e2e/10-tai-xe-xem-tim-bat-tat.test.js",
+    "test:dung-service": "node --test --test-concurrency=1 e2e/90-dung-service.test.js"
   }
 }

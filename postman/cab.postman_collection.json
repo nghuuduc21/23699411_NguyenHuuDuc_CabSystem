@@ -2,11 +2,66 @@
   "info": {
     "_postman_id": "6b0f3c9e-2f1a-4c55-9a1e-cab000000000",
     "name": "Cab Booking System",
-    "description": "Collection theo số mục chấm. CHỈ để test-agent kiểm thử và sinh viên luyện tập; khi thi không được dùng (gõ tay mọi request). Biến {{base}} = http://localhost:3000.",
+    "description": "Collection theo số mục chấm. CHỈ để test-agent kiểm thử và sinh viên luyện tập; khi thi không được dùng (gõ tay mọi request). Biến {{base}} = http://localhost:3000. Chạy cả collection theo thứ tự thư mục (06 → 28): token lưu ở mục 10 dùng cho các mục sau; số điện thoại, biển số mới tự sinh để chạy lại được. Request 22.2 đổi seed TX7 (xem mô tả thư mục 22).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base", "value": "http://localhost:3000" }
+    {
+      "key": "base",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "phone9",
+      "value": ""
+    },
+    {
+      "key": "account9",
+      "value": ""
+    },
+    {
+      "key": "token9",
+      "value": ""
+    },
+    {
+      "key": "kh1",
+      "value": ""
+    },
+    {
+      "key": "tx1",
+      "value": ""
+    },
+    {
+      "key": "ad1",
+      "value": ""
+    },
+    {
+      "key": "driverPhone",
+      "value": ""
+    },
+    {
+      "key": "plate",
+      "value": ""
+    },
+    {
+      "key": "otp",
+      "value": ""
+    },
+    {
+      "key": "driverToken",
+      "value": ""
+    },
+    {
+      "key": "D",
+      "value": ""
+    },
+    {
+      "key": "tamperedToken",
+      "value": ""
+    },
+    {
+      "key": "logoutToken",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -35,7 +90,15 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base}}/health", "host": ["{{base}}"], "path": ["health"] }
+            "url": {
+              "raw": "{{base}}/health",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
           }
         },
         {
@@ -59,7 +122,15 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base}}/ready", "host": ["{{base}}"], "path": ["ready"] }
+            "url": {
+              "raw": "{{base}}/ready",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "ready"
+              ]
+            }
           }
         },
         {
@@ -85,7 +156,1977 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base}}/health/services", "host": ["{{base}}"], "path": ["health", "services"] }
+            "url": {
+              "raw": "{{base}}/health/services",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "health",
+                "services"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Đăng ký khách hàng → đăng nhập được",
+      "description": "Mục chấm 9 (spec 09-10 AC-DN-01..03). Khi thi gõ số 0901234567 (lần hai 0901234568); collection tự sinh số 0399xxxxxx để chạy lại được nhiều lần. Chuỗi: tạo tab POST accounts → sửa URL thành auth/login (body giữ nguyên) → (sửa lại accounts → 409).",
+      "item": [
+        {
+          "name": "09.1 POST /api/v1/accounts (số mới)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('phone9', '0399' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-01: status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DN-01: role customer, account_id ≥ 1000', () => { pm.expect(b.role).to.eql('customer'); pm.expect(b.account_id).to.be.at.least(1000); });",
+                  "pm.test('Không lộ password_hash', () => pm.expect(pm.response.text()).to.not.include('password'));",
+                  "pm.collectionVariables.set('account9', b.account_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/accounts",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounts"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"{{phone9}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "09.2 POST /api/v1/auth/login (cùng body)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-02: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DN-02: có token, role customer, cùng account_id', () => { pm.expect(b.token).to.be.a('string'); pm.expect(b.role).to.eql('customer'); pm.expect(String(b.account_id)).to.eql(String(pm.collectionVariables.get('account9'))); });",
+                  "pm.collectionVariables.set('token9', b.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"{{phone9}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "09.3 (tùy chọn) POST /api/v1/accounts lại → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-03: status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error = PHONE_ALREADY_EXISTS', () => pm.expect(pm.response.json()).to.eql({ error: 'PHONE_ALREADY_EXISTS' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/accounts",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "accounts"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"{{phone9}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 Đăng nhập → cấp token",
+      "description": "Mục chấm 10 (AC-DN-07, 08, 10, 11). Sửa tab mục 9 thành số KH1 → nhân bản tab cho TX1, AD1. Ba token lưu vào biến kh1, tx1, ad1 cho các mục sau.",
+      "item": [
+        {
+          "name": "10.1 Đăng nhập KH1 (0900000001)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-07: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DN-07: account_id 1, customer, expires_in 3600', () => { pm.expect(b.account_id).to.eql(1); pm.expect(b.role).to.eql('customer'); pm.expect(b.expires_in).to.eql(3600); });",
+                  "pm.test('AC-DN-07: payload có sub/role/jti/exp, không có số điện thoại', () => { const p = JSON.parse(atob(b.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); pm.expect(p.sub).to.eql('1'); pm.expect(p.role).to.eql('customer'); pm.expect(p.jti).to.be.a('string'); pm.expect(p.exp).to.be.a('number'); pm.expect(JSON.stringify(p)).to.not.include('0900000001'); });",
+                  "pm.collectionVariables.set('kh1', b.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "10.2 Đăng nhập TX1 (0910000001)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-11: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('role driver', () => pm.expect(pm.response.json().role).to.eql('driver'));",
+                  "pm.collectionVariables.set('tx1', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0910000001\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "10.3 Đăng nhập AD1 (0999999999)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-11: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('role admin', () => pm.expect(pm.response.json().role).to.eql('admin'));",
+                  "pm.collectionVariables.set('ad1', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0999999999\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "10.4 (tùy chọn) KH1 sai mật khẩu → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-08: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = INVALID_CREDENTIALS', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_CREDENTIALS' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0900000001\",\"password\":\"sai\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "10.5 (test-agent) KH9 bị khóa → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-10: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = ACCOUNT_LOCKED', () => pm.expect(pm.response.json()).to.eql({ error: 'ACCOUNT_LOCKED' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0900000009\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 Xem khách hàng theo mã (có token)",
+      "description": "Mục chấm 11 (spec 11 AC-HS-01, 02, 04, 08). Tab GET tạo ở đây dùng lại cho 12, 13, 24–27.",
+      "item": [
+        {
+          "name": "11.1 GET /api/v1/customers/1 [KH1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-01: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-HS-01: hồ sơ KH1', () => pm.expect(pm.response.json()).to.eql({ customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "11.2 GET /api/v1/customers/2 [KH1] → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-02: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = NOT_OWNER', () => pm.expect(pm.response.json()).to.eql({ error: 'NOT_OWNER' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "2"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "11.3 (tùy chọn) POST /api/v1/customers [token mục 9]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-04: status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('AC-HS-04: customer_id = mã tài khoản mục 9, dob null', () => { const b = pm.response.json(); pm.expect(String(b.customer_id)).to.eql(String(pm.collectionVariables.get('account9'))); pm.expect(b.name).to.eql('Pham Duc'); pm.expect(b.dob).to.eql(null); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token9}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Pham Duc\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "11.4 (test-agent) GET /api/v1/customers/1 không token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-08: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = TOKEN_MISSING', () => pm.expect(pm.response.json()).to.eql({ error: 'TOKEN_MISSING' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 Xem tài xế theo mã (có token)",
+      "description": "Mục chấm 12 (AC-TX-26, 28). Tab GET: customers/2 → drivers/11 → drivers/999 → (drivers/abc).",
+      "item": [
+        {
+          "name": "12.1 GET /api/v1/drivers/11 [KH1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-26: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-26: đúng 5 key công khai', () => pm.expect(pm.response.json()).to.eql({ driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/11",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "11"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "12.2 GET /api/v1/drivers/999 [KH1] → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-28: status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error = DRIVER_NOT_FOUND', () => pm.expect(pm.response.json()).to.eql({ error: 'DRIVER_NOT_FOUND' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/999",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "999"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "12.3 (tùy chọn) GET /api/v1/drivers/abc → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-28: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = INVALID_ID', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_ID' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/abc",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "abc"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 Tài xế quanh tọa độ 1 km, limit + paging",
+      "description": "Mục chấm 13 (AC-TX-29, 30). Chạy TRƯỚC mục 15 (TX1–TX4 phải ONLINE như seed). Seed 8 tài xế, 4 trong kết quả: TX5 OFFLINE, TX6 BUSY, TX7 chưa duyệt, TX8 cách 2,2 km.",
+      "item": [
+        {
+          "name": "13.1 GET /api/v1/drivers?lat=10.82&lng=106.68&limit=2 [KH1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-29: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-TX-29: TX1 111 m, TX2 222 m', () => pm.expect(b.data.map((d) => [d.driver_id, d.distance_m])).to.eql([[11, 111], [12, 222]]));",
+                  "pm.test('AC-TX-29: pagination 1/2, total 4, total_pages 2', () => pm.expect(b.pagination).to.eql({ page: 1, limit: 2, total: 4, total_pages: 2 }));",
+                  "pm.test('Không trả tọa độ tài xế', () => b.data.forEach((d) => { pm.expect(d).to.not.have.property('lat'); pm.expect(d).to.not.have.property('lng'); }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68&limit=2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "10.82"
+                },
+                {
+                  "key": "lng",
+                  "value": "106.68"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "13.2 … &page=2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-30: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-30: TX3 334 m, TX4 445 m', () => pm.expect(pm.response.json().data.map((d) => [d.driver_id, d.distance_m])).to.eql([[13, 334], [14, 445]]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68&limit=2&page=2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "10.82"
+                },
+                {
+                  "key": "lng",
+                  "value": "106.68"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                },
+                {
+                  "key": "page",
+                  "value": "2"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "13.3 (tùy chọn) … &vehicle=CAR_4",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-30: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-TX-30: TX1, TX3; total 2', () => { pm.expect(b.data.map((d) => d.driver_id)).to.eql([11, 13]); pm.expect(b.pagination.total).to.eql(2); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68&limit=2&vehicle=CAR_4",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "10.82"
+                },
+                {
+                  "key": "lng",
+                  "value": "106.68"
+                },
+                {
+                  "key": "limit",
+                  "value": "2"
+                },
+                {
+                  "key": "vehicle",
+                  "value": "CAR_4"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "21 Đăng ký tài xế (OTP) → hồ sơ chờ duyệt",
+      "description": "Mục chấm 21 (AC-TX-01..03) + phần lỗi mục 23 (AC-TX-21). Khi thi gõ số 0911111111 và biển 59A-99999 (lần hai đổi số, biển); collection tự sinh số 0599xxxxxx và biển 99T-xxxxx để chạy lại được. Tab tài xế: POST otps → sửa URL driver-accounts (thêm otp, password) → sửa URL drivers, gắn token vừa nhận.",
+      "item": [
+        {
+          "name": "21.1 POST /api/v1/otps",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('driverPhone', '0599' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0'));",
+                  "pm.collectionVariables.set('plate', '99T-' + String(Math.floor(Math.random() * 1e5)).padStart(5, '0'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-01: status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-TX-01: otp 6 chữ số, expires_in 300', () => { pm.expect(b.otp).to.match(/^[0-9]{6}$/); pm.expect(b.expires_in).to.eql(300); });",
+                  "pm.collectionVariables.set('otp', b.otp);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/otps",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "otps"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"{{driverPhone}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "21.2 POST /api/v1/driver-accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-02: status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-TX-02: role driver, có token', () => { pm.expect(b.role).to.eql('driver'); pm.expect(b.token).to.be.a('string'); pm.expect(b.account_id).to.be.at.least(1000); });",
+                  "pm.collectionVariables.set('driverToken', b.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/driver-accounts",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "driver-accounts"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"{{driverPhone}}\",\"otp\":\"{{otp}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "21.3 POST /api/v1/drivers [token vừa nhận]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-03: status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-TX-03: PENDING, OFFLINE, CAR_4, license rõ cho chủ', () => { pm.expect(b.approval_status).to.eql('PENDING'); pm.expect(b.status).to.eql('OFFLINE'); pm.expect(b.vehicle).to.eql('CAR_4'); pm.expect(b.plate).to.eql(pm.collectionVariables.get('plate')); pm.expect(b.license).to.eql('GPLX-99'); });",
+                  "pm.collectionVariables.set('D', b.driver_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Tai Xe Moi\",\"license\":\"GPLX-99\",\"plate\":\"{{plate}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "21.4 (mục 23 tùy chọn, trước 22) PATCH /api/v1/drivers/me ONLINE khi chưa duyệt → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-21: status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error = DRIVER_NOT_APPROVED', () => pm.expect(pm.response.json()).to.eql({ error: 'DRIVER_NOT_APPROVED' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driverToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ONLINE\",\"lat\":10.82,\"lng\":106.68}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "22 Admin duyệt / từ chối hồ sơ",
+      "description": "Mục chấm 22 (AC-TX-14, 15, 16). Tab tài xế: PATCH drivers/D [AD1] APPROVED. 22.2 TỪ CHỐI TX7 làm đổi seed (TX7 thành REJECTED); đặt lại: docker exec driver-db psql -U cab -d driver -c \"update drivers set approval_status='PENDING', reviewed_by=null, reviewed_at=null, reject_reason=null where driver_id=17\" hoặc docker compose down -v rồi up -d --build. Phụ: Kafka UI localhost:8080 → topic driver.application-reviewed.",
+      "item": [
+        {
+          "name": "22.1 PATCH /api/v1/drivers/{{D}} [AD1] APPROVED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-14: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-14: {driver_id: D, APPROVED}', () => pm.expect(pm.response.json()).to.eql({ driver_id: Number(pm.collectionVariables.get('D')), approval_status: 'APPROVED' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/{{D}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "{{D}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approval_status\":\"APPROVED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "22.2 (tùy chọn, đổi seed) PATCH /api/v1/drivers/17 REJECTED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-15: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-15: REJECTED kèm reason', () => pm.expect(pm.response.json()).to.eql({ driver_id: 17, approval_status: 'REJECTED', reason: 'thieu giay to' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/17",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "17"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approval_status\":\"REJECTED\",\"reason\":\"thieu giay to\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "22.3 (test-agent) duyệt lại D → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-16: status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error = APPLICATION_ALREADY_REVIEWED', () => pm.expect(pm.response.json()).to.eql({ error: 'APPLICATION_ALREADY_REVIEWED' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/{{D}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "{{D}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approval_status\":\"APPROVED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "23 Tài xế bật / tắt nhận chuyến",
+      "description": "Mục chấm 23 (AC-TX-19, 20). Tab tài xế: URL drivers/me, [TX1], {\"status\":\"OFFLINE\"} → sửa \"ONLINE\". Chạy xong TX1 về ONLINE như seed.",
+      "item": [
+        {
+          "name": "23.1 PATCH /api/v1/drivers/me [TX1] OFFLINE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-19: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-19: {11, OFFLINE}', () => pm.expect(pm.response.json()).to.eql({ driver_id: 11, status: 'OFFLINE' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"OFFLINE\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "23.2 PATCH /api/v1/drivers/me [TX1] ONLINE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-20: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-20: ONLINE ở vị trí cũ', () => pm.expect(pm.response.json()).to.eql({ driver_id: 11, status: 'ONLINE', lat: 10.821, lng: 106.68 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ONLINE\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "24 Mã hóa dữ liệu nhạy cảm",
+      "description": "Mục chấm 24 (AC-HS-13, 14; AC-DN-19; AC-TX-12). API trả rõ cho đúng chủ; database chỉ có bản mã. Lệnh terminal (gõ tay): docker exec customer-db psql -U cab -d customer -c \"table customer_profiles\" → full_name_enc, date_of_birth_enc dạng \\x…; (tùy chọn) docker exec auth-db psql -U cab -d auth -c \"table accounts\" → password_hash bắt đầu scrypt$.",
+      "item": [
+        {
+          "name": "24.1 GET /api/v1/customers/1 [KH1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-13: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-HS-13: họ tên rõ cho chủ', () => pm.expect(pm.response.json().name).to.eql('Nguyễn Văn An'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "25 SQL injection",
+      "description": "Mục chấm 25 (AC-DN-12, 13; AC-HS-17). Tab KH1 sửa mật khẩu → tab GET customers/1 OR 1=1 → (tab KH1 phone injection). Nhớ sửa lại mật khẩu tab KH1.",
+      "item": [
+        {
+          "name": "25.1 Đăng nhập KH1 password ' OR '1'='1 → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-12: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = INVALID_CREDENTIALS', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_CREDENTIALS' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0900000001\",\"password\":\"' OR '1'='1\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "25.2 GET /api/v1/customers/1 OR 1=1 [KH1] → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-17: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = INVALID_ID', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_ID' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1 OR 1=1",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1 OR 1=1"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "25.3 (tùy chọn) phone ' OR 1=1 -- → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-13: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = INVALID_PHONE', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_PHONE' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"' OR 1=1 --\",\"password\":\"x\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "26 XSS",
+      "description": "Mục chấm 26 (AC-HS-16). Tab GET: method PATCH, URL customers/me, body script → sửa method GET (không xóa body; Gateway bỏ qua body của GET).",
+      "item": [
+        {
+          "name": "26.1 PATCH /api/v1/customers/me [KH1] <script> → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-16: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = TEXT_CONTAINS_HTML', () => pm.expect(pm.response.json()).to.eql({ error: 'TEXT_CONTAINS_HTML' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"<script>alert(1)</script>\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "26.2 GET /api/v1/customers/me [KH1] (body giữ nguyên)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-16: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-HS-16: tên không đổi', () => pm.expect(pm.response.json().name).to.eql('Nguyễn Văn An'));",
+                  "pm.test('AC-HS-16: nosniff + CSP', () => { pm.response.to.have.header('X-Content-Type-Options', 'nosniff'); pm.response.to.have.header('Content-Security-Policy', \"default-src 'none'\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"<script>alert(1)</script>\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "27 JWT bị sửa → 401",
+      "description": "Mục chấm 27 (AC-DN-15, 16, 17). Khi thi: sửa tay MỘT ký tự ở giữa token (không phải ký tự cuối). Collection dùng pre-request script để sửa thay. 27.3–27.5 dùng một token KH1 riêng để đăng xuất, không ảnh hưởng biến kh1.",
+      "item": [
+        {
+          "name": "27.1 GET /api/v1/customers/me token sửa giữa → 401",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const t = pm.collectionVariables.get('kh1'); const i = Math.floor(t.length / 2);",
+                  "pm.collectionVariables.set('tamperedToken', t.slice(0, i) + (t[i] === 'A' ? 'B' : 'A') + t.slice(i + 1));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-15: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = TOKEN_INVALID', () => pm.expect(pm.response.json()).to.eql({ error: 'TOKEN_INVALID' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tamperedToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "27.2 GET /api/v1/customers/me No Auth → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-16: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = TOKEN_MISSING', () => pm.expect(pm.response.json()).to.eql({ error: 'TOKEN_MISSING' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "27.3 (tùy chọn) Đăng nhập KH1 lấy token để đăng xuất",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-17: status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('logoutToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "27.4 (tùy chọn) POST /api/v1/auth/logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-17: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('LOGGED_OUT', () => pm.expect(pm.response.json()).to.eql({ status: 'LOGGED_OUT' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/auth/logout",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "27.5 (tùy chọn) GET /api/v1/customers/me token đã đăng xuất → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-17: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = TOKEN_REVOKED', () => pm.expect(pm.response.json()).to.eql({ error: 'TOKEN_REVOKED' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "28 Sai quyền → 403",
+      "description": "Mục chấm 28 (AC-TX-17, AC-HS-07, AC-TX-32). Tab tài xế: URL drivers/17, [KH1], xóa body → 403. Request 2 của kịch bản thi (POST /api/v1/bookings bằng TX1) thuộc spec đặt xe, chưa có route lúc viết collection (2026-10-04) — thay tạm bằng 28.2, 28.3.",
+      "item": [
+        {
+          "name": "28.1 PATCH /api/v1/drivers/17 [KH1] không body → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-17: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = FORBIDDEN', () => pm.expect(pm.response.json()).to.eql({ error: 'FORBIDDEN' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/17",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "17"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "28.2 (test-agent) GET /api/v1/customers/1 [TX1] → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HS-07: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = FORBIDDEN', () => pm.expect(pm.response.json()).to.eql({ error: 'FORBIDDEN' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tx1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "28.3 (test-agent) GET /api/v1/drivers?lat=10.82&lng=106.68 [TX1] → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-32: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = FORBIDDEN', () => pm.expect(pm.response.json()).to.eql({ error: 'FORBIDDEN' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "10.82"
+                },
+                {
+                  "key": "lng",
+                  "value": "106.68"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tx1}}",
+                  "type": "string"
+                }
+              ]
+            }
           }
         }
       ]
