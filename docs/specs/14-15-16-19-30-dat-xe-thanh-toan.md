@@ -664,10 +664,10 @@ Kết quả mong đợi theo phiếu chấm: **14** — chỉ booking của khá
 
 | # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
 |---|---|---|---|---|
-| DX-Q1 | Chốt TX-Q3: lời gọi service → service mang danh tính gì? | (a) `x-role: system`; (b) rpc nội bộ riêng; (c) không kiểm | **(a)** — spec đã viết theo (a); cần sinh viên xác nhận | SV |
-| DX-Q2 | A31, A32 trả 200 hay 201? | (a) Giữ 200 (response mô tả **trạng thái thanh toán**, không phải bản ghi giao dịch; 06 đã học thuộc); (b) 201 cho đồng bộ với A07 | (a) | SV |
-| DX-Q3 | S2 lỗi bao nhiêu lần thì kết luận không tìm được tài xế (Q24)? | (a) 3 lần cách 1 giây rồi `NO_DRIVER_FOUND`; (b) chờ đến khi Driver chạy lại | (a) | SV |
-| DX-Q4 | Booking chết / database lỗi **sau** khi Trip đã tạo mà chưa ghi phân công (Q35 (b)) | (a) Chấp nhận, log `ACCEPT_COMMIT_FAILED` — cùng mức rủi ro với ADR-017; (b) thêm `GetTripByBooking` để tiến trình hết hạn ghi nốt phân công | (a) — không xảy ra khi demo, bớt một rpc | SV |
-| DX-Q5 | Mục 19 ~42 s vượt 30 giây (Q64) | (a) Chạy đủ, nói trong lúc gõ; (b) dự phòng 1 request (không `MANUAL`) | (a), dự phòng (b) | GV |
-| DX-Q6 | Tài xế nhận Offer nhưng không còn rảnh (đã tắt Online) | (a) 409, Offer giữ `PENDING` đến hết hạn; (b) 409 và đánh dấu Offer `REJECTED`, hỏi ngay người kế tiếp | (a) — đơn giản; tài xế bật lại là nhận được | SV |
-| DX-Q7 | `OFFER_TIMEOUT_SECONDS` 300 s (demo) so với giá trị nghiệp vụ 20 s (Q12) | Giữ 300 trong `.env.example` | Giữ — đổi bằng `.env` khi cần | SV |
+| DX-Q1 | Chốt TX-Q3: lời gọi service → service mang danh tính gì? | (a) `x-role: system`; (b) rpc nội bộ riêng; (c) không kiểm | **Đã chốt (a)** (sinh viên 2026-10-04) | SV |
+| DX-Q2 | A31, A32 trả 200 hay 201? | (a) Giữ 200 (response mô tả **trạng thái thanh toán**, không phải bản ghi giao dịch; 06 đã học thuộc); (b) 201 cho đồng bộ với A07 | **Đã chốt (a)** (sinh viên 2026-10-04) | SV |
+| DX-Q3 | S2 lỗi bao nhiêu lần thì kết luận không tìm được tài xế (Q24)? | (a) 3 lần cách 1 giây rồi `NO_DRIVER_FOUND`; (b) chờ đến khi Driver chạy lại | **Đã chốt (a)** (sinh viên 2026-10-04) | SV |
+| DX-Q4 | Booking chết / database lỗi **sau** khi Trip đã tạo mà chưa ghi phân công (Q35 (b)) | (a) Chấp nhận, log `ACCEPT_COMMIT_FAILED` — cùng mức rủi ro với ADR-017; (b) thêm `GetTripByBooking` để tiến trình hết hạn ghi nốt phân công | **Đã chốt (a)** (sinh viên 2026-10-04) — không xảy ra khi demo, bớt một rpc | SV |
+| DX-Q5 | Mục 19 ~42 s vượt 30 giây (Q64) | (a) Chạy đủ, nói trong lúc gõ; (b) dự phòng 1 request (không `MANUAL`) | (a) giữ chuỗi đầy đủ, dự phòng (b) — **vẫn chờ hỏi giảng viên (Q64)** | GV |
+| DX-Q6 | Tài xế nhận Offer nhưng không còn rảnh (đã tắt Online) | (a) 409, Offer giữ `PENDING` đến hết hạn; (b) 409 và đánh dấu Offer `REJECTED`, hỏi ngay người kế tiếp | **Đã chốt (a)** (sinh viên 2026-10-04) — đơn giản; tài xế bật lại là nhận được | SV |
+| DX-Q7 | `OFFER_TIMEOUT_SECONDS` 300 s (demo) so với giá trị nghiệp vụ 20 s (Q12) | Giữ 300 trong `.env.example` | **Đã chốt: giữ 300** (sinh viên 2026-10-04) — đổi bằng `.env` khi cần | SV |

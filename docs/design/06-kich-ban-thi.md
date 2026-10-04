@@ -268,6 +268,8 @@ Chạy lại thì đổi số `0911111112`.
 | 2 | Sửa tab: URL `driver-accounts`, body `{"phone":"0911111111","otp":"<otp>","password":"12345678"}` | **`token`** | 201 `role` driver |
 | 3 | Sửa tab: URL `drivers`, `[token vừa nhận]`, body `{"name":"Tai Xe Moi","license":"GPLX-99","plate":"59A-99999"}` | **`driver_id`** (D) | 201 **`approval_status` `PENDING`** |
 
+Lưu ý: **luôn copy `driver_id` từ response bước 3**, không đoán số. Mã do API tạo phụ thuộc các lần thử trước (dãy identity không đặt lại khi lệnh lỗi hay khi xóa dòng); muốn số cố định thì demo trên database sạch (`docker compose down -v` rồi `docker compose up -d --build`).
+
 Nói gì (nói trong lúc gõ, mục này dài): xin OTP = **tạo một mã OTP** (`POST /api/v1/otps`), lưu dạng băm, hạn 5 phút; giả lập nên trả mã trong response. Tài khoản tài xế là tập riêng `/api/v1/driver-accounts` vì phải có OTP. Nộp hồ sơ = `POST /api/v1/drivers`, số giấy phép mã hóa, mới nộp là `PENDING`.
 
 ### Mục 22 — Admin duyệt / từ chối hồ sơ

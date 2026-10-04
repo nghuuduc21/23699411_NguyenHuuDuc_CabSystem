@@ -213,7 +213,7 @@ Chọn **công thức Haversine trên hai cột `current_lat`, `current_lng`**, 
 | Bước | Làm gì | Vì sao |
 |---|---|---|
 | 1 | Lọc `availability = 'ONLINE'`, `approval_status = 'APPROVED'`, đúng `vehicle_type` (nếu có) | D1, D2 |
-| 2 | Lọc khung chữ nhật: `lat BETWEEN lat0 ± r/111320`, `lng BETWEEN lng0 ± r/(111320·cos(lat0))` | Dùng được index thường; loại phần lớn tài xế ở xa trước khi tính lượng giác |
+| 2 | Lọc khung chữ nhật: `lat BETWEEN lat0 ± r/M`, `lng BETWEEN lng0 ± r/(M·cos(lat0))`, với `M = π·6 371 000/180 ≈ 111 195` m/độ | Dùng được index thường; loại phần lớn tài xế ở xa trước khi tính lượng giác. `M` dùng cùng `R = 6 371 km` với Haversine; nếu dùng 111 320 thì khung hẹp hơn vòng tròn khoảng 1 m và loại nhầm tài xế ở 999–1 000 m theo hướng bắc/nam |
 | 3 | Tính khoảng cách Haversine (mét), giữ dòng `≤ r` | D3, FR04 |
 | 4 | `ORDER BY` khoảng cách, `driver_id`; `LIMIT` / `OFFSET` | FR05, BRULE03; phân trang ổn định |
 
