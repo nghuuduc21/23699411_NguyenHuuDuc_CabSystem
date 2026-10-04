@@ -7,7 +7,7 @@ Sinh viên phải tự giải thích được mọi quyết định. Vì vậy m
 
 ## Trạng thái
 
-Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã xong:** `docs/design/01`–`05`, ADR-001 đến ADR-014 và hai ảnh sơ đồ. Đã đưa vào hai góp ý của giảng viên (2026-10-03): tách đăng ký khỏi hồ sơ khách hàng (ADR-013) và giả lập hệ thống ngoài thật đơn giản (ADR-014). Vòng 2 đã mở: có ba đặc tả đầu (`docs/specs/00`, `09-10`, `11`); đang sửa toàn bộ thiết kế và đặc tả theo luật thi (2026-10-03) và viết `docs/design/06-kich-ban-thi.md`. Chưa có code. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
+Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã xong:** `docs/design/01`–`05`, ADR-001 đến ADR-014 và hai ảnh sơ đồ. Đã đưa vào hai góp ý của giảng viên (2026-10-03): tách đăng ký khỏi hồ sơ khách hàng (ADR-013) và giả lập hệ thống ngoài thật đơn giản (ADR-014). Vòng 2: thiết kế, kịch bản thi (`docs/design/06`) và ba đặc tả đầu (`docs/specs/00`, `09-10`, `11`) đã đồng bộ theo luật thi và chuẩn đường dẫn `/api/v1` (ADR-015 đến ADR-018). Đang code đặc tả `00-ha-tang`. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
 
 ## Tài liệu
 
