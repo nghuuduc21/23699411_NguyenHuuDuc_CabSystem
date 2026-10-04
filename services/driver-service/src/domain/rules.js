@@ -36,16 +36,31 @@ export function checkIdentity({ accountId, role }) {
   return { accountId: Number(accountId), role };
 }
 
+// Role của lời gọi nội bộ service → service (spec 14-15-16-19-30 mục 5.5, DX2 đã chốt): booking-service gửi
+// `x-role: system`, không có x-account-id vì không có tài khoản nào đứng sau. Gateway không bao giờ gửi role này:
+// token chỉ mang 3 role, và Gateway tự dựng metadata, bỏ header cùng tên của client.
+export const SYSTEM_ROLE = 'system';
+
 // Role được phép của rpc. Gateway đã chặn; service chặn lại khi bị gọi thẳng.
+// `system` chỉ được nhận ở rpc có nó trong danh sách (FindNearbyDrivers — DX-M1).
 export function requireRole(identity, roles) {
+  if (identity?.role === SYSTEM_ROLE && roles.includes(SYSTEM_ROLE)) return { accountId: null, role: SYSTEM_ROLE };
   const checked = checkIdentity(identity);
   if (!roles.includes(checked.role)) throw forbidden();
   return checked;
 }
 
+// rpc CHỈ dành cho service khác (ReserveDriver, ReleaseDriver): không có x-role → IDENTITY_MISSING;
+// có role nhưng không phải `system` (kể cả customer / driver / admin) → FORBIDDEN (AC-DX-23).
+export function requireSystem(identity) {
+  if (typeof identity?.role !== 'string' || identity.role === '') throw new DriverError('UNAUTHENTICATED', 'IDENTITY_MISSING');
+  if (identity.role !== SYSTEM_ROLE) throw forbidden();
+}
+
 // Mã trong request (int64 → số). Gateway đã chặn mã sai dạng; service vẫn chặn khi bị gọi thẳng.
-export function checkId(value) {
-  if (!Number.isSafeInteger(value) || value < 1) throw invalid('INVALID_ID');
+// `code`: mã đường dẫn sai → INVALID_ID; mã trong message của lời gọi nội bộ → INVALID_INPUT.
+export function checkId(value, code = 'INVALID_ID') {
+  if (!Number.isSafeInteger(value) || value < 1) throw invalid(code);
   return value;
 }
 

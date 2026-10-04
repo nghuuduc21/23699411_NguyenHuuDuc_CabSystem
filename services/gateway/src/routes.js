@@ -9,7 +9,8 @@
 // A01–A03 nằm ngoài tiền tố /api/v1 vì không phải tài nguyên nghiệp vụ.
 import { ROLES } from './token.js';
 import {
-  parseDriverMeBody, parseDriversQuery, parseReviewBody, validateCreateCustomer, validateIdParam, validateLogin,
+  parseBookingsQuery, parseCallbackBody, parseCreateBooking, parseDriverMeBody, parseDriversQuery, parseOfferBody,
+  parseOffersQuery, parsePayRequest, parseReviewBody, validateCreateCustomer, validateIdParam, validateLogin,
   validateRegister, validateRegisterDriver, validateRequestOtp, validateSubmitDriver, validateUpdateCustomer,
 } from './validate.js';
 
@@ -24,9 +25,10 @@ function selectBy(parse, variants) {
   };
 }
 
-// customers: handler hồ sơ khách (spec 11); drivers: handler tài xế (spec 12-13-21-23).
+// customers: handler hồ sơ khách (spec 11); drivers: handler tài xế (spec 12-13-21-23);
+// bookings, payments: đặt xe, lời mời, thanh toán (spec 14-15-16-19-30).
 // Test chỉ thử health / auth thì không truyền → không có các route này.
-export function buildRoutes({ health, auth, customers, drivers }) {
+export function buildRoutes({ health, auth, customers, drivers, bookings, payments }) {
   return [
     { code: 'A01', method: 'GET', path: '/health', roles: null, rpc: null, handler: health.live },
     { code: 'A02', method: 'GET', path: '/ready', roles: null, rpc: null, handler: health.ready },
@@ -88,6 +90,53 @@ export function buildRoutes({ health, auth, customers, drivers }) {
           A15: { handler: drivers.approve },
           A16: { handler: drivers.reject },
         }),
+      },
+    ] : []),
+
+    // Spec 14-15-16-19-30 — đặt xe, lời mời. Role của đường dẫn kiểm TRƯỚC body (mục chấm 28: tài xế đặt xe → 403).
+    ...(bookings ? [
+      // A19: đặt xe = POST vào tập `bookings`; khách đặt được nhiều booking.
+      {
+        code: 'A19', method: 'POST', path: '/api/v1/bookings', roles: ['customer'], rpc: 'cab.booking.v1.BookingService/CreateBooking',
+        select: selectBy((req) => parseCreateBooking(req.body), { A19: { handler: bookings.create } }),
+      },
+      // A20: chỉ booking của khách trong token (B14) — admin, tài xế bị 403.
+      {
+        code: 'A20', method: 'GET', path: '/api/v1/bookings', roles: ['customer'], rpc: 'cab.booking.v1.BookingService/ListBookings',
+        select: selectBy((req) => parseBookingsQuery(req.query), { A20: { handler: bookings.list } }),
+      },
+      // A21: chủ (service kiểm) hoặc admin.
+      { code: 'A21', method: 'GET', path: '/api/v1/bookings/:id', roles: ['customer', 'admin'], rpc: 'cab.booking.v1.BookingService/GetBooking', validateParams: validateIdParam, handler: bookings.byId },
+      // A23: lời mời của chính tài xế.
+      {
+        code: 'A23', method: 'GET', path: '/api/v1/offers', roles: ['driver'], rpc: 'cab.booking.v1.BookingService/ListOffers',
+        select: selectBy((req) => parseOffersQuery(req.query), { A23: { handler: bookings.offers } }),
+      },
+      // A24 / A25: đổi trạng thái lời mời bằng PATCH + `status` (không có động từ trong đường dẫn — ADR-018).
+      {
+        code: 'A24|A25', method: 'PATCH', path: '/api/v1/offers/:id', roles: ['driver'],
+        rpc: 'cab.booking.v1.BookingService/AcceptOffer|RejectOffer', validateParams: validateIdParam,
+        select: selectBy((req) => parseOfferBody(req.body), {
+          A24: { handler: bookings.accept },
+          A25: { handler: bookings.reject },
+        }),
+      },
+    ] : []),
+
+    // Spec 14-15-16-19-30 — thanh toán (mục 19, 30).
+    ...(payments ? [
+      // A31 khai báo TRƯỚC A30 (spec mục 4): đường dẫn dài hơn khớp trước. Mỗi lần thanh toán là một
+      // giao dịch mới → POST vào tập `transactions` của thanh toán đó.
+      {
+        code: 'A31', method: 'POST', path: '/api/v1/payments/:id/transactions', roles: ['customer'],
+        rpc: 'cab.payment.v1.PaymentService/PayPayment', validateParams: validateIdParam,
+        select: selectBy(parsePayRequest, { A31: { handler: payments.pay } }),
+      },
+      { code: 'A30', method: 'GET', path: '/api/v1/payments/:id', roles: ['customer', 'admin'], rpc: 'cab.payment.v1.PaymentService/GetPayment', validateParams: validateIdParam, handler: payments.byId },
+      // A32: KHÔNG token, không role (cổng thanh toán không có tài khoản); xác thực bằng khóa bí mật ở payment-service.
+      {
+        code: 'A32', method: 'POST', path: '/api/v1/payment-callbacks', roles: null, rpc: 'cab.payment.v1.PaymentService/HandleProviderCallback',
+        select: selectBy((req) => parseCallbackBody(req.body), { A32: { handler: payments.callback } }),
       },
     ] : []),
   ];

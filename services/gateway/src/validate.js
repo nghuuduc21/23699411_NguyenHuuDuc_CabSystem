@@ -239,3 +239,126 @@ export function parseReviewBody(body) {
   if ([...trimmed].length > REASON_MAX) return { error: 'INVALID_INPUT' };
   return { variant: 'A16', request: { reason } };
 }
+
+// ---- Đặt xe, lời mời, thanh toán (spec 14-15-16-19-30 mục 4) ----
+// Như các phần trước: Gateway chỉ kiểm HÌNH THỨC, đổi enum sang chữ hoa, điền giá trị mặc định (04 mục 1.8)
+// và chọn biến thể. Quy tắc nghiệp vụ (điểm đón trùng điểm đến, loại xe có giá không, trạng thái thanh toán…)
+// thuộc booking-service / payment-service.
+
+export const BOOKING_STATUSES = ['PENDING_PAYMENT', 'SEARCHING', 'DRIVER_ASSIGNED', 'NO_DRIVER_FOUND', 'CANCELED'];
+export const OFFER_STATUSES = ['PENDING', 'ACCEPTED', 'REJECTED', 'EXPIRED', 'VOIDED'];
+const ADDRESS_FORM_MAX = 510; // chặn rác; giới hạn chính xác 255 ký tự sau khi cắt khoảng trắng ở service
+const VEHICLE_FORM_MAX = 20;
+const IDEMPOTENCY_KEY_MAX = 100;
+const TXN_ID_MAX = 100;
+
+// Tọa độ dạng mảng `[lat, lng]` (spec mục 4.1): đúng 2 SỐ JSON. Chuỗi "10.82,106.68", 1 hay 3 phần tử,
+// phần tử là chuỗi → INVALID_INPUT; ngoài khoảng → INVALID_COORDINATES. Trả mã lỗi hoặc null.
+function checkPointShape(value) {
+  if (!Array.isArray(value) || value.length !== 2) return 'INVALID_INPUT';
+  if (!value.every((n) => typeof n === 'number' && Number.isFinite(n))) return 'INVALID_INPUT';
+  return null;
+}
+const pointInRange = ([lat, lng]) => lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+
+// Enum không phân biệt hoa thường (04 mục 1.8): trả chữ hoa, hoặc null nếu không phải giá trị cho phép.
+function upperEnum(value, allowed) {
+  if (typeof value !== 'string') return null;
+  const upper = value.toUpperCase();
+  return allowed.includes(upper) ? upper : null;
+}
+
+// A19 POST /api/v1/bookings — `from`, `to` bắt buộc; mặc định `vehicle` = CAR_4, `pay` = CASH.
+// Field lạ (gồm `customer_id`, `fare`) → 400: mã khách lấy từ token, cước do hệ thống tính.
+export function parseCreateBooking(body) {
+  if (!isObject(body) || !onlyKeys(body, ['from', 'to', 'vehicle', 'pay', 'from_address', 'to_address'])) return { error: 'INVALID_INPUT' };
+  const shapeError = checkPointShape(body.from) ?? checkPointShape(body.to);
+  if (shapeError) return { error: shapeError };
+  const request = { from: body.from, to: body.to, vehicle: 'CAR_4', pay: 'CASH' };
+  if (body.vehicle !== undefined) {
+    if (typeof body.vehicle !== 'string' || body.vehicle.length < 1 || body.vehicle.length > VEHICLE_FORM_MAX) return { error: 'INVALID_INPUT' };
+    request.vehicle = body.vehicle.toUpperCase();
+  }
+  if (body.pay !== undefined) {
+    request.pay = upperEnum(body.pay, ['CASH', 'ONLINE']);
+    if (!request.pay) return { error: 'INVALID_INPUT' };
+  }
+  for (const key of ['from_address', 'to_address']) {
+    const value = body[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || value.length < 1 || value.length > ADDRESS_FORM_MAX) return { error: 'INVALID_INPUT' };
+    request[key] = value;
+  }
+  if (!pointInRange(body.from) || !pointInRange(body.to)) return { error: 'INVALID_COORDINATES' };
+  if (hasHtml(body.from_address) || hasHtml(body.to_address)) return { error: 'TEXT_CONTAINS_HTML' };
+  return { variant: 'A19', request };
+}
+
+// Query danh sách có lọc trạng thái + phân trang (A20, A23). Tham số lạ (`sort`) → 400.
+function parseStatusListQuery(query, statuses) {
+  if (Object.values(query).some((value) => typeof value !== 'string')) return { error: 'INVALID_INPUT' };
+  if (!onlyKeys(query, ['status', 'page', 'limit'])) return { error: 'INVALID_INPUT' };
+  const request = {};
+  if (query.status !== undefined) {
+    request.status = upperEnum(query.status, statuses);
+    if (!request.status) return { error: 'INVALID_INPUT' };
+  }
+  const paging = readPagination(query);
+  if (paging.error) return paging;
+  return { request: { ...request, page: paging.page, limit: paging.limit } };
+}
+
+// A20 GET /api/v1/bookings?status&page&limit
+export function parseBookingsQuery(query) {
+  const parsed = parseStatusListQuery(query, BOOKING_STATUSES);
+  return parsed.error ? parsed : { variant: 'A20', request: parsed.request };
+}
+
+// A23 GET /api/v1/offers?status&page&limit — không gửi `status` thì service lọc PENDING.
+export function parseOffersQuery(query) {
+  const parsed = parseStatusListQuery(query, OFFER_STATUSES);
+  return parsed.error ? parsed : { variant: 'A23', request: parsed.request };
+}
+
+// PATCH /api/v1/offers/{id} — chọn theo `status`: ACCEPTED → A24 nhận; REJECTED → A25 từ chối.
+// Thiếu `status`, giá trị khác (PENDING, EXPIRED…), field lạ, body rỗng → 400.
+export function parseOfferBody(body) {
+  if (!isObject(body) || !onlyKeys(body, ['status'])) return { error: 'INVALID_INPUT' };
+  const status = upperEnum(body.status, ['ACCEPTED', 'REJECTED']);
+  if (status === 'ACCEPTED') return { variant: 'A24', request: {} };
+  if (status === 'REJECTED') return { variant: 'A25', request: {} };
+  return { error: 'INVALID_INPUT' };
+}
+
+// A31 POST /api/v1/payments/{id}/transactions — body rỗng hoặc `{"simulate_result": …}`;
+// header Idempotency-Key bắt buộc, 1–100 ký tự sau khi cắt khoảng trắng (04 mục 1.4).
+export function parsePayRequest(req) {
+  const { body } = req;
+  if (!isObject(body) || !onlyKeys(body, ['simulate_result'])) return { error: 'INVALID_INPUT' };
+  const request = {};
+  if (body.simulate_result !== undefined) {
+    request.simulate_result = upperEnum(body.simulate_result, ['SUCCESS', 'FAILED', 'MANUAL']);
+    if (!request.simulate_result) return { error: 'INVALID_INPUT' };
+  }
+  const key = (req.get('idempotency-key') ?? '').trim();
+  if (key.length < 1 || key.length > IDEMPOTENCY_KEY_MAX) return { error: 'IDEMPOTENCY_KEY_REQUIRED' };
+  req.idempotencyKey = key;
+  return { variant: 'A31', request };
+}
+
+// A32 POST /api/v1/payment-callbacks — `txn_id` bắt buộc; `result` mặc định SUCCESS; `amount` số nguyên > 0.
+export function parseCallbackBody(body) {
+  if (!isObject(body) || !onlyKeys(body, ['txn_id', 'result', 'amount'])) return { error: 'INVALID_INPUT' };
+  if (typeof body.txn_id !== 'string' || body.txn_id.trim() === '' || body.txn_id.length > TXN_ID_MAX) return { error: 'INVALID_INPUT' };
+  const request = { txn_id: body.txn_id.trim() };
+  if (body.result !== undefined) {
+    request.result = upperEnum(body.result, ['SUCCESS', 'FAILED']);
+    if (!request.result) return { error: 'INVALID_INPUT' };
+  }
+  if (body.amount !== undefined) {
+    // int32 của proto: số nguyên dương không quá 2^31 − 1.
+    if (!Number.isInteger(body.amount) || body.amount <= 0 || body.amount > 2_147_483_647) return { error: 'INVALID_INPUT' };
+    request.amount = body.amount;
+  }
+  return { variant: 'A32', request };
+}

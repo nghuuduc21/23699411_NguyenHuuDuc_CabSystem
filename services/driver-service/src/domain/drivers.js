@@ -6,7 +6,7 @@
 import {
   APPROVAL_STATUSES, boundingBox, checkCoordinates, checkId, checkPagination, cleanReason, cleanText,
   DriverError, invalid, isPresent, NAME_MAX, normalizeLicense, normalizePlate, normalizeVehicle,
-  pagination, requireRole, SEARCH_RADIUS_M, VEHICLE_TEXT_MAX,
+  pagination, requireRole, requireSystem, SEARCH_RADIUS_M, SYSTEM_ROLE, VEHICLE_TEXT_MAX,
 } from './rules.js';
 
 export const TOPIC_APPLICATION_REVIEWED = 'driver.application-reviewed'; // K7
@@ -146,10 +146,10 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
       };
     },
 
-    // A12 (và S2 của booking ở spec 15): ONLINE + APPROVED + đúng loại xe + trong 1 km, gần nhất trước.
-    // Role: customer, admin. Lời gọi nội bộ của booking sẽ quyết ở spec 15 (TX-Q3).
+    // A12 (và S2 của booking): ONLINE + APPROVED + đúng loại xe + trong 1 km, gần nhất trước.
+    // Role: customer, admin (qua Gateway) và `system` (bộ ghép của booking-service — DX-M1, TX-Q3 đã chốt).
     async findNearbyDrivers({ lat, lng, vehicle, page, limit }, identity) {
-      requireRole(identity, ['customer', 'admin']);
+      requireRole(identity, ['customer', 'admin', SYSTEM_ROLE]);
       checkCoordinates(lat, lng);
       let vehicleType = null;
       if (isPresent(vehicle)) {
@@ -219,6 +219,37 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
       log.info('availability_changed', { driver_id: accountId, status: updated.availability });
       if (updated.availability === 'OFFLINE') return { driver_id: accountId, status: 'OFFLINE' };
       return { driver_id: accountId, status: updated.availability, lat: updated.current_lat, lng: updated.current_lng };
+    },
+
+    // S3 ReserveDriver (spec 14-15-16-19-30 mục 5.4; D8): giữ tài xế cho một booking khi tài xế nhận chuyến.
+    // Một lệnh UPDATE có điều kiện `availability = 'ONLINE'` nên hai booking không giữ được cùng một tài xế,
+    // và không giữ được tài xế vừa tắt Online. Không khớp thì đọc lại để trả đúng lý do.
+    async reserveDriver({ driver_id: driverId, booking_id: bookingId }, identity) {
+      requireSystem(identity);
+      checkId(driverId, 'INVALID_INPUT');
+      checkId(bookingId, 'INVALID_INPUT');
+      if (!(await drivers.reserve(driverId, bookingId))) {
+        const state = await drivers.findAvailability(driverId);
+        if (!state) throw notFound();
+        // Đã giữ cho CHÍNH booking này (lần gọi trước bị quá hạn ở phía booking) → trả như lần đầu (gọi lặp an toàn).
+        const sameBooking = state.availability === 'BUSY' && state.current_booking_id === bookingId;
+        // Còn lại: OFFLINE, hoặc đang bận booking khác.
+        if (!sameBooking) throw new DriverError('FAILED_PRECONDITION', 'DRIVER_NOT_AVAILABLE');
+      }
+      log.info('driver_reserved', { driver_id: driverId, booking_id: bookingId });
+      return { driver_id: driverId, booking_id: bookingId, status: 'BUSY' };
+    },
+
+    // S3 ReleaseDriver (D9, DX6): chỉ nhả khi đang giữ ĐÚNG booking này, về ONLINE (trước khi giữ tài xế
+    // đang ONLINE). Không khớp → released = false, KHÔNG lỗi: booking gọi lặp hay gọi "phòng khi" đều an toàn.
+    // Không phát event: không context nào khác cần biết việc giữ / nhả.
+    async releaseDriver({ driver_id: driverId, booking_id: bookingId }, identity) {
+      requireSystem(identity);
+      checkId(driverId, 'INVALID_INPUT');
+      checkId(bookingId, 'INVALID_INPUT');
+      const released = await drivers.release(driverId, bookingId);
+      if (released) log.info('driver_released', { driver_id: driverId, booking_id: bookingId });
+      return { driver_id: driverId, released };
     },
 
     // A18: ghi vị trí mới nhất ở mọi trạng thái (tài xế cập nhật trước khi bật Online — TX9).

@@ -1,5 +1,6 @@
-// Tầng gRPC của service. Spec 00 chỉ có grpc.health.v1.Health/Check;
-// các spec sau thêm service nghiệp vụ (auth.proto) vào cùng server này.
+// Tầng gRPC của trip-service: grpc.health.v1.Health/Check (spec 00) và cab.trip.v1.TripService
+// (spec 14-15-16-19-30: CreateTrip). Tầng này chỉ đọc danh tính trong metadata, đổi request gRPC → lời gọi
+// logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status. Quy tắc nghiệp vụ nằm ở src/domain/.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
@@ -25,7 +26,35 @@ export function loadProto(file) {
   return grpc.loadPackageDefinition(definition);
 }
 
-export function createGrpcServer({ health }) {
+// Đổi lỗi nghiệp vụ (TripError) sang gRPC status, `details` = mã lỗi.
+// Lỗi khác (database dừng…) → INTERNAL, không lộ thông điệp bên trong.
+function toGrpcError(err, log) {
+  if (err?.kind && grpc.status[err.kind] !== undefined) return { code: grpc.status[err.kind], details: err.code };
+  log.error('lỗi không lường trước', { name: err?.name, code: err?.code });
+  return { code: grpc.status.INTERNAL, details: 'INTERNAL' };
+}
+
+// Danh tính người gọi: CreateTrip chỉ nhận `x-role: system` của booking-service (spec mục 5.5).
+export function readIdentity(metadata) {
+  const first = (key) => {
+    const value = metadata.get(key)[0];
+    return typeof value === 'string' ? value : undefined;
+  };
+  return { accountId: first('x-account-id'), role: first('x-role') };
+}
+
+function unary(fn, log) {
+  return (call, callback) => {
+    Promise.resolve()
+      .then(() => fn(call.request, readIdentity(call.metadata)))
+      .then(
+        (result) => callback(null, result),
+        (err) => callback(toGrpcError(err, log)),
+      );
+  };
+}
+
+export function createGrpcServer({ health, trips, log }) {
   const server = new grpc.Server();
   const healthProto = loadProto('health.proto');
 
@@ -40,6 +69,13 @@ export function createGrpcServer({ health }) {
       health.check().then((status) => callback(null, { status }));
     },
   });
+  // trips = logic nghiệp vụ (src/domain/trips.js). Test chỉ kiểm tra health thì không truyền.
+  if (trips) {
+    const tripProto = loadProto('trip.proto');
+    server.addService(tripProto.cab.trip.v1.TripService.service, {
+      CreateTrip: unary((req, identity) => trips.createTrip(req, identity), log),
+    });
+  }
   return server;
 }
 

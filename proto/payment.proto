@@ -1,0 +1,102 @@
+// Hợp đồng gRPC của payment-service (spec 14-15-16-19-30 mục 5.2). Mục chấm 15, 19, 30.
+// Hai loại bên gọi:
+//   - booking-service (S4 CreatePayment) với metadata `x-role: system` — lời gọi nội bộ, không có khách.
+//   - Gateway (A30, A31, A32) với danh tính dựng từ token; A32 không có token mà có `x-callback-secret`.
+// Metadata `idempotency-key` (A31) do Gateway chép từ header Idempotency-Key.
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi.
+syntax = "proto3";
+
+package cab.payment.v1;
+
+service PaymentService {
+  // S4: booking gọi khi khách đặt xe — tính cước cố định, tạo Payment PENDING. Gọi lặp cùng booking_id trả Payment cũ.
+  rpc CreatePayment (CreatePaymentRequest) returns (CreatePaymentResponse);
+  // A30 GET /api/v1/payments/{id} — chủ hoặc admin; có từng thành phần cước và các giao dịch.
+  rpc GetPayment (GetPaymentRequest) returns (Payment);
+  // A31 POST /api/v1/payments/{id}/transactions — khách thanh toán (bắt buộc Idempotency-Key).
+  rpc PayPayment (PayPaymentRequest) returns (PayPaymentResponse);
+  // A32 POST /api/v1/payment-callbacks — cổng thanh toán báo kết quả (khóa bí mật, không token).
+  rpc HandleProviderCallback (ProviderCallbackRequest) returns (ProviderCallbackResponse);
+}
+
+message CreatePaymentRequest {
+  int64 booking_id = 1;
+  int64 customer_id = 2;
+  string vehicle_type = 3;
+  int32 distance_m = 4;                 // quãng đường ước tính (mét), booking tính từ tọa độ
+  string method = 5;                    // CASH | ONLINE
+}
+
+message CreatePaymentResponse {
+  int64 payment_id = 1;
+  int32 amount = 2;
+  string status = 3;
+  optional string expires_at = 4;       // chỉ ONLINE
+}
+
+message GetPaymentRequest {
+  int64 payment_id = 1;
+}
+
+// Bản chụp bảng giá lúc tính cước: giải thích được con số cuối dù bảng giá đổi sau này.
+message Fare {
+  int32 distance_m = 1;
+  int32 base_fare = 2;
+  int32 per_km_rate = 3;
+  int32 min_fare = 4;
+}
+
+message Transaction {
+  string txn_id = 1;                    // SIM-<payment_id>-<lần thử> hoặc SIM-R-<payment_id>
+  string type = 2;                      // CHARGE | REFUND
+  optional int32 attempt_no = 3;        // chỉ CHARGE
+  string status = 4;                    // PENDING | SUCCEEDED | FAILED
+  int32 amount = 5;
+}
+
+// Không có số thẻ, tài khoản (không lưu — BRULE09), không có customer_id, callback_response.
+message Payment {
+  int64 payment_id = 1;
+  int64 booking_id = 2;
+  string method = 3;
+  string status = 4;                    // PENDING | COMPLETED | FAILED | REFUNDED | CANCELED
+  int32 amount = 5;
+  Fare fare = 6;
+  optional string status_reason = 7;
+  optional string expires_at = 8;
+  optional string paid_at = 9;
+  optional string refunded_at = 10;
+  repeated Transaction transactions = 11;
+}
+
+message PayPaymentRequest {
+  int64 payment_id = 1;
+  optional string simulate_result = 2;  // SUCCESS (mặc định) | FAILED | MANUAL — chỉ khi SIMULATION_MODE=true
+}
+
+// `replayed` = true khi đây là response đã lưu của lần đầu (cùng Idempotency-Key, cùng body).
+// Gateway đổi field này thành header `Idempotency-Replayed: true` và bỏ khỏi body.
+message PayPaymentResponse {
+  int64 payment_id = 1;
+  string status = 2;
+  string txn_id = 3;
+  string txn_status = 4;
+  int32 attempt_no = 5;
+  int32 attempts_left = 6;
+  string expires_at = 7;
+  bool replayed = 15;
+}
+
+message ProviderCallbackRequest {
+  string txn_id = 1;
+  optional string result = 2;           // SUCCESS (mặc định) | FAILED
+  optional int32 amount = 3;            // có thì phải bằng số tiền của giao dịch
+}
+
+message ProviderCallbackResponse {
+  string txn_id = 1;
+  string txn_status = 2;
+  int64 payment_id = 3;
+  string status = 4;
+  bool replayed = 15;
+}

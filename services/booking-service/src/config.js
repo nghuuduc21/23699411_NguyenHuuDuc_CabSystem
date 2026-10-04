@@ -35,9 +35,9 @@ export function loadConfig(env = process.env) {
     serviceName: required(env, 'SERVICE_NAME'),
     databaseUrl: required(env, 'DATABASE_URL'),
     offerTimeoutSeconds: positiveInt(env, 'OFFER_TIMEOUT_SECONDS'),
-    // Địa chỉ Kafka; dùng khi spec sau phát / nghe event (02 mục 6).
+    // Địa chỉ Kafka: phát K1–K4, nghe K6 payment.status-changed (spec 14-15-16-19-30 mục 6).
     kafkaBrokers: required(env, 'KAFKA_BROKERS'),
-    // Chỉ có địa chỉ của service mà service này được phép gọi (02 mục 4.3); spec sau dùng.
+    // Chỉ có địa chỉ của service mà service này được phép gọi (02 mục 4.3): S2, S3 driver; S4 payment; S5 trip.
     driverGrpcAddr: required(env, 'DRIVER_GRPC_ADDR'),
     paymentGrpcAddr: required(env, 'PAYMENT_GRPC_ADDR'),
     tripGrpcAddr: required(env, 'TRIP_GRPC_ADDR'),

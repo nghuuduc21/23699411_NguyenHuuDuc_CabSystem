@@ -4,10 +4,14 @@
 import { createLogger } from './log.js';
 import { BACKEND_SERVICES, ConfigError, loadConfig } from './config.js';
 import { createRedis, createRevocationStore, pingRedis } from './redis.js';
-import { createAuthClient, createCustomerClient, createDriverClient, createHealthClients } from './grpc/clients.js';
+import {
+  createAuthClient, createBookingClient, createCustomerClient, createDriverClient, createHealthClients, createPaymentClient,
+} from './grpc/clients.js';
 import { createAuthHandlers } from './handlers/auth.js';
 import { createCustomerHandlers } from './handlers/customers.js';
 import { createDriverHandlers } from './handlers/drivers.js';
+import { createBookingHandlers } from './handlers/bookings.js';
+import { createPaymentHandlers } from './handlers/payments.js';
 import { createAuthenticator } from './token.js';
 import { createHealthHandlers } from './health.js';
 import { buildRoutes } from './routes.js';
@@ -32,6 +36,8 @@ const healthClients = createHealthClients(config.grpcAddrs);
 const authClient = createAuthClient(config.grpcAddrs['auth-service']);
 const customerClient = createCustomerClient(config.grpcAddrs['customer-service']);
 const driverClient = createDriverClient(config.grpcAddrs['driver-service']);
+const bookingClient = createBookingClient(config.grpcAddrs['booking-service']);
+const paymentClient = createPaymentClient(config.grpcAddrs['payment-service']);
 const revocations = createRevocationStore(redis);
 
 const health = createHealthHandlers({
@@ -42,8 +48,10 @@ const health = createHealthHandlers({
 const auth = createAuthHandlers({ authClient, revocations, log });
 const customers = createCustomerHandlers({ customerClient });
 const drivers = createDriverHandlers({ driverClient });
+const bookings = createBookingHandlers({ bookingClient });
+const payments = createPaymentHandlers({ paymentClient });
 const authenticate = createAuthenticator({ secret: config.jwtSecret, isRevoked: revocations.isRevoked, log });
-const app = createApp({ routes: buildRoutes({ health, auth, customers, drivers }), log, authenticate });
+const app = createApp({ routes: buildRoutes({ health, auth, customers, drivers, bookings, payments }), log, authenticate });
 
 const server = app.listen(HTTP_PORT, '0.0.0.0', () => log.info('HTTP đang nghe', { port: HTTP_PORT }));
 
@@ -55,6 +63,8 @@ const shutdown = () => {
   authClient.close();
   customerClient.close();
   driverClient.close();
+  bookingClient.close();
+  paymentClient.close();
   redis.disconnect();
   process.exit(0);
 };

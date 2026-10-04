@@ -167,6 +167,35 @@ export function createDriversRepo(pool) {
       }
     },
 
+    // S3 ReserveDriver: MỘT lệnh, nguyên tử — chỉ khớp khi tài xế đang ONLINE. Trả true nếu đã giữ.
+    // SetAvailability khóa dòng (FOR UPDATE) nên hai việc không đè nhau; CHECK D8 chặn trạng thái lệch.
+    async reserve(driverId, bookingId) {
+      const { rowCount } = await pool.query(
+        `UPDATE drivers SET availability = 'BUSY', current_booking_id = $2, updated_at = now()
+         WHERE driver_id = $1 AND availability = 'ONLINE'
+         RETURNING driver_id`,
+        [driverId, bookingId],
+      );
+      return rowCount > 0;
+    },
+
+    // Đọc trạng thái nhận chuyến để biết vì sao reserve không khớp. Không có tài xế → null.
+    async findAvailability(driverId) {
+      const { rows } = await pool.query('SELECT availability, current_booking_id FROM drivers WHERE driver_id = $1', [driverId]);
+      return rows[0] ?? null;
+    },
+
+    // S3 ReleaseDriver: chỉ nhả khi đang giữ đúng booking này. Trả true nếu đã nhả.
+    async release(driverId, bookingId) {
+      const { rowCount } = await pool.query(
+        `UPDATE drivers SET availability = 'ONLINE', current_booking_id = NULL, updated_at = now()
+         WHERE driver_id = $1 AND current_booking_id = $2
+         RETURNING driver_id`,
+        [driverId, bookingId],
+      );
+      return rowCount > 0;
+    },
+
     // A18: một lệnh UPDATE, ở mọi trạng thái nhận chuyến (TX9). Không có dòng → null (chưa nộp hồ sơ).
     async updateLocation({ driverId, lat, lng }) {
       const { rows } = await pool.query(

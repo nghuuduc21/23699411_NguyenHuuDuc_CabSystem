@@ -28,7 +28,7 @@ export function loadConfig(env = process.env) {
   return Object.freeze({
     serviceName: required(env, 'SERVICE_NAME'),
     databaseUrl: required(env, 'DATABASE_URL'),
-    // Địa chỉ Kafka; dùng khi spec sau phát / nghe event (02 mục 6).
+    // Địa chỉ Kafka: phát K5 trip.status-changed (spec 14-15-16-19-30 mục 6).
     kafkaBrokers: required(env, 'KAFKA_BROKERS'),
     // Chỉ có địa chỉ của service mà service này được phép gọi (02 mục 4.3); spec sau dùng.
     driverGrpcAddr: required(env, 'DRIVER_GRPC_ADDR'),

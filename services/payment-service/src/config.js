@@ -36,7 +36,7 @@ export function loadConfig(env = process.env) {
     databaseUrl: required(env, 'DATABASE_URL'),
     paymentCallbackSecret: required(env, 'PAYMENT_CALLBACK_SECRET'),
     paymentTimeoutSeconds: positiveInt(env, 'PAYMENT_TIMEOUT_SECONDS'),
-    // Địa chỉ Kafka; dùng khi spec sau phát / nghe event (02 mục 6).
+    // Địa chỉ Kafka: phát K6 payment.status-changed (spec 14-15-16-19-30 mục 6).
     kafkaBrokers: required(env, 'KAFKA_BROKERS'),
     simulationMode: bool(env, 'SIMULATION_MODE'),
   });

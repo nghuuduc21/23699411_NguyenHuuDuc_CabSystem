@@ -1,6 +1,6 @@
 // Hợp đồng gRPC của driver-service (spec 12-13-21-23 mục 5.2). Mục chấm 12, 13, 21, 22, 23.
-// Gateway gọi 8 rpc dưới đây. Booking sẽ gọi FindNearbyDrivers ở spec 15 (S2);
-// ReserveDriver, ReleaseDriver (spec 16) và GetDriverSummary (spec sau) CHƯA khai báo ở đây.
+// Gateway gọi 8 rpc đầu. booking-service gọi FindNearbyDrivers (S2), ReserveDriver, ReleaseDriver (S3)
+// với metadata `x-role: system` (spec 14-15-16-19-30 mục 5.4, 5.5). GetDriverSummary (spec sau) CHƯA khai báo.
 // Danh tính người gọi KHÔNG nằm trong message mà trong metadata `x-account-id`, `x-role` do Gateway
 // dựng từ token đã kiểm tra: tài xế không tự khai được mã của mình (driver_id = account_id).
 // Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi, ví dụ NOT_FOUND + "DRIVER_NOT_FOUND".
@@ -27,6 +27,11 @@ service DriverService {
   rpc SetAvailability (SetAvailabilityRequest) returns (Availability);
   // A18 PATCH /api/v1/drivers/me {"lat","lng"} — ghi vị trí mới nhất.
   rpc UpdateLocation (UpdateLocationRequest) returns (Location);
+  // S3 (spec 16): booking giữ tài xế khi tài xế nhận chuyến: ONLINE → BUSY với current_booking_id.
+  // Một lệnh UPDATE có điều kiện ONLINE (D8). Gọi lặp cùng booking → trả như lần đầu. Chỉ `system`.
+  rpc ReserveDriver (ReserveDriverRequest) returns (Reservation);
+  // S3: nhả tài xế đang giữ cho đúng booking này về ONLINE. Không khớp → released = false, không lỗi. Chỉ `system`.
+  rpc ReleaseDriver (ReleaseDriverRequest) returns (ReleaseResult);
 }
 
 // `optional`: không có giá trị thì field vắng hẳn, Gateway không đưa key vào JSON.
@@ -140,4 +145,25 @@ message Location {
   int64 driver_id = 1;
   double lat = 2;
   double lng = 3;
+}
+
+message ReserveDriverRequest {
+  int64 driver_id = 1;
+  int64 booking_id = 2;
+}
+
+message Reservation {
+  int64 driver_id = 1;
+  int64 booking_id = 2;
+  string status = 3;                   // BUSY
+}
+
+message ReleaseDriverRequest {
+  int64 driver_id = 1;
+  int64 booking_id = 2;
+}
+
+message ReleaseResult {
+  int64 driver_id = 1;
+  bool released = 2;
 }

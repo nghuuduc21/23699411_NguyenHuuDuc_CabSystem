@@ -1,0 +1,34 @@
+// Hợp đồng gRPC của trip-service (spec 14-15-16-19-30 mục 5.3). Mục chấm 16.
+// Spec này chỉ có CreateTrip (S5): booking-service gọi khi tài xế nhận chuyến, với metadata `x-role: system`.
+// ListTrips, GetTrip, UpdateTripStatus, CancelTrip, GetTripForRating thêm ở spec 17, 18, 20.
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi.
+syntax = "proto3";
+
+package cab.trip.v1;
+
+service TripService {
+  // S5: tạo chuyến ACCEPTED từ bản chụp booking. Gọi lặp cùng booking_id + cùng tài xế → trả Trip cũ (T1).
+  rpc CreateTrip (CreateTripRequest) returns (CreateTripResponse);
+}
+
+// Bản chụp booking: tài xế biết đón / trả ở đâu, thu tiền mặt hay không, bao nhiêu (03 mục 11.2).
+message CreateTripRequest {
+  int64 booking_id = 1;
+  int64 customer_id = 2;
+  int64 driver_id = 3;
+  string vehicle_type = 4;
+  double pickup_lat = 5;
+  double pickup_lng = 6;
+  double destination_lat = 7;
+  double destination_lng = 8;
+  optional string pickup_address = 9;
+  optional string destination_address = 10;
+  string payment_method = 11;           // CASH | ONLINE
+  int32 fare_amount = 12;
+}
+
+message CreateTripResponse {
+  int64 trip_id = 1;
+  string status = 2;
+  bool created = 3;                     // false = Trip đã có từ lần gọi trước
+}

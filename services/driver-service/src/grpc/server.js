@@ -83,6 +83,9 @@ export function createGrpcServer({ health, drivers, log }) {
       RejectDriver: unary((req, identity) => drivers.rejectDriver(req, identity), log),
       SetAvailability: unary((req, identity) => drivers.setAvailability(req, identity), log),
       UpdateLocation: unary((req, identity) => drivers.updateLocation(req, identity), log),
+      // S3 — chỉ booking-service gọi, với x-role: system (spec 14-15-16-19-30 mục 5.4).
+      ReserveDriver: unary((req, identity) => drivers.reserveDriver(req, identity), log),
+      ReleaseDriver: unary((req, identity) => drivers.releaseDriver(req, identity), log),
     });
   }
   return server;

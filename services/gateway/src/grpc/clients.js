@@ -65,16 +65,33 @@ export function createDriverClient(addr) {
   return new DriverService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
 }
 
+// Client nghiệp vụ của booking-service (A19–A21, A23–A25).
+export function createBookingClient(addr) {
+  const { BookingService } = loadProto('booking.proto').cab.booking.v1;
+  return new BookingService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
+}
+
+// Client nghiệp vụ của payment-service (A30–A32).
+export function createPaymentClient(addr) {
+  const { PaymentService } = loadProto('payment.proto').cab.payment.v1;
+  return new PaymentService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
+}
+
 // Metadata Gateway gửi kèm mỗi lời gọi (04 mục 1.7). Gateway TỰ DỰNG từ token đã kiểm tra,
 // không chép header cùng tên của client — nếu chép thì ai cũng giả được danh tính bằng một header.
 //   x-request-id: luôn có, để lần theo một request qua log của nhiều service.
 //   x-account-id (= sub, dạng chuỗi), x-role: chỉ khi route có token.
-export function buildMetadata(req) {
+//   `extra`: metadata riêng của một route, chỉ ghi khi có giá trị — `idempotency-key` (A31, từ header
+//   Idempotency-Key), `x-callback-secret` (A32, từ header X-Callback-Secret; Gateway KHÔNG giữ khóa, chỉ chuyển).
+export function buildMetadata(req, extra = {}) {
   const metadata = new grpc.Metadata();
   metadata.set('x-request-id', req.requestId);
   if (req.identity) {
     metadata.set('x-account-id', req.identity.accountId);
     metadata.set('x-role', req.identity.role);
+  }
+  for (const [key, value] of Object.entries(extra)) {
+    if (typeof value === 'string' && value !== '') metadata.set(key, value);
   }
   return metadata;
 }

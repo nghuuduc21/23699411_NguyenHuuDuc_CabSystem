@@ -1,0 +1,120 @@
+// Hợp đồng gRPC của booking-service (spec 14-15-16-19-30 mục 5.1). Mục chấm 14, 15, 16.
+// Chỉ Gateway gọi vào booking (02 mục 4.3: không có gRPC nào từ service khác đi VÀO booking).
+// Danh tính người gọi KHÔNG nằm trong message mà trong metadata `x-account-id`, `x-role` do Gateway
+// dựng từ token: khách không tự khai được `customer_id`, tài xế không tự khai được `driver_id`.
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi, ví dụ NOT_FOUND + "BOOKING_NOT_FOUND".
+// Tên field trùng tên JSON của API (`from`, `to`, `vehicle`, `pay`, `fare`) để Gateway chuyển thẳng;
+// cột database vẫn tên đầy đủ (`pickup_lat`, `vehicle_type`, `payment_method`, `fare_amount`).
+syntax = "proto3";
+
+package cab.booking.v1;
+
+service BookingService {
+  // A19 POST /api/v1/bookings — khách đặt xe; trả ngay cước cố định và mã thanh toán.
+  rpc CreateBooking (CreateBookingRequest) returns (Booking);
+  // A20 GET /api/v1/bookings?status&page&limit — booking của chính khách, mới nhất trước.
+  rpc ListBookings (ListBookingsRequest) returns (ListBookingsResponse);
+  // A21 GET /api/v1/bookings/{id} — chủ booking hoặc admin.
+  rpc GetBooking (GetBookingRequest) returns (Booking);
+  // A23 GET /api/v1/offers?status&page&limit — lời mời của chính tài xế (mặc định PENDING).
+  rpc ListOffers (ListOffersRequest) returns (ListOffersResponse);
+  // A24 PATCH /api/v1/offers/{id} {"status":"ACCEPTED"} — tài xế nhận → có ngay trip_id.
+  rpc AcceptOffer (OfferIdRequest) returns (AcceptOfferResponse);
+  // A25 PATCH /api/v1/offers/{id} {"status":"REJECTED"} — tài xế từ chối → hỏi người kế tiếp.
+  rpc RejectOffer (OfferIdRequest) returns (RejectOfferResponse);
+}
+
+// Mỗi rpc chỉ điền field của response tương ứng; field `optional` không có giá trị thì vắng hẳn.
+message Booking {
+  int64 booking_id = 1;
+  string status = 2;                    // PENDING_PAYMENT | SEARCHING | DRIVER_ASSIGNED | NO_DRIVER_FOUND | CANCELED
+  string vehicle = 3;                   // MOTORBIKE | CAR_4 | CAR_7
+  string pay = 4;                       // CASH | ONLINE
+  int32 distance_m = 5;                 // quãng đường ước tính (mét)
+  int32 fare = 6;                       // cước cố định (đồng)
+  int64 payment_id = 7;
+  optional string payment_expires_at = 8; // chỉ ONLINE, chỉ ở A19
+  repeated double from = 9;             // [lat, lng]
+  repeated double to = 10;
+  optional string from_address = 11;
+  optional string to_address = 12;
+  optional int64 driver_id = 13;        // khi đã phân công
+  optional int64 trip_id = 14;
+  optional string canceled_by = 15;     // customer | system
+  optional string cancel_reason = 16;
+  optional string created_at = 17;      // ISO 8601 UTC
+}
+
+message Pagination {
+  int32 page = 1;
+  int32 limit = 2;
+  int32 total = 3;
+  int32 total_pages = 4;
+}
+
+// Không có customer_id, fare: khách không được tự khai (field lạ bị Gateway chặn 400).
+message CreateBookingRequest {
+  repeated double from = 1;
+  repeated double to = 2;
+  string vehicle = 3;                   // Gateway điền "CAR_4" khi client không gửi
+  string pay = 4;                       // Gateway điền "CASH" khi client không gửi
+  optional string from_address = 5;
+  optional string to_address = 6;
+}
+
+message ListBookingsRequest {
+  optional string status = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message ListBookingsResponse {
+  repeated Booking data = 1;
+  Pagination pagination = 2;
+}
+
+message GetBookingRequest {
+  int64 booking_id = 1;
+}
+
+// `from`, `to` hiện cho tài xế ĐƯỢC MỜI để quyết định nhận; không có tên, số điện thoại khách.
+message Offer {
+  int64 offer_id = 1;
+  int64 booking_id = 2;
+  int32 distance_m = 3;                 // tài xế → điểm đón lúc mời
+  string status = 4;                    // PENDING | ACCEPTED | REJECTED | EXPIRED | VOIDED
+  string expires_at = 5;
+  repeated double from = 6;
+  repeated double to = 7;
+  string pay = 8;
+  int32 fare = 9;
+}
+
+message ListOffersRequest {
+  optional string status = 1;           // không gửi = PENDING
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message ListOffersResponse {
+  repeated Offer data = 1;
+  Pagination pagination = 2;
+}
+
+message OfferIdRequest {
+  int64 offer_id = 1;
+}
+
+message AcceptOfferResponse {
+  int64 offer_id = 1;
+  string status = 2;
+  int64 booking_id = 3;
+  string booking_status = 4;
+  int64 trip_id = 5;
+  string trip_status = 6;
+}
+
+message RejectOfferResponse {
+  int64 offer_id = 1;
+  string status = 2;
+}

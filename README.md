@@ -97,8 +97,15 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | `POST /api/v1/accounts` `{"phone":"0901234567","password":"12345678"}` | 201 `{"account_id":1000,"role":"customer"}` — đăng ký khách (A04); trùng số → 409 |
 | `POST /api/v1/auth/login` `{"phone":"0900000001","password":"12345678"}` | 200 `{"token","account_id","role","expires_in"}` (A05); sai → 401, tài khoản khóa → 403 |
 | `POST /api/v1/auth/logout` + `Authorization: Bearer <token>` | 200 `{"status":"LOGGED_OUT"}` (A06); dùng lại token → 401 `TOKEN_REVOKED` |
+| `POST /api/v1/bookings` `{"from":[10.82,106.68],"to":[10.83,106.69]}` (token khách) | 201 `SEARCHING`, `CAR_4`, `CASH`, `fare` 45000 (A19, mục 15); `"pay":"online"` → `PENDING_PAYMENT` |
+| `GET /api/v1/bookings?limit=2&page=2` (token khách) | Booking của chính khách, mới nhất trước (A20, mục 14) |
+| `GET /api/v1/offers` (token tài xế) → `PATCH /api/v1/offers/{id}` `{"status":"ACCEPTED"}` | Lời mời đang chờ (A23); nhận → `DRIVER_ASSIGNED` + `trip_id` (A24, mục 16) |
+| `POST /api/v1/payments/7/transactions` + `Idempotency-Key: k1` `{"simulate_result":"MANUAL"}` | 200 `PENDING`, `txn_id` `SIM-7-1` (A31, mục 19); gửi lại → header `Idempotency-Replayed: true` (mục 30) |
+| `POST /api/v1/payment-callbacks` + `X-Callback-Secret: cab-secret` `{"txn_id":"SIM-7-1"}` (không token) | 200 `COMPLETED` (A32, mục 19) |
 | Đường dẫn khác | 404 `{"error":"ROUTE_NOT_FOUND"}` |
 
 API nghiệp vụ nằm dưới `/api/v1/…` (`docs/design/04-api.md`) và được thêm theo từng đặc tả.
 
 Tài khoản seed (mật khẩu chung `SEED_PASSWORD` = `12345678`): khách `090000000n` ↔ mã `n` (1, 2, 3; mã 9 bị khóa), tài xế `091000000n` ↔ mã `10 + n` (11–18), admin `0999999999` ↔ mã 99. Tài khoản tạo qua API có mã từ 1000.
+
+Booking seed của KH1: mã booking = mã payment = mã trip = 1…7, tuyến P0 (10.82, 106.68) → D0 (10.83, 106.69); B7 (`CAR_7`, `ONLINE`, chờ thanh toán, hạn 1 ngày) dành cho mục 19, 30. Booking, payment, trip, offer tạo qua API có mã từ 1000.

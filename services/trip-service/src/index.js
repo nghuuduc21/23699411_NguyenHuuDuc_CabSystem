@@ -9,6 +9,9 @@ import { runMigrations } from './migrate.js';
 import { runSeed } from './seed.js';
 import { createHealth } from './health.js';
 import { createGrpcServer, startGrpcServer } from './grpc/server.js';
+import { createTripsRepo } from './trips-repo.js';
+import { createTripLogic } from './domain/trips.js';
+import { createEventPublisher, createKafkaProducer } from './events.js';
 
 const log = createLogger(process.env.SERVICE_NAME || 'trip-service');
 const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
@@ -27,7 +30,13 @@ if (config.simulationMode) log.warn('đang chạy chế độ giả lập');
 
 const pool = createPool(config.databaseUrl, log);
 const health = createHealth({ ping: () => pingDatabase(pool) });
-const server = createGrpcServer({ health });
+// Bộ phát K5. Chưa nối Kafka ở đây: nối lúc gửi lần đầu, nên Kafka dừng không chặn khởi động.
+const events = createEventPublisher({
+  producer: createKafkaProducer({ brokers: config.kafkaBrokers, clientId: config.serviceName, log }),
+  log,
+});
+const trips = createTripLogic({ trips: createTripsRepo(pool), events, log });
+const server = createGrpcServer({ health, trips, log });
 
 try {
   await waitForDatabase(pool, log);
@@ -47,7 +56,7 @@ try {
 const shutdown = () => {
   log.info('đang dừng');
   server.forceShutdown();
-  pool.end().finally(() => process.exit(0));
+  Promise.allSettled([events.close(), pool.end()]).finally(() => process.exit(0));
 };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
