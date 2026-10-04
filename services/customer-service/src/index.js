@@ -9,6 +9,9 @@ import { runMigrations } from './migrate.js';
 import { runSeed } from './seed.js';
 import { createHealth } from './health.js';
 import { createGrpcServer, startGrpcServer } from './grpc/server.js';
+import { createProfilesRepo } from './profiles-repo.js';
+import { createCustomerLogic } from './domain/customers.js';
+import { createFieldCipher } from './domain/crypto.js';
 
 const log = createLogger(process.env.SERVICE_NAME || 'customer-service');
 const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
@@ -27,7 +30,13 @@ if (config.simulationMode) log.warn('đang chạy chế độ giả lập');
 
 const pool = createPool(config.databaseUrl, log);
 const health = createHealth({ ping: () => pingDatabase(pool) });
-const server = createGrpcServer({ health });
+// Ghép logic nghiệp vụ với phụ thuộc thật: database và bộ mã hóa dùng khóa CUSTOMER_DATA_KEY.
+const customers = createCustomerLogic({
+  profiles: createProfilesRepo(pool),
+  cipher: createFieldCipher(config.customerDataKey),
+  log,
+});
+const server = createGrpcServer({ health, customers, log });
 
 try {
   await waitForDatabase(pool, log);

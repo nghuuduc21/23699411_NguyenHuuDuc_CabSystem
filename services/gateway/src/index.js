@@ -4,8 +4,9 @@
 import { createLogger } from './log.js';
 import { BACKEND_SERVICES, ConfigError, loadConfig } from './config.js';
 import { createRedis, createRevocationStore, pingRedis } from './redis.js';
-import { createAuthClient, createHealthClients } from './grpc/clients.js';
+import { createAuthClient, createCustomerClient, createHealthClients } from './grpc/clients.js';
 import { createAuthHandlers } from './handlers/auth.js';
+import { createCustomerHandlers } from './handlers/customers.js';
 import { createAuthenticator } from './token.js';
 import { createHealthHandlers } from './health.js';
 import { buildRoutes } from './routes.js';
@@ -28,6 +29,7 @@ try {
 const redis = createRedis(config.redisUrl, log);
 const healthClients = createHealthClients(config.grpcAddrs);
 const authClient = createAuthClient(config.grpcAddrs['auth-service']);
+const customerClient = createCustomerClient(config.grpcAddrs['customer-service']);
 const revocations = createRevocationStore(redis);
 
 const health = createHealthHandlers({
@@ -36,8 +38,9 @@ const health = createHealthHandlers({
   expectedServices: BACKEND_SERVICES.map(([name]) => name),
 });
 const auth = createAuthHandlers({ authClient, revocations, log });
+const customers = createCustomerHandlers({ customerClient });
 const authenticate = createAuthenticator({ secret: config.jwtSecret, isRevoked: revocations.isRevoked, log });
-const app = createApp({ routes: buildRoutes({ health, auth }), log, authenticate });
+const app = createApp({ routes: buildRoutes({ health, auth, customers }), log, authenticate });
 
 const server = app.listen(HTTP_PORT, '0.0.0.0', () => log.info('HTTP đang nghe', { port: HTTP_PORT }));
 
@@ -47,6 +50,7 @@ const shutdown = () => {
   server.close();
   for (const client of Object.values(healthClients)) client.close();
   authClient.close();
+  customerClient.close();
   redis.disconnect();
   process.exit(0);
 };

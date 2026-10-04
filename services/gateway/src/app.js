@@ -64,7 +64,7 @@ export function parseBody(req) {
 //   2–5. route cần token: đọc, kiểm tra chữ ký, hạn, claim, danh sách thu hồi → 401
 //   6. role của token có trong danh sách của route không → 403
 //   7. đọc body là JSON → 400 INVALID_JSON
-//   8. kiểm tra hình thức body → 400
+//   8. kiểm tra hình thức body → 400; rồi tham số đường dẫn (ví dụ mã `{id}` phải là số) → 400
 //   9. gọi handler (gọi gRPC)
 // Lỗi rẻ nhất trả trước; vì vậy sai role bị 403 dù body rỗng hay hỏng (mục chấm 28).
 // Đọc body SAU khi khớp route để đường dẫn không tồn tại luôn trả 404, dù body hỏng.
@@ -82,7 +82,7 @@ function wrap(route, authenticate) {
       }
       req.identity = result.identity;
     }
-    const error = parseBody(req) ?? route.validate?.(req.body);
+    const error = parseBody(req) ?? route.validate?.(req.body) ?? route.validateParams?.(req.params);
     if (error) {
       res.status(400).json({ error });
       return;

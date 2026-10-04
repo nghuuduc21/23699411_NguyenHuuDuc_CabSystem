@@ -1,9 +1,10 @@
 # Spec 09-10 — Đăng ký tài khoản khách, đăng nhập, JWT, đăng xuất
 
-> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi**: mã số nguyên (ADR-015), JWT HS256 với `JWT_SECRET` (ADR-016), số điện thoại / email lưu rõ, bỏ chỉ mục mù và `AUTH_DATA_KEY` (ADR-012 sửa), seed theo 03 mục 14, đăng nhập bằng field `phone` hoặc `email`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3 (2026-10-03):** bỏ tiền tố `/api/v1`; response đăng nhập dùng field `token`; định danh sai định dạng → `INVALID_PHONE` / `INVALID_EMAIL`; Gateway đọc body là JSON bất kể `Content-Type`; chuỗi mục 27 theo 04 mục 5.3. **Đồng bộ với 04 lần 4 (ADR-018):** A04 = `POST /api/v1/accounts`, A05 = `POST /api/v1/auth/login`, A06 = `POST /api/v1/auth/logout` (hai ngoại lệ có chủ đích); chuỗi mục 9, 10 theo 04 mục 5.1 (mục 10 đăng nhập ba role, tạo ba tab token).
+> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi**: mã số nguyên (ADR-015), JWT HS256 với `JWT_SECRET` (ADR-016), số điện thoại / email lưu rõ, bỏ chỉ mục mù và `AUTH_DATA_KEY` (ADR-012 sửa), seed theo 03 mục 14, đăng nhập bằng field `phone` hoặc `email`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3 (2026-10-03):** response đăng nhập dùng field `token`; định danh sai định dạng → `INVALID_PHONE` / `INVALID_EMAIL`; Gateway đọc body là JSON bất kể `Content-Type`; chuỗi mục 27 theo 04 mục 5.3. **Đồng bộ với 04 lần 4 (ADR-018):** A04 = `POST /api/v1/accounts`, A05 = `POST /api/v1/auth/login`, A06 = `POST /api/v1/auth/logout` (hai ngoại lệ có chủ đích); chuỗi mục 9, 10 theo 04 mục 5.1 (mục 10 đăng nhập ba role, tạo ba tab token). Lần 3 từng bỏ tiền tố `/api/v1`; lần 4 **đưa trở lại** theo giảng viên (ADR-018) — mọi đường dẫn nghiệp vụ trong spec này nằm dưới `/api/v1/`.
+> **Sửa 2026-10-04 theo phản hồi dev-agent sau khi code:** Gateway bắt buộc claim `exp` (mục 4.1 bước 4); ghi nhận thư viện `jsonwebtoken` 9.0.3, chữ `Bearer` không phân biệt hoa thường, lệnh Redis có hạn 500 ms, lỗi không lường trước ở `auth-service` → 503 (mục 4.1, 5); DN-Q1, DN-Q2, DN-Q4 chốt theo đề xuất (a). Tham chiếu "spec 21" đổi thành spec `12-13-21-23-tai-xe`.
 > Mục chấm **9, 10, 25, 27**; bổ trợ **24** (mật khẩu băm). FR26, FR42.
 > Đầu vào: `CLAUDE.md`; `srs.md` (FR26, FR42, UC01, UC02, UC33, AC27, RTM26, RTM27); `docs/design/01` quy tắc A1–A5, A8; `docs/design/02` G1, G10; `docs/design/03` mục 2, 3.1, 11.4, 12, 13, 14; `docs/design/04` A04–A06, mục 1, 1.1, 1.7, 3; ADR-010, ADR-012, ADR-013, ADR-015, ADR-016.
-> Phụ thuộc: **spec 00**. Ngoài phạm vi: rate limit (mục 29), OTP và đăng ký tài xế (mục 21), toàn bộ ma trận role (mục 28 — spec này chỉ dựng cơ chế).
+> Phụ thuộc: **spec 00**. Ngoài phạm vi: rate limit (mục 29), OTP và đăng ký tài xế (mục 21 — spec `12-13-21-23-tai-xe`), toàn bộ ma trận role (mục 28 — spec này chỉ dựng cơ chế).
 > Ký hiệu: **[ĐC]** đã chốt; **[BA]** BA chọn (gom ở mục 9).
 
 ## 1. Truy vết
@@ -48,7 +49,7 @@ Lấy token → kiểm tra chữ ký HS256 bằng `JWT_SECRET` và hạn → ki�
 |---|---|
 | Tác nhân | Người dùng có token (cả ba role) |
 | Luồng chính | 1. Gateway kiểm tra token như 2.3. 2. `SET revoked:{jti} 1 EX <exp − now>`. 3. Trả 200. **Không gọi `auth-service`** [ĐC] |
-| Ngoại lệ | Token thiếu / sai / hết hạn / đã thu hồi → 401. Redis lỗi khi ghi → 503 [BA, DN-Q1] |
+| Ngoại lệ | Token thiếu / sai / hết hạn / đã thu hồi → 401. Redis lỗi khi ghi → 503 [chốt DN-Q1 (a)] |
 | Hậu điều kiện | Mọi request sau dùng token đó → 401 `TOKEN_REVOKED`; token khác của cùng tài khoản vẫn dùng được |
 
 ## 3. Service tham gia
@@ -69,10 +70,10 @@ Lấy token → kiểm tra chữ ký HS256 bằng `JWT_SECRET` và hạn → ki�
 |---|---|---|
 | 0 | Khớp route | 404 `ROUTE_NOT_FOUND` |
 | 1 | *(Rate limit — spec mục 29)* | 429 |
-| 2 | Đọc `Authorization: Bearer <token>` | Không có header hoặc token rỗng → 401 `TOKEN_MISSING`; sai dạng → 401 `TOKEN_INVALID` |
-| 3 | Kiểm tra chữ ký: **chỉ `HS256`** (`algorithms: ['HS256']`), khóa `JWT_SECRET` | Sai chữ ký / bị sửa / sai định dạng / thuật toán khác → 401 `TOKEN_INVALID`. Đúng chữ ký nhưng hết hạn → 401 `TOKEN_EXPIRED` |
-| 4 | Claim: `sub` là chuỗi số nguyên dương; `role` ∈ {`customer`, `driver`, `admin`}; có `jti` | Sai → 401 `TOKEN_INVALID` |
-| 5 | Redis `EXISTS revoked:{jti}` | Có → 401 `TOKEN_REVOKED`. Redis dừng → **cho qua**, log `warn` [ĐC] |
+| 2 | Đọc `Authorization: Bearer <token>`; chữ `Bearer` **không phân biệt hoa thường** (`bearer`, `BEARER` đều nhận) | Không có header hoặc token rỗng → 401 `TOKEN_MISSING`; sai dạng → 401 `TOKEN_INVALID` |
+| 3 | Kiểm tra chữ ký bằng thư viện `jsonwebtoken` **9.0.3**: **chỉ `HS256`** (`algorithms: ['HS256']`), khóa `JWT_SECRET` | Sai chữ ký / bị sửa / sai định dạng / thuật toán khác → 401 `TOKEN_INVALID`. Đúng chữ ký nhưng hết hạn → 401 `TOKEN_EXPIRED` |
+| 4 | Claim: `sub` là chuỗi số nguyên dương; `role` ∈ {`customer`, `driver`, `admin`}; có `jti`; **có `exp` là số** (bắt buộc: thư viện chỉ kiểm hạn khi có `exp`, và A06 cần `exp` để tính thời gian sống của `revoked:{jti}`) | Sai / thiếu → 401 `TOKEN_INVALID` |
+| 5 | Redis `EXISTS revoked:{jti}`, **hạn 500 ms** mỗi lệnh Redis | Có → 401 `TOKEN_REVOKED`. Redis dừng hoặc quá 500 ms → **cho qua**, log `warn` [ĐC] |
 | 6 | So `role` với bảng route (một bảng khai báo trong Gateway, ví dụ `src/routes.js`). Route có biến thể (04 mục 1.10, spec sau): so role của đường dẫn ở bước này, role của biến thể sau bước 8 | 403 `FORBIDDEN` |
 | 7 | Đọc body là JSON **bất kể `Content-Type`** (Postman chọn "Text" hay "JSON" đều chạy — 04 mục 1); body rỗng = `{}`; request `GET` bỏ qua body | Không phân tích được thành JSON → 400 `INVALID_JSON` |
 | 8 | Kiểm tra hình thức theo route | 400 |
@@ -86,7 +87,7 @@ Quy tắc chung cho body (mọi route) [BA]: body phải là object JSON; field 
 
 | | |
 |---|---|
-| Vì sao đường dẫn này | Đăng ký = tạo một tài khoản → `POST` vào tập `accounts` (không dùng động từ `register`). Chỉ tạo `customer`; tài xế dùng `/api/v1/driver-accounts` (spec 21) |
+| Vì sao đường dẫn này | Đăng ký = tạo một tài khoản → `POST` vào tập `accounts` (không dùng động từ `register`). Chỉ tạo `customer`; tài xế dùng `/api/v1/driver-accounts` (spec `12-13-21-23-tai-xe`) |
 | Token / role | Không / — |
 | Service — rpc | `auth-service` — `RegisterCustomer` |
 | Request | `{ "phone": "0901234567", "password": "12345678" }` — thêm `"email"` nếu muốn. Cùng body với A05 nên mục 9 chỉ sửa URL |
@@ -154,17 +155,17 @@ JWT [ĐC ADR-016]:
 | Token / role | Có / cả ba role |
 | Service | **Không** — Gateway + Redis [ĐC] |
 | Request | Không body |
-| Xử lý | Sau bước 2–6 mục 4.1: `SET revoked:{jti} 1 EX <exp − now>` (tối thiểu 1 giây) |
+| Xử lý | Sau bước 2–6 mục 4.1: `SET revoked:{jti} 1 EX <exp − now>` (tối thiểu 1 giây), hạn 500 ms |
 
 | Kết quả | HTTP | Body |
 |---|---|---|
 | Thành công | **200** | `{ "status": "LOGGED_OUT" }` |
 | Không token / token sai / hết hạn / đã thu hồi | 401 | `TOKEN_MISSING` / `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REVOKED` |
-| Redis lỗi khi ghi | 503 | `SERVICE_UNAVAILABLE` [BA] |
+| Redis lỗi khi ghi hoặc quá 500 ms | 503 | `SERVICE_UNAVAILABLE` [chốt DN-Q1 (a)] |
 
 ## 5. Hợp đồng gRPC — `proto/auth.proto`
 
-`package cab.auth.v1; service AuthService`. Spec 21 thêm `RequestDriverOtp`, `RegisterDriver`.
+`package cab.auth.v1; service AuthService`. Spec `12-13-21-23-tai-xe` thêm `RequestDriverOtp`, `RegisterDriver`.
 
 | rpc | Vào | Ra | Lỗi (status → `details`) |
 |---|---|---|---|
@@ -182,6 +183,7 @@ Cài đặt trong `auth-service`:
 | SQL | Chỉ câu lệnh có tham số (`$1`); không ghép chuỗi | Mục 25 |
 | Log | `register_ok` / `login_ok` kèm `account_id`; `login_failed` kèm mã lỗi. **Không** ghi số điện thoại, email, mật khẩu, token | NFR08, NFR10 |
 | Khởi động | `JWT_SECRET` thiếu hoặc < 32 ký tự → thoát 1 | Spec 00 |
+| Lỗi không lường trước | Mọi lỗi không phải lỗi nghiệp vụ đã liệt kê → `INTERNAL` → Gateway trả 503 `SERVICE_UNAVAILABLE`, không lộ chi tiết (code đã làm 2026-10-04) | Spec 00 mục 4.1 |
 
 ## 6. Giao tiếp giữa các service
 
@@ -206,7 +208,7 @@ Cài đặt trong `auth-service`:
 | `status` | `text` | `NOT NULL DEFAULT 'ACTIVE'`, `CHECK (status IN ('ACTIVE','LOCKED'))` |
 | `created_at`, `updated_at` | `timestamptz` | `NOT NULL DEFAULT now()` |
 
-Không thêm index: hai UNIQUE là index cho đăng nhập. Số điện thoại, email **lưu rõ** [ĐC ADR-012 sửa]: cần tra cứu và UNIQUE; bảo vệ bằng mạng nội bộ và quyền ở API. Bảng `otp_verifications` thuộc spec 21.
+Không thêm index: hai UNIQUE là index cho đăng nhập. Số điện thoại, email **lưu rõ** [ĐC ADR-012 sửa]: cần tra cứu và UNIQUE; bảo vệ bằng mạng nội bộ và quyền ở API. Bảng `otp_verifications` thuộc spec `12-13-21-23-tai-xe` (migration `002`).
 
 ### 7.2 Redis (Gateway)
 
@@ -272,6 +274,7 @@ Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab, 30 giây gồm cả
 |---|---|
 | Token `alg: none`, token ký bằng khóa lạ, `role: "superadmin"` | Thư viện đã cố định `algorithms: ['HS256']`; AC-DN-15 đủ cho mục 27 |
 | Token hết hạn → `TOKEN_EXPIRED` (đặt `JWT_TTL_SECONDS=2` hoặc đồng hồ giả) | Phải chờ; không thuộc phiếu chấm |
+| Token ký đúng `JWT_SECRET` nhưng thiếu `exp` → 401 `TOKEN_INVALID`; header `bearer <token>` (chữ thường) → 200 | Unit test Gateway; không chấm |
 | Hai lần đăng nhập ra `jti` khác nhau; đăng xuất một token không ảnh hưởng token khác | Hành vi đúng nhưng không chấm |
 | Header client `x-account-id`, `x-role` bị bỏ qua | Quy tắc vẫn bắt buộc (mục 4.1); test tự động khi có thời gian |
 | Chuẩn hóa `+84 9xx…` trùng với `09xx…`; email viết hoa đăng nhập được | Không chấm |
@@ -296,7 +299,7 @@ Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab, 30 giây gồm cả
 
 | # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
 |---|---|---|---|---|
-| DN-Q1 | Đăng xuất khi Redis dừng trả gì? `CLAUDE.md` chỉ chốt "cho request đi qua" khi **kiểm tra** | (a) 503: đăng xuất chưa có hiệu lực; (b) 200 dù không ghi được | (a) — trả 200 là báo sai | SV |
-| DN-Q2 | Tài khoản bị khóa sau khi đã có token thì token cũ còn dùng đến hết hạn | (a) Chấp nhận (không có API khóa tài khoản); (b) Gateway hỏi Auth mỗi request | (a) | SV |
+| ~~DN-Q1~~ | Đã chốt 2026-10-04 theo đề xuất (a), code đã làm: đăng xuất khi Redis dừng → 503 (trả 200 là báo sai) | — | — | — |
+| ~~DN-Q2~~ | Đã chốt 2026-10-04 theo đề xuất (a), code đã làm: tài khoản bị khóa sau khi có token thì token cũ dùng đến hết hạn (không có API khóa tài khoản) | — | — | — |
 | ~~DN-Q3~~ | Đã đóng 2026-10-03: 04 mục 1.8 ghi `phone` hoặc `email` (DN1) | — | — | — |
-| DN-Q4 | `account_id` ở response là số (`1000`), `sub` trong JWT là chuỗi (`"1"`) — có làm sinh viên lúng túng khi giải thích không | (a) Giữ như DN6; (b) `sub` là số | (a) | SV |
+| ~~DN-Q4~~ | Đã chốt 2026-10-04 theo đề xuất (a), code đã làm: `account_id` ở response là số, `sub` trong JWT là chuỗi (DN6) | — | — | — |

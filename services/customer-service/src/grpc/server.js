@@ -1,5 +1,6 @@
-// Tầng gRPC của service. Spec 00 chỉ có grpc.health.v1.Health/Check;
-// các spec sau thêm service nghiệp vụ (auth.proto) vào cùng server này.
+// Tầng gRPC của service: grpc.health.v1.Health/Check (spec 00) và cab.customer.v1.CustomerService (spec 11).
+// Tầng này chỉ đọc danh tính trong metadata, đổi request gRPC → lời gọi logic nghiệp vụ,
+// và lỗi nghiệp vụ → gRPC status. Quy tắc nghiệp vụ nằm ở src/domain/, không nằm ở đây.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
@@ -25,7 +26,37 @@ export function loadProto(file) {
   return grpc.loadPackageDefinition(definition);
 }
 
-export function createGrpcServer({ health }) {
+// Đổi lỗi nghiệp vụ (CustomerError) sang gRPC status, `details` = mã lỗi; Gateway đổi tiếp sang HTTP.
+// Lỗi khác (database dừng…) → INTERNAL, không lộ thông điệp bên trong; Gateway trả 503.
+function toGrpcError(err, log) {
+  if (err?.kind && grpc.status[err.kind] !== undefined) return { code: grpc.status[err.kind], details: err.code };
+  log.error('lỗi không lường trước', { name: err?.name, code: err?.code });
+  return { code: grpc.status.INTERNAL, details: 'INTERNAL' };
+}
+
+// Danh tính do Gateway dựng từ token đã kiểm tra (04 mục 1.7). Service tin metadata vì chỉ Gateway
+// vào được mạng nội bộ; service KHÔNG tự kiểm tra JWT. Thiếu thì để undefined, logic sẽ từ chối.
+export function readIdentity(metadata) {
+  const first = (key) => {
+    const value = metadata.get(key)[0];
+    return typeof value === 'string' ? value : undefined;
+  };
+  return { accountId: first('x-account-id'), role: first('x-role') };
+}
+
+// Bọc một hàm nghiệp vụ async (request, identity) thành handler unary của grpc-js.
+function unary(fn, log) {
+  return (call, callback) => {
+    Promise.resolve()
+      .then(() => fn(call.request, readIdentity(call.metadata)))
+      .then(
+        (result) => callback(null, result),
+        (err) => callback(toGrpcError(err, log)),
+      );
+  };
+}
+
+export function createGrpcServer({ health, customers, log }) {
   const server = new grpc.Server();
   const healthProto = loadProto('health.proto');
 
@@ -40,6 +71,15 @@ export function createGrpcServer({ health }) {
       health.check().then((status) => callback(null, { status }));
     },
   });
+  // customers = logic nghiệp vụ (src/domain/customers.js). Test chỉ kiểm tra health thì không truyền.
+  if (customers) {
+    const customerProto = loadProto('customer.proto');
+    server.addService(customerProto.cab.customer.v1.CustomerService.service, {
+      CreateCustomer: unary((req, identity) => customers.createCustomer(req, identity), log),
+      GetCustomer: unary((req, identity) => customers.getCustomer(req, identity), log),
+      UpdateCustomer: unary((req, identity) => customers.updateCustomer(req, identity), log),
+    });
+  }
   return server;
 }
 

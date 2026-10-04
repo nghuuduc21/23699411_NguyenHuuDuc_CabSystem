@@ -1,0 +1,45 @@
+// Hợp đồng gRPC của customer-service (spec 11 mục 5).
+// Chỉ Gateway gọi ba rpc này; customer-service không gọi service nào và không phát event Kafka
+// (spec 11 mục 6: không context nào cần hồ sơ khách, đặt xe không cần hồ sơ — Q56).
+// Danh tính người gọi KHÔNG nằm trong message mà trong metadata `x-account-id`, `x-role` do Gateway
+// dựng từ token đã kiểm tra: client không tự khai được mã của mình.
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi, ví dụ NOT_FOUND + "CUSTOMER_NOT_FOUND".
+syntax = "proto3";
+
+package cab.customer.v1;
+
+service CustomerService {
+  // A37 POST /api/v1/customers — customer_id = x-account-id; chỉ role `customer`.
+  rpc CreateCustomer (CreateCustomerRequest) returns (Customer);
+  // A38 GET /api/v1/customers/me (Gateway điền mã = sub) và A09 GET /api/v1/customers/{id}.
+  // `customer` chỉ xem mã của mình; `admin` xem mọi mã; `driver` bị từ chối.
+  rpc GetCustomer (GetCustomerRequest) returns (Customer);
+  // A10 PATCH /api/v1/customers/me — sửa một phần hồ sơ của chính mình.
+  rpc UpdateCustomer (UpdateCustomerRequest) returns (Customer);
+}
+
+// Tên field trùng tên JSON của API (`name`, `dob`) để Gateway chuyển thẳng, không phải đổi tên.
+// Cột database vẫn là tên đầy đủ `full_name_enc`, `date_of_birth_enc` (đổi ở customer-service).
+message Customer {
+  int64 customer_id = 1;      // bằng account_id trong token (ADR-013, ADR-015)
+  string name = 2;            // họ tên đã giải mã
+  optional string dob = 3;    // YYYY-MM-DD; không gửi = chưa có ngày sinh (JSON trả null)
+}
+
+message CreateCustomerRequest {
+  string name = 1;
+  optional string dob = 2;    // tùy chọn (C6)
+}
+
+message GetCustomerRequest {
+  int64 customer_id = 1;
+}
+
+message UpdateCustomerRequest {
+  // `optional`: phân biệt "không gửi = giữ nguyên" với "gửi chuỗi rỗng = sai".
+  optional string name = 1;
+  optional string dob = 2;
+  // proto3 không phân biệt được "dob vắng" với "dob = null", nên Gateway đặt cờ này
+  // khi JSON có `"dob": null` để xóa ngày sinh (spec 11 HS2).
+  bool clear_dob = 3;
+}

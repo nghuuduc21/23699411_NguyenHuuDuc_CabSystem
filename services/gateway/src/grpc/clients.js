@@ -53,6 +53,12 @@ export function createAuthClient(addr) {
   return new AuthService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
 }
 
+// Client nghiệp vụ của customer-service (A37, A38, A09, A10).
+export function createCustomerClient(addr) {
+  const { CustomerService } = loadProto('customer.proto').cab.customer.v1;
+  return new CustomerService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
+}
+
 // Metadata Gateway gửi kèm mỗi lời gọi (04 mục 1.7). Gateway TỰ DỰNG từ token đã kiểm tra,
 // không chép header cùng tên của client — nếu chép thì ai cũng giả được danh tính bằng một header.
 //   x-request-id: luôn có, để lần theo một request qua log của nhiều service.
