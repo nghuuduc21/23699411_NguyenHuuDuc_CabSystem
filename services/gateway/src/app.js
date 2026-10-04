@@ -1,5 +1,5 @@
 // Ứng dụng HTTP của Gateway: áp quy định chung cho MỌI route (spec 00 mục 4, 04 mục 1).
-// Không chứa logic nghiệp vụ, không nối database: chỉ nhận REST, (spec sau) kiểm tra token/role/
+// Không chứa logic nghiệp vụ, không nối database: chỉ nhận REST, kiểm tra token/role/(spec sau)
 // rate limit/hình thức, rồi chuyển sang gRPC.
 import { randomUUID } from 'node:crypto';
 import express from 'express';
@@ -59,20 +59,39 @@ export function parseBody(req) {
   }
 }
 
-// Bọc hàm xử lý của route: đọc body trước rồi mới gọi handler.
+// Bọc hàm xử lý của route theo đúng thứ tự kiểm tra (spec 09-10 mục 4.1; 04 mục 1):
+//   0. khớp route (Express làm) → 404 nếu không có
+//   2–5. route cần token: đọc, kiểm tra chữ ký, hạn, claim, danh sách thu hồi → 401
+//   6. role của token có trong danh sách của route không → 403
+//   7. đọc body là JSON → 400 INVALID_JSON
+//   8. kiểm tra hình thức body → 400
+//   9. gọi handler (gọi gRPC)
+// Lỗi rẻ nhất trả trước; vì vậy sai role bị 403 dù body rỗng hay hỏng (mục chấm 28).
 // Đọc body SAU khi khớp route để đường dẫn không tồn tại luôn trả 404, dù body hỏng.
-function wrap(handler) {
+function wrap(route, authenticate) {
   return async (req, res) => {
-    const error = parseBody(req);
+    if (route.roles) {
+      const result = await authenticate(req);
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      if (!route.roles.includes(result.identity.role)) {
+        res.status(403).json({ error: 'FORBIDDEN' });
+        return;
+      }
+      req.identity = result.identity;
+    }
+    const error = parseBody(req) ?? route.validate?.(req.body);
     if (error) {
       res.status(400).json({ error });
       return;
     }
-    await handler(req, res);
+    await route.handler(req, res);
   };
 }
 
-export function createApp({ routes, log }) {
+export function createApp({ routes, log, authenticate }) {
   const app = express();
   app.disable('x-powered-by'); // không lộ tên framework
   app.disable('etag');
@@ -83,7 +102,9 @@ export function createApp({ routes, log }) {
   app.use(express.text({ type: () => true, limit: '100kb' }));
 
   for (const route of routes) {
-    app[route.method.toLowerCase()](route.path, wrap(route.handler));
+    // Route cần token mà không có bộ kiểm tra token là lỗi lắp ghép: dừng ngay khi khởi động.
+    if (route.roles && !authenticate) throw new Error(`route ${route.path} cần token nhưng thiếu authenticate`);
+    app[route.method.toLowerCase()](route.path, wrap(route, authenticate));
   }
 
   // Route không tồn tại (gồm đường dẫn nghiệp vụ thiếu /api/v1, hoặc /api/health).

@@ -32,7 +32,7 @@ Khoảng 1 phút sau, cả 20 container ở trạng thái `healthy`, `kafka-init
 
 ```
 cab-system-project/
-├─ proto/                  hợp đồng gRPC; hiện có health.proto (grpc.health.v1 chuẩn)
+├─ proto/                  hợp đồng gRPC: health.proto (grpc.health.v1 chuẩn), auth.proto
 ├─ services/
 │  ├─ gateway/             REST → gRPC, JWT, role, rate limit, health
 │  ├─ auth-service/        customer-service/   driver-service/        booking-service/
@@ -94,6 +94,11 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | `GET /health` | 200 `{"status":"UP"}` — Gateway còn sống |
 | `GET /ready` | 200 `READY` khi Redis trả lời; 503 `NOT_READY` khi Redis dừng |
 | `GET /health/services` | 200 `UP` khi cả 8 service `SERVING`; 503 `DEGRADED`, ghi rõ service nào `NOT_SERVING` / `UNREACHABLE` |
+| `POST /api/v1/accounts` `{"phone":"0901234567","password":"12345678"}` | 201 `{"account_id":1000,"role":"customer"}` — đăng ký khách (A04); trùng số → 409 |
+| `POST /api/v1/auth/login` `{"phone":"0900000001","password":"12345678"}` | 200 `{"token","account_id","role","expires_in"}` (A05); sai → 401, tài khoản khóa → 403 |
+| `POST /api/v1/auth/logout` + `Authorization: Bearer <token>` | 200 `{"status":"LOGGED_OUT"}` (A06); dùng lại token → 401 `TOKEN_REVOKED` |
 | Đường dẫn khác | 404 `{"error":"ROUTE_NOT_FOUND"}` |
 
 API nghiệp vụ nằm dưới `/api/v1/…` (`docs/design/04-api.md`) và được thêm theo từng đặc tả.
+
+Tài khoản seed (mật khẩu chung `SEED_PASSWORD` = `12345678`): khách `090000000n` ↔ mã `n` (1, 2, 3; mã 9 bị khóa), tài xế `091000000n` ↔ mã `10 + n` (11–18), admin `0999999999` ↔ mã 99. Tài khoản tạo qua API có mã từ 1000.

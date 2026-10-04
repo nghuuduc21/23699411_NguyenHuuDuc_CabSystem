@@ -46,3 +46,30 @@ export async function pingRedis(redis, timeoutMs = REDIS_PING_TIMEOUT_MS) {
     clearTimeout(timer);
   }
 }
+
+// Danh sách token đã thu hồi khi đăng xuất (FR42; 03 mục 12): key `revoked:{jti}`, giá trị 1.
+// Chỉ lưu `jti` (mã của token), không lưu cả token: đủ để nhận ra token, không giữ thứ dùng được để đăng nhập.
+// Mỗi lệnh có hạn 500 ms như PING: Redis treo cũng không làm request treo theo.
+export const REDIS_COMMAND_TIMEOUT_MS = 500;
+
+function withTimeout(promise, timeoutMs) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('REDIS_TIMEOUT')), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+export function createRevocationStore(redis, timeoutMs = REDIS_COMMAND_TIMEOUT_MS) {
+  return {
+    // Ném lỗi khi Redis dừng; bên gọi (token.js) quyết định cho qua.
+    async isRevoked(jti) {
+      return (await withTimeout(redis.exists(`revoked:${jti}`), timeoutMs)) === 1;
+    },
+    // EX = thời gian sống còn lại của token: hết hạn thì token tự vô hiệu, key cũng tự xóa,
+    // Redis không phình ra theo thời gian.
+    async revoke(jti, ttlSeconds) {
+      await withTimeout(redis.set(`revoked:${jti}`, '1', 'EX', ttlSeconds), timeoutMs);
+    },
+  };
+}

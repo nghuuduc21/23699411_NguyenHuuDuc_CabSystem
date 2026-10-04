@@ -1,5 +1,6 @@
-// Tầng gRPC của service. Spec 00 chỉ có grpc.health.v1.Health/Check;
-// các spec sau thêm service nghiệp vụ (auth.proto) vào cùng server này.
+// Tầng gRPC của service: grpc.health.v1.Health/Check (spec 00) và cab.auth.v1.AuthService (spec 09-10).
+// Tầng này chỉ đổi request gRPC → lời gọi logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status.
+// Quy tắc nghiệp vụ nằm ở src/domain/, không nằm ở đây.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
@@ -25,7 +26,25 @@ export function loadProto(file) {
   return grpc.loadPackageDefinition(definition);
 }
 
-export function createGrpcServer({ health }) {
+// Đổi lỗi nghiệp vụ (AuthError) sang gRPC status, `details` = mã lỗi; Gateway đổi tiếp sang HTTP.
+// Lỗi khác (database dừng…) → INTERNAL, không lộ thông điệp bên trong; Gateway trả 503.
+function toGrpcError(err, log) {
+  if (err?.kind && grpc.status[err.kind] !== undefined) return { code: grpc.status[err.kind], details: err.code };
+  log.error('lỗi không lường trước', { name: err?.name, code: err?.code });
+  return { code: grpc.status.INTERNAL, details: 'INTERNAL' };
+}
+
+// Bọc một hàm nghiệp vụ async thành handler unary của grpc-js.
+function unary(fn, log) {
+  return (call, callback) => {
+    fn(call.request).then(
+      (result) => callback(null, result),
+      (err) => callback(toGrpcError(err, log)),
+    );
+  };
+}
+
+export function createGrpcServer({ health, auth, log }) {
   const server = new grpc.Server();
   const healthProto = loadProto('health.proto');
 
@@ -40,6 +59,15 @@ export function createGrpcServer({ health }) {
       health.check().then((status) => callback(null, { status }));
     },
   });
+  // auth = logic nghiệp vụ (src/domain/auth.js). Test chỉ kiểm tra health thì không truyền.
+  if (auth) {
+    const authProto = loadProto('auth.proto');
+    server.addService(authProto.cab.auth.v1.AuthService.service, {
+      // Hai rpc công khai: không đọc x-account-id / x-role trong metadata.
+      RegisterCustomer: unary((req) => auth.registerCustomer(req), log),
+      Login: unary((req) => auth.login(req), log),
+    });
+  }
   return server;
 }
 

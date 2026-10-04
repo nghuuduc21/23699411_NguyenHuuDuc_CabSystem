@@ -9,6 +9,10 @@ import { runMigrations } from './migrate.js';
 import { runSeed } from './seed.js';
 import { createHealth } from './health.js';
 import { createGrpcServer, startGrpcServer } from './grpc/server.js';
+import { createAccountsRepo } from './accounts-repo.js';
+import { createAuthLogic } from './domain/auth.js';
+import { hashPassword, verifyPassword } from './domain/password.js';
+import { createTokenSigner } from './domain/token.js';
 
 const log = createLogger(process.env.SERVICE_NAME || 'auth-service');
 const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
@@ -27,7 +31,14 @@ if (config.simulationMode) log.warn('đang chạy chế độ giả lập');
 
 const pool = createPool(config.databaseUrl, log);
 const health = createHealth({ ping: () => pingDatabase(pool) });
-const server = createGrpcServer({ health });
+// Ghép logic nghiệp vụ với phụ thuộc thật: database, scrypt, bộ ký JWT.
+const auth = createAuthLogic({
+  accounts: createAccountsRepo(pool),
+  passwords: { hash: hashPassword, verify: verifyPassword },
+  tokens: createTokenSigner({ secret: config.jwtSecret, ttlSeconds: config.jwtTtlSeconds }),
+  log,
+});
+const server = createGrpcServer({ health, auth, log });
 
 try {
   await waitForDatabase(pool, log);

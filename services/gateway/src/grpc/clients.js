@@ -46,3 +46,34 @@ export function createHealthClients(addrs) {
   }
   return clients;
 }
+
+// Client nghiệp vụ của auth-service (A04, A05). Cùng tùy chọn kênh với client health.
+export function createAuthClient(addr) {
+  const { AuthService } = loadProto('auth.proto').cab.auth.v1;
+  return new AuthService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
+}
+
+// Metadata Gateway gửi kèm mỗi lời gọi (04 mục 1.7). Gateway TỰ DỰNG từ token đã kiểm tra,
+// không chép header cùng tên của client — nếu chép thì ai cũng giả được danh tính bằng một header.
+//   x-request-id: luôn có, để lần theo một request qua log của nhiều service.
+//   x-account-id (= sub, dạng chuỗi), x-role: chỉ khi route có token.
+export function buildMetadata(req) {
+  const metadata = new grpc.Metadata();
+  metadata.set('x-request-id', req.requestId);
+  if (req.identity) {
+    metadata.set('x-account-id', req.identity.accountId);
+    metadata.set('x-role', req.identity.role);
+  }
+  return metadata;
+}
+
+// Gọi một rpc unary có deadline 3 000 ms (mọi lời gọi gRPC phải có deadline: service treo
+// thì client nhận 503 sau 3 giây thay vì chờ mãi). Trả Promise để handler dùng await.
+export function callUnary(client, method, request, metadata, deadlineMs = GATEWAY_DEADLINE_MS) {
+  return new Promise((resolve, reject) => {
+    client[method](request, metadata, { deadline: Date.now() + deadlineMs }, (err, response) => {
+      if (err) reject(err);
+      else resolve(response);
+    });
+  });
+}

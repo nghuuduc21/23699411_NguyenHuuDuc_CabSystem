@@ -3,8 +3,10 @@
 // báo lỗi, còn /health vẫn 200 để Docker biết tiến trình Gateway sống.
 import { createLogger } from './log.js';
 import { BACKEND_SERVICES, ConfigError, loadConfig } from './config.js';
-import { createRedis, pingRedis } from './redis.js';
-import { createHealthClients } from './grpc/clients.js';
+import { createRedis, createRevocationStore, pingRedis } from './redis.js';
+import { createAuthClient, createHealthClients } from './grpc/clients.js';
+import { createAuthHandlers } from './handlers/auth.js';
+import { createAuthenticator } from './token.js';
 import { createHealthHandlers } from './health.js';
 import { buildRoutes } from './routes.js';
 import { createApp } from './app.js';
@@ -25,13 +27,17 @@ try {
 
 const redis = createRedis(config.redisUrl, log);
 const healthClients = createHealthClients(config.grpcAddrs);
+const authClient = createAuthClient(config.grpcAddrs['auth-service']);
+const revocations = createRevocationStore(redis);
 
 const health = createHealthHandlers({
   redisPing: () => pingRedis(redis),
   healthClients,
   expectedServices: BACKEND_SERVICES.map(([name]) => name),
 });
-const app = createApp({ routes: buildRoutes({ health }), log });
+const auth = createAuthHandlers({ authClient, revocations, log });
+const authenticate = createAuthenticator({ secret: config.jwtSecret, isRevoked: revocations.isRevoked, log });
+const app = createApp({ routes: buildRoutes({ health, auth }), log, authenticate });
 
 const server = app.listen(HTTP_PORT, '0.0.0.0', () => log.info('HTTP đang nghe', { port: HTTP_PORT }));
 
@@ -40,6 +46,7 @@ const shutdown = () => {
   log.info('đang dừng');
   server.close();
   for (const client of Object.values(healthClients)) client.close();
+  authClient.close();
   redis.disconnect();
   process.exit(0);
 };

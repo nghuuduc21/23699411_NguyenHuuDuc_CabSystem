@@ -1,0 +1,40 @@
+// Hợp đồng gRPC của auth-service (spec 09-10 mục 5).
+// Gateway gọi hai rpc công khai này; auth-service không gọi service nào khác (A8, ADR-013).
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi, ví dụ ALREADY_EXISTS + "PHONE_ALREADY_EXISTS".
+// Spec 21 sẽ thêm RequestDriverOtp, RegisterDriver vào cùng service.
+syntax = "proto3";
+
+package cab.auth.v1;
+
+service AuthService {
+  // A04 POST /api/v1/accounts — chỉ tạo tài khoản role `customer`; client không chọn được role.
+  rpc RegisterCustomer (RegisterCustomerRequest) returns (RegisterCustomerResponse);
+  // A05 POST /api/v1/auth/login — cả ba role đăng nhập cùng một rpc.
+  rpc Login (LoginRequest) returns (LoginResponse);
+}
+
+message RegisterCustomerRequest {
+  string phone = 1;
+  // `optional`: phân biệt "không gửi email" với "gửi chuỗi rỗng".
+  optional string email = 2;
+  string password = 3;
+}
+
+message RegisterCustomerResponse {
+  int64 account_id = 1; // mã tạo qua API bắt đầu từ 1000 (ADR-015)
+  string role = 2;      // luôn "customer"
+}
+
+message LoginRequest {
+  // Đúng một trong hai: phone hoặc email (spec 09-10 DN1).
+  optional string phone = 1;
+  optional string email = 2;
+  string password = 3;
+}
+
+message LoginResponse {
+  string token = 1;      // JWT HS256
+  int64 account_id = 2;
+  string role = 3;
+  int32 expires_in = 4;  // giây, bằng JWT_TTL_SECONDS
+}
