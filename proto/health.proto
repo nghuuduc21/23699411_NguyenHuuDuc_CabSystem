@@ -1,0 +1,29 @@
+// Bản sao nguyên văn hợp đồng health chuẩn của gRPC (grpc.health.v1).
+// Vì sao dùng bản chuẩn thay vì tự đặt: mọi công cụ giám sát gRPC đều hiểu
+// hợp đồng này; Gateway (A03) và healthcheck của Docker cùng gọi một rpc.
+// Nguồn: https://github.com/grpc/grpc/blob/master/doc/health-checking.md
+// Project chỉ cài Check; Watch để nguyên trong hợp đồng nhưng không cài (spec 00 mục 5).
+
+syntax = "proto3";
+
+package grpc.health.v1;
+
+message HealthCheckRequest {
+  string service = 1;
+}
+
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;  // Only used by the Watch method.
+  }
+  ServingStatus status = 1;
+}
+
+service Health {
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+
+  rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
+}

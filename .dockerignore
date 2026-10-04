@@ -1,0 +1,9 @@
+# Build context của mọi image là thư mục gốc repo (để copy proto/), nên loại những thứ
+# không cần vào image: build nhanh hơn và không lọt .env (có mật khẩu) vào image.
+**/node_modules
+.env
+.git
+docs
+tests
+postman
+**/coverage

@@ -1,0 +1,378 @@
+# Cab Booking System — toàn bộ hệ thống trong một file Compose (spec 00 mục 3.2): 21 container.
+#   Dựng:   cp .env.example .env   rồi   docker compose up -d --build
+#   Xem:    docker compose ps -a
+#   Đặt lại dữ liệu về seed:   docker compose down -v   rồi   docker compose up -d --build
+#
+# Mục chấm 8: CHỈ `gateway` (3000) và `kafka-ui` (8080) có `ports`. Mọi container khác chỉ
+# nằm trong mạng nội bộ `cab-net`, gọi nhau bằng tên service; từ máy không gọi thẳng được.
+# `container_name` = tên service để gõ ngắn: `docker exec auth-db psql -U cab -d auth`.
+
+name: cab
+
+# ---------- Khối dùng chung (YAML anchor) để không lặp cấu hình ----------
+
+# Healthcheck chung [spec 00]: 10s/5s/10 lần, chờ 20s đầu cho tiến trình khởi động.
+x-healthcheck-timing: &healthcheck-timing
+  interval: 10s
+  timeout: 5s
+  retries: 10
+  start_period: 20s
+
+# 8 service nghiệp vụ Node.js: build từ thư mục gốc (để copy proto/), gRPC 50051, không có ports.
+x-node-service: &node-service
+  restart: unless-stopped
+  mem_limit: 256m
+  networks: [cab-net]
+  healthcheck:
+    test: ["CMD", "node", "src/healthcheck.js"]
+    <<: *healthcheck-timing
+
+# 7 database PostgreSQL: cùng image, cùng user `cab`, mật khẩu chung DB_PASSWORD (03 mục 1.3).
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+  mem_limit: 256m
+  networks: [cab-net]
+
+services:
+  # ======================= Cổng vào duy nhất =======================
+  gateway:
+    build: { context: ., dockerfile: services/gateway/Dockerfile }
+    container_name: gateway
+    restart: unless-stopped
+    mem_limit: 256m
+    networks: [cab-net]
+    ports:
+      - "3000:3000"
+    environment:
+      SERVICE_NAME: gateway
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS}
+      RATE_LIMIT_PUBLIC_MAX: ${RATE_LIMIT_PUBLIC_MAX}
+      RATE_LIMIT_ACCOUNT_MAX: ${RATE_LIMIT_ACCOUNT_MAX}
+      AUTH_GRPC_ADDR: auth-service:50051
+      CUSTOMER_GRPC_ADDR: customer-service:50051
+      DRIVER_GRPC_ADDR: driver-service:50051
+      BOOKING_GRPC_ADDR: booking-service:50051
+      TRIP_GRPC_ADDR: trip-service:50051
+      PAYMENT_GRPC_ADDR: payment-service:50051
+      NOTIFICATION_GRPC_ADDR: notification-service:50051
+      RATING_GRPC_ADDR: rating-service:50051
+    healthcheck:
+      # 127.0.0.1 thay cho localhost: trong image alpine, localhost được phân giải ra ::1 (IPv6) trước,
+      # còn Gateway chỉ nghe 0.0.0.0 (IPv4) nên wget localhost bị từ chối kết nối.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      <<: *healthcheck-timing
+    # Chỉ chờ service ĐÃ CHẠY, không chờ healthy: một service hỏng không được làm Gateway không lên,
+    # vì khi đó /health/services không còn ai báo lỗi (spec 00 H3).
+    depends_on:
+      redis: { condition: service_healthy }
+      auth-service: { condition: service_started }
+      customer-service: { condition: service_started }
+      driver-service: { condition: service_started }
+      booking-service: { condition: service_started }
+      trip-service: { condition: service_started }
+      payment-service: { condition: service_started }
+      notification-service: { condition: service_started }
+      rating-service: { condition: service_started }
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: redis
+    restart: unless-stopped
+    mem_limit: 128m
+    networks: [cab-net]
+    # Không mật khẩu, không volume (spec 00 H5): chỉ chứa bộ đếm rate limit và token đã thu hồi,
+    # mất khi dựng lại cũng không sao. noeviction: hết bộ nhớ thì báo lỗi chứ không lặng lẽ xóa
+    # danh sách token thu hồi.
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      <<: *healthcheck-timing
+
+  # ======================= 8 service nghiệp vụ =======================
+  # Mỗi service CHỈ nhận biến của mình (không dùng env_file chung): khóa của customer không lọt sang auth.
+  # Auth, customer, rating không chờ Kafka: chúng không dùng Kafka, Kafka dừng không kéo chúng dừng (NFR05).
+
+  auth-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/auth-service/Dockerfile }
+    container_name: auth-service
+    environment:
+      SERVICE_NAME: auth-service
+      DATABASE_URL: postgres://cab:${DB_PASSWORD}@auth-db:5432/auth
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS}
+      OTP_TTL_SECONDS: ${OTP_TTL_SECONDS}
+      SEED_PASSWORD: ${SEED_PASSWORD}
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      auth-db: { condition: service_healthy }
+
+  customer-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/customer-service/Dockerfile }
+    container_name: customer-service
+    environment:
+      SERVICE_NAME: customer-service
+      DATABASE_URL: postgres://cab:${DB_PASSWORD}@customer-db:5432/customer
+      CUSTOMER_DATA_KEY: ${CUSTOMER_DATA_KEY}
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      customer-db: { condition: service_healthy }
+
+  driver-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/driver-service/Dockerfile }
+    container_name: driver-service
+    environment:
+      SERVICE_NAME: driver-service
+      DATABASE_URL: postgres://cab:${DB_PASSWORD}@driver-db:5432/driver
+      DRIVER_DATA_KEY: ${DRIVER_DATA_KEY}
+      KAFKA_BROKERS: kafka:9092
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      driver-db: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+
+  booking-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/booking-service/Dockerfile }
+    container_name: booking-service
+    environment:
+      SERVICE_NAME: booking-service
+      DATABASE_URL: postgres://cab:${DB_PASSWORD}@booking-db:5432/booking
+      OFFER_TIMEOUT_SECONDS: ${OFFER_TIMEOUT_SECONDS}
+      KAFKA_BROKERS: kafka:9092
+      # Booking chỉ được gọi Driver, Payment, Trip (02 mục 4.3).
+      DRIVER_GRPC_ADDR: driver-service:50051
+      PAYMENT_GRPC_ADDR: payment-service:50051
+      TRIP_GRPC_ADDR: trip-service:50051
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      booking-db: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+
+  trip-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/trip-service/Dockerfile }
+    container_name: trip-service
+    environment:
+      SERVICE_NAME: trip-service
+      DATABASE_URL: postgres://cab:${DB_PASSWORD}@trip-db:5432/trip
+      KAFKA_BROKERS: kafka:9092
+      DRIVER_GRPC_ADDR: driver-service:50051
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      trip-db: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+
+  payment-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/payment-service/Dockerfile }
+    container_name: payment-service
+    environment:
+      SERVICE_NAME: payment-service
+      DATABASE_URL: postgres://cab:${DB_PASSWORD}@payment-db:5432/payment
+      PAYMENT_CALLBACK_SECRET: ${PAYMENT_CALLBACK_SECRET}
+      PAYMENT_TIMEOUT_SECONDS: ${PAYMENT_TIMEOUT_SECONDS}
+      KAFKA_BROKERS: kafka:9092
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      payment-db: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+
+  notification-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/notification-service/Dockerfile }
+    container_name: notification-service
+    environment:
+      SERVICE_NAME: notification-service
+      MONGODB_URI: mongodb://cab:${DB_PASSWORD}@notification-db:27017/notification?authSource=admin
+      KAFKA_BROKERS: kafka:9092
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      notification-db: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+
+  rating-service:
+    <<: *node-service
+    build: { context: ., dockerfile: services/rating-service/Dockerfile }
+    container_name: rating-service
+    environment:
+      SERVICE_NAME: rating-service
+      DATABASE_URL: postgres://cab:${DB_PASSWORD}@rating-db:5432/rating
+      TRIP_GRPC_ADDR: trip-service:50051
+      SIMULATION_MODE: ${SIMULATION_MODE}
+    depends_on:
+      rating-db: { condition: service_healthy }
+
+  # ======================= 8 database, mỗi service một database =======================
+  # Không database nào có `ports`: chỉ service của nó (cùng mạng cab-net) nối được.
+
+  auth-db:
+    <<: *postgres
+    container_name: auth-db
+    environment: { POSTGRES_USER: cab, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: auth }
+    volumes: [auth-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cab", "-d", "auth"]
+      <<: *healthcheck-timing
+
+  customer-db:
+    <<: *postgres
+    container_name: customer-db
+    environment: { POSTGRES_USER: cab, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: customer }
+    volumes: [customer-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cab", "-d", "customer"]
+      <<: *healthcheck-timing
+
+  driver-db:
+    <<: *postgres
+    container_name: driver-db
+    environment: { POSTGRES_USER: cab, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: driver }
+    volumes: [driver-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cab", "-d", "driver"]
+      <<: *healthcheck-timing
+
+  booking-db:
+    <<: *postgres
+    container_name: booking-db
+    environment: { POSTGRES_USER: cab, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: booking }
+    volumes: [booking-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cab", "-d", "booking"]
+      <<: *healthcheck-timing
+
+  trip-db:
+    <<: *postgres
+    container_name: trip-db
+    environment: { POSTGRES_USER: cab, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: trip }
+    volumes: [trip-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cab", "-d", "trip"]
+      <<: *healthcheck-timing
+
+  payment-db:
+    <<: *postgres
+    container_name: payment-db
+    environment: { POSTGRES_USER: cab, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: payment }
+    volumes: [payment-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cab", "-d", "payment"]
+      <<: *healthcheck-timing
+
+  rating-db:
+    <<: *postgres
+    container_name: rating-db
+    environment: { POSTGRES_USER: cab, POSTGRES_PASSWORD: "${DB_PASSWORD}", POSTGRES_DB: rating }
+    volumes: [rating-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cab", "-d", "rating"]
+      <<: *healthcheck-timing
+
+  notification-db:
+    image: mongo:7.0
+    container_name: notification-db
+    restart: unless-stopped
+    mem_limit: 512m
+    networks: [cab-net]
+    # Giới hạn bộ đệm WiredTiger 0,25 GB: mặc định MongoDB lấy ~50% RAM, vượt mem_limit thì bị giết.
+    command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: cab
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
+    volumes: [notification-data:/data/db]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      <<: *healthcheck-timing
+
+  # ======================= Kafka (mục chấm 7) =======================
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: kafka
+    restart: unless-stopped
+    mem_limit: 1g
+    networks: [cab-net]
+    environment:
+      # KRaft một node: vừa broker vừa controller, không cần ZooKeeper.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      # Service gọi Kafka bằng tên Compose `kafka`.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Mã cụm cố định 22 ký tự (spec 00 H8): không phải bí mật nên ghi thẳng ở đây.
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      # Tắt tự tạo topic: topic phải được đăng ký rõ trong kafka-init; gửi nhầm tên topic sẽ lỗi ngay.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Một broker nên mọi topic nội bộ chỉ có 1 bản sao.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      <<: *healthcheck-timing
+      start_period: 40s
+
+  # Chạy một lần: tạo đúng 7 topic (02 mục 6.2) rồi thoát mã 0. Lỗi ở topic nào thì `set -e` thoát khác 0
+  # và 5 service dùng Kafka không khởi động.
+  kafka-init:
+    image: apache/kafka:3.8.0
+    container_name: kafka-init
+    restart: "no"
+    mem_limit: 512m
+    networks: [cab-net]
+    depends_on:
+      kafka: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for topic in booking.created booking.offer-created booking.no-driver-found booking.canceled trip.status-changed payment.status-changed driver.application-reviewed; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic "$$topic" --partitions 3 --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    restart: unless-stopped
+    mem_limit: 512m
+    networks: [cab-net]
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: cab
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      # Chỉ đọc: xem topic và event, không xóa topic, không gửi message từ giao diện.
+      KAFKA_CLUSTERS_0_READONLY: "true"
+      JAVA_OPTS: -Xmx256m
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      <<: *healthcheck-timing
+      start_period: 40s
+
+networks:
+  cab-net:
+    name: cab-net
+
+# Mỗi database một volume có tên: `docker compose down -v` xóa sạch để seed chạy lại từ đầu.
+# Redis, Kafka cố ý không có volume.
+volumes:
+  auth-data:
+  customer-data:
+  driver-data:
+  booking-data:
+  trip-data:
+  payment-data:
+  rating-data:
+  notification-data:

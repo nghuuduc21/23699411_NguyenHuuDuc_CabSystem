@@ -1,0 +1,107 @@
+// Ứng dụng HTTP của Gateway: áp quy định chung cho MỌI route (spec 00 mục 4, 04 mục 1).
+// Không chứa logic nghiệp vụ, không nối database: chỉ nhận REST, (spec sau) kiểm tra token/role/
+// rate limit/hình thức, rồi chuyển sang gRPC.
+import { randomUUID } from 'node:crypto';
+import express from 'express';
+
+// Header bảo vệ trên mọi response (mục chấm 26, NFR08):
+//   nosniff: trình duyệt không đoán kiểu nội dung (chặn đoán JSON thành HTML/script)
+//   CSP default-src 'none': API chỉ trả JSON, không cho tải gì từ response
+//   no-store: không lưu response (có thể chứa dữ liệu cá nhân, token) vào cache
+function securityHeaders(req, res, next) {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'",
+    'Cache-Control': 'no-store',
+  });
+  next();
+}
+
+// Mỗi request một mã do Gateway sinh (bỏ qua mã client gửi), trả lại trong header X-Request-Id
+// và (spec sau) chuyển cho service qua metadata `x-request-id` để lần theo một request qua nhiều log.
+// Log một dòng khi response xong: KHÔNG ghi header Authorization, body, query (có thể chứa dữ liệu cá nhân).
+function requestContext(log) {
+  return (req, res, next) => {
+    const started = process.hrtime.bigint();
+    req.requestId = randomUUID();
+    res.set('X-Request-Id', req.requestId);
+    res.on('finish', () => {
+      log.info('request', {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        ms: Number((process.hrtime.bigint() - started) / 1_000_000n),
+        request_id: req.requestId,
+      });
+    });
+    next();
+  };
+}
+
+// Body đọc là JSON BẤT KỂ Content-Type (luật thi: Postman chọn "Text" vẫn chạy).
+// GET bỏ qua body: đổi tab từ POST sang GET, Postman vẫn gửi body cũ — không bắt người thi xóa.
+// Trả null nếu ổn (req.body đã gán), hoặc mã lỗi.
+export function parseBody(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    req.body = {};
+    return null;
+  }
+  const raw = typeof req.body === 'string' ? req.body : '';
+  if (raw.trim() === '') {
+    req.body = {};
+    return null;
+  }
+  try {
+    req.body = JSON.parse(raw);
+    return null;
+  } catch {
+    return 'INVALID_JSON';
+  }
+}
+
+// Bọc hàm xử lý của route: đọc body trước rồi mới gọi handler.
+// Đọc body SAU khi khớp route để đường dẫn không tồn tại luôn trả 404, dù body hỏng.
+function wrap(handler) {
+  return async (req, res) => {
+    const error = parseBody(req);
+    if (error) {
+      res.status(400).json({ error });
+      return;
+    }
+    await handler(req, res);
+  };
+}
+
+export function createApp({ routes, log }) {
+  const app = express();
+  app.disable('x-powered-by'); // không lộ tên framework
+  app.disable('etag');
+
+  app.use(requestContext(log));
+  app.use(securityHeaders);
+  // Đọc body dạng chữ cho mọi Content-Type; tự phân tích JSON ở parseBody.
+  app.use(express.text({ type: () => true, limit: '100kb' }));
+
+  for (const route of routes) {
+    app[route.method.toLowerCase()](route.path, wrap(route.handler));
+  }
+
+  // Route không tồn tại (gồm đường dẫn nghiệp vụ thiếu /api/v1, hoặc /api/health).
+  app.use((req, res) => {
+    res.status(404).json({ error: 'ROUTE_NOT_FOUND' });
+  });
+
+  // Lỗi không lường trước: 503, không trả stack trace.
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, req, res, next) => {
+    // Lỗi khi đọc body (quá lớn, sai bảng mã…) là lỗi của request, không phải của hệ thống.
+    if (err?.type && err.status >= 400 && err.status < 500) {
+      res.status(400).json({ error: 'INVALID_JSON' });
+      return;
+    }
+    log.error('lỗi không lường trước', { request_id: req.requestId, name: err?.name, message: err?.message });
+    res.status(503).json({ error: 'SERVICE_UNAVAILABLE' });
+  });
+
+  return app;
+}
