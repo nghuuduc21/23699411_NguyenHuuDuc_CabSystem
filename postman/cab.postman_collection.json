@@ -1,0 +1,94 @@
+{
+  "info": {
+    "_postman_id": "6b0f3c9e-2f1a-4c55-9a1e-cab000000000",
+    "name": "Cab Booking System",
+    "description": "Collection theo số mục chấm. CHỈ để test-agent kiểm thử và sinh viên luyện tập; khi thi không được dùng (gõ tay mọi request). Biến {{base}} = http://localhost:3000.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base", "value": "http://localhost:3000" }
+  ],
+  "item": [
+    {
+      "name": "06 Health check",
+      "description": "Mục chấm 6 (spec 00 AC-HT-05). Ba request không cần token. Muốn xem 503: `docker compose stop rating-service` (A03 503 DEGRADED) hoặc `docker compose stop redis` (A02 503 NOT_READY), xong nhớ `docker compose start ...`.",
+      "item": [
+        {
+          "name": "06.1 GET /health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HT-05: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-HT-05: body {\"status\":\"UP\"}', () => pm.expect(pm.response.json()).to.eql({ status: 'UP' }));",
+                  "pm.test('Header bảo vệ và X-Request-Id', () => {",
+                  "  pm.response.to.have.header('X-Content-Type-Options', 'nosniff');",
+                  "  pm.response.to.have.header('Cache-Control', 'no-store');",
+                  "  pm.response.to.have.header('X-Request-Id');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base}}/health", "host": ["{{base}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "06.2 GET /ready",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-HT-05: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-HT-05: READY, redis UP, grpc_clients UP', () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.status).to.eql('READY');",
+                  "  pm.expect(b.checks).to.eql({ redis: 'UP', grpc_clients: 'UP' });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base}}/ready", "host": ["{{base}}"], "path": ["ready"] }
+          }
+        },
+        {
+          "name": "06.3 GET /health/services",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const services = ['auth-service','customer-service','driver-service','booking-service','trip-service','payment-service','notification-service','rating-service'];",
+                  "pm.test('AC-HT-05: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-HT-05: status UP', () => pm.expect(pm.response.json().status).to.eql('UP'));",
+                  "pm.test('AC-HT-05: đủ 8 service, đều SERVING', () => {",
+                  "  const s = pm.response.json().services;",
+                  "  pm.expect(Object.keys(s).sort()).to.eql([...services].sort());",
+                  "  services.forEach((name) => pm.expect(s[name], name).to.eql('SERVING'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base}}/health/services", "host": ["{{base}}"], "path": ["health", "services"] }
+          }
+        }
+      ]
+    }
+  ]
+}

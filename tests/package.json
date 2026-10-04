@@ -1,0 +1,14 @@
+{
+  "name": "cab-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Test end-to-end của Cab Booking System: gọi REST vào Gateway của hệ thống đang chạy bằng docker compose",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 e2e/01-repo.test.js e2e/02-compose.test.js e2e/03-health.test.js e2e/04-health-degraded.test.js e2e/05-kafka.test.js e2e/06-config.test.js",
+    "test:e2e": "node --test --test-concurrency=1 e2e/01-repo.test.js e2e/02-compose.test.js e2e/03-health.test.js e2e/04-health-degraded.test.js e2e/05-kafka.test.js e2e/06-config.test.js"
+  }
+}

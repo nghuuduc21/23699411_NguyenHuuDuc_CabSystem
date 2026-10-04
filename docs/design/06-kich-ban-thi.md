@@ -115,7 +115,7 @@ Nói gì: topic **tạo sẵn** bởi `kafka-init`, broker tắt tự tạo topi
 | 1 | Terminal: `docker compose ps` | Cột PORTS: chỉ `gateway` `3000` và `kafka-ui` `8080` |
 | 2 | Postman `GET localhost:50051` | `Error: connect ECONNREFUSED` |
 
-Nói gì: service chỉ nghe trong mạng Compose; database, Redis, Kafka không có `ports`. Mọi request từ ngoài buộc qua Gateway, nơi có JWT, role, rate limit.
+Nói gì: service chỉ nghe trong mạng Compose; database, Redis, Kafka không có `ports`. Mọi request từ ngoài buộc qua Gateway, nơi có JWT, role, rate limit. Nếu gọi thẳng `27017` (hay `5432`) mà có trả lời: đó là MongoDB / PostgreSQL **cài trên Windows**, không phải container của project (đã gặp thật) — chứng minh bằng `docker compose ps -a`: cột cổng của `notification-db` không có `->`. Tốt nhất tắt dịch vụ MongoDB của Windows trước buổi thi.
 
 ### Mục 9 — Đăng ký khách hàng → đăng nhập được
 

@@ -1,6 +1,6 @@
 # Spec 00 — Hạ tầng: cấu trúc mã nguồn, Compose, Kafka, Gateway health
 
-> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3:** Gateway đọc body JSON bất kể `Content-Type`, lệnh `psql` dạng `table <bảng>`, tạo `.env` bằng `cp`. **Đồng bộ với 04 lần 4 (ADR-018):** route nghiệp vụ dưới `/api/v1/`; ba endpoint health ở ngoài tiền tố; `GET` bỏ qua body; đóng H-Q4 (giảng viên cho phép khóa mẫu trong `.env.example`).
+> Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3:** Gateway đọc body JSON bất kể `Content-Type`, lệnh `psql` dạng `table <bảng>`, tạo `.env` bằng `cp`. **Đồng bộ với 04 lần 4 (ADR-018):** route nghiệp vụ dưới `/api/v1/`; ba endpoint health ở ngoài tiền tố; `GET` bỏ qua body; đóng H-Q4 (giảng viên cho phép khóa mẫu trong `.env.example`). **Sửa 2026-10-04 theo phản hồi dev-agent sau khi dựng thật:** healthcheck gọi `127.0.0.1`; H-Q1 thêm trường hợp MongoDB của Windows; ghi nhận chi tiết code đã chọn (H10–H12, mục 3.2, 3.5, 4).
 > Mục chấm **1, 2, 5, 6, 7, 8**.
 > Đầu vào: `CLAUDE.md` (Quy tắc kiến trúc, Quyết định kỹ thuật, Ràng buộc khi chấm, Ràng buộc khi thi, Cấu trúc thư mục, Quy ước code); `docs/design/02` mục 2, 6, 7; `docs/design/03` mục 1.1, 1.3, 11.3, 12, **13**, **14**; `docs/design/04` mục 1, 2.1; ADR-010, ADR-014, ADR-015, ADR-016, ADR-017.
 > Phạm vi: khung **chạy được, chưa có nghiệp vụ**. Mỗi service: khởi động → nối database của mình → chạy migration → chạy seed (nếu bật) → trả lời health gRPC. Gateway: ba endpoint health và bảng đổi lỗi gRPC → HTTP dùng chung cho các spec sau.
@@ -78,7 +78,7 @@ services/<tên>/
 │  ├─ migrate.js         chạy migration (mục 7.1)
 │  ├─ seed.js            seed của service (mục 7.2)
 │  ├─ health.js          trạng thái health
-│  ├─ healthcheck.js     cho healthcheck của Docker: gọi Health/Check ở localhost
+│  ├─ healthcheck.js     cho healthcheck của Docker: gọi Health/Check ở 127.0.0.1:50051
 │  ├─ grpc/              server gRPC, đổi lỗi nghiệp vụ → gRPC status
 │  └─ domain/            logic nghiệp vụ, không import gRPC / pg
 └─ test/                 unit test node:test
@@ -96,7 +96,7 @@ Tên container = tên service trong Compose, đặt bằng `container_name` đ�
 
 | # | Container | Image / build | Cổng trong mạng | Cổng ra máy | Healthcheck | `depends_on` | `mem_limit` |
 |---|---|---|---|---|---|---|---|
-| 1 | `gateway` | build `services/gateway` | 3000 | **`3000:3000`** | `wget -qO- http://localhost:3000/health` | `redis`: healthy; 8 service: `service_started` | 256m |
+| 1 | `gateway` | build `services/gateway` | 3000 | **`3000:3000`** | `wget -qO- http://127.0.0.1:3000/health` | `redis`: healthy; 8 service: `service_started` | 256m |
 | 2–3 | `auth-service`, `customer-service` | build | 50051 | — | `node src/healthcheck.js` | database của mình: healthy | 256m |
 | 4–8 | `driver-service`, `booking-service`, `trip-service`, `payment-service`, `notification-service` | build | 50051 | — | như trên | database của mình: healthy; `kafka-init`: completed | 256m |
 | 9 | `rating-service` | build | 50051 | — | như trên | `rating-db`: healthy | 256m |
@@ -117,6 +117,10 @@ Database, user (03 mục 1.3) [ĐC]:
 Volume: mỗi database một volume có tên (`auth-data`, …, `notification-data`) để `docker compose down -v` xóa sạch. Redis, Kafka **không** có volume [BA]: dữ liệu của chúng (bộ đếm, token thu hồi, event demo) không cần giữ qua lần dựng lại.
 
 Healthcheck chung [BA]: `interval: 10s`, `timeout: 5s`, `retries: 10`, `start_period: 20s` (Kafka, Kafka UI: 40s). `restart: unless-stopped` cho mọi container trừ `kafka-init`.
+
+Healthcheck của gateway và 8 service gọi **`127.0.0.1`**, không gọi `localhost` (sửa 2026-10-04 sau khi dựng thật): trong image alpine `localhost` phân giải sang `::1` (IPv6) trước, còn Node chỉ nghe IPv4 `0.0.0.0` nên bị từ chối và container kẹt `starting`.
+
+Compose [BA, khớp code]: `name: cab` ở đầu `compose.yaml` → project tên `cab`, mạng `cab-net`, volume có tiền tố `cab_` (ví dụ `cab_auth-data`), không phụ thuộc tên thư mục máy chấm.
 
 | Điểm | Lý do |
 |---|---|
@@ -171,7 +175,7 @@ Quy ước gửi event cho các spec sau [ĐC ADR-017]: service **commit databas
 
 | # | Biến | Container nhận | Giá trị trong `.env.example` |
 |---|---|---|---|
-| 1 | `DB_PASSWORD` | 8 database + 8 service | `cab123` |
+| 1 | `DB_PASSWORD` | 8 database; service **không** nhận riêng, chỉ nhận qua `DATABASE_URL` / `MONGODB_URI` (bảng dưới) | `cab123` |
 | 2 | `JWT_SECRET` | **chỉ** auth-service (ký), gateway (kiểm tra) | `demo-jwt-secret-chi-dung-cho-may-demo-32b` (≥ 32 ký tự) |
 | 3 | `JWT_TTL_SECONDS` | auth-service | `3600` |
 | 4 | `CUSTOMER_DATA_KEY` | **chỉ** customer-service | 32 byte base64 cố định (44 ký tự) |
@@ -200,6 +204,16 @@ Mỗi service **chỉ nhận biến của mình**: Compose ghi từng biến tro
 | `SERVICE_NAME` | gateway, 8 service | Tên container, ghi vào log |
 
 Cổng (`50051`, `3000`) và deadline gRPC (Gateway → service 3 000 ms, service → service 1 000 ms, health 1 000 ms) là **hằng số trong code** (03 mục 13).
+
+Mật khẩu database đi vào service **chỉ** qua chuỗi kết nối `DATABASE_URL` / `MONGODB_URI` (Compose ghép `${DB_PASSWORD}` vào): service đọc một biến thay vì ráp năm phần, ít chỗ lệch.
+
+Hành vi chạy [BA, khớp code đã dựng]:
+
+| Điểm | Quy định | Lý do |
+|---|---|---|
+| Nối database | Thử lại **15 lần, cách 2 giây** (hằng số); hết lượt → thoát 1 | Database có thể chậm vài giây dù đã healthy; 30 giây đủ, quá thì để Compose khởi động lại |
+| Dừng | Service và Gateway bắt `SIGTERM` (và `SIGINT`), đóng kết nối rồi thoát ngay | `docker compose stop` (mục 6) xong ngay, không chờ hết 10 giây rồi bị `SIGKILL` |
+| Gateway nối lại gRPC | Kênh gRPC thử nối lại nhanh: chờ ban đầu 0,5 giây, tối đa 2 giây | Sau `docker compose start rating-service`, `/health/services` về `SERVING` trong 1–2 giây, không phải chờ mặc định tới 2 phút |
 
 Kiểm tra khi khởi động (`config.js`): thiếu biến bắt buộc → thoát 1; `*_DATA_KEY` giải base64 không ra đúng 32 byte → thoát 1; `JWT_SECRET` < 32 ký tự → thoát 1; `SIMULATION_MODE=true` → log `warn` "đang chạy chế độ giả lập". Log chỉ nêu tên biến, không nêu giá trị.
 
@@ -241,7 +255,7 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 | Header mọi response | `X-Content-Type-Options: nosniff`; `Content-Security-Policy: default-src 'none'`; `Cache-Control: no-store`; `X-Request-Id` (Gateway sinh, chuyển cho service qua metadata `x-request-id`) |
 | Đường dẫn | Route nghiệp vụ: **`/api/v1/{resource}/{id}?{query}`** (04 mục 1.9, ADR-018). Ngoài tiền tố chỉ có A01–A03 |
 | Bảng route | Một bảng khai báo trong Gateway (ví dụ `src/routes.js`): method, đường dẫn, role, rpc; route có biến thể thêm cột "chọn theo" (04 mục 1.10). Spec này chỉ đăng ký A01–A03 |
-| Body | Đọc là JSON **bất kể `Content-Type`** (Postman chọn "Text" vẫn chạy); body rỗng = `{}`; không phân tích được → 400 `INVALID_JSON`. Request `GET`: **bỏ qua body** |
+| Body | Đọc là JSON **bất kể `Content-Type`** (Postman chọn "Text" vẫn chạy); body rỗng = `{}`; **mọi** lỗi đọc body (JSON sai cú pháp, body không phải object, quá kích thước, đứt kết nối giữa chừng) → 400 `INVALID_JSON`. Request `GET`: **bỏ qua body** |
 | Route không tồn tại | 404 `{ "error": "ROUTE_NOT_FOUND" }` (gồm đường dẫn nghiệp vụ thiếu `/api/v1`) |
 | Lỗi không lường trước trong Gateway | 503 `{ "error": "SERVICE_UNAVAILABLE" }`, không stack trace |
 | Log | Một dòng mỗi request: method, path, status, thời gian, `request_id`. **Không** ghi header `Authorization`, body |
@@ -382,12 +396,15 @@ Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư
 | H7 | Không có thư mục code dùng chung | Cấu trúc |
 | H8 | `CLUSTER_ID` của Kafka ghi cố định trong Compose | `compose.yaml` |
 | H9 | Biến truyền từng service qua `environment:`, không `env_file` chung | `compose.yaml` |
+| H10 | Healthcheck gọi `127.0.0.1`, không `localhost` (tránh `::1`) | `compose.yaml`, `healthcheck.js` |
+| H11 | Nối database thử 15 lần × 2 giây; bắt `SIGTERM`; Gateway nối lại gRPC 0,5–2 giây | `db.js`, `index.js`, client gRPC Gateway |
+| H12 | Project Compose `cab`, mạng `cab-net`, volume `cab_*` | `compose.yaml` |
 
 ### 9.2 Câu hỏi còn mở
 
 | # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
 |---|---|---|---|---|
-| H-Q1 | Máy chấm có thể có PostgreSQL cài sẵn trên 5432, làm AC-HT-11 "kết nối được" nhầm | (a) Chứng minh bằng `docker compose ps -a` (không có `->`); (b) không làm gì | (a) | SV |
+| H-Q1 | Máy chấm có dịch vụ cài sẵn trên cùng cổng (PostgreSQL 5432, MongoDB 27017), làm AC-HT-11 "kết nối được" nhầm. **Đã gặp thật (2026-10-04):** máy sinh viên có MongoDB cài trên Windows nghe 27017; gọi thẳng 27017 có trả lời nhưng không phải container của project | (a) Tắt dịch vụ MongoDB / PostgreSQL của Windows trước buổi thi (`services.msc`); (b) chứng minh bằng `docker compose ps -a`: cột cổng của `notification-db` không có `->`; (c) không làm gì | (a) trước buổi thi, (b) khi bị hỏi | SV |
 | H-Q2 | `mem_limit` 256m cho PostgreSQL và tổng RAM (~6 GB) có vừa máy demo không | Đo sau khi chạy | Test-agent đo bằng `docker stats` | Test |
 | ~~H-Q3~~ | Đã đóng: dùng `cp .env.example .env` (mục 3.7, 06) | — | — | — |
 | ~~H-Q4~~ | Đã đóng 2026-10-03: giảng viên cho phép khóa mẫu trong `.env.example`, miễn `.env` thật không đưa lên công khai | — | — | — |
