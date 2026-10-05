@@ -27,7 +27,7 @@ export function loadConfig(env = process.env) {
   return Object.freeze({
     serviceName: required(env, 'SERVICE_NAME'),
     mongodbUri: required(env, 'MONGODB_URI'),
-    // Địa chỉ Kafka; dùng khi spec sau nghe event (02 mục 6).
+    // Địa chỉ Kafka: nghe K1–K7 để tạo thông báo (spec 17-18 mục 5.4).
     kafkaBrokers: required(env, 'KAFKA_BROKERS'),
     simulationMode: bool(env, 'SIMULATION_MODE'),
   });

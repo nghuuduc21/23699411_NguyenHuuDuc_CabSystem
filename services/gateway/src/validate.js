@@ -221,6 +221,20 @@ export function parseDriverMeBody(body) {
 // PATCH /api/v1/drivers/{id} — chọn theo approval_status: APPROVED → A15; REJECTED → A16 (bắt buộc reason).
 // PENDING hay giá trị khác → 400: admin không "trả về chờ duyệt" (D5).
 export const REASON_MAX = 255;
+
+// Lý do (từ chối hồ sơ, hủy booking, hủy chuyến — spec 17-18 mục 4): thiếu / null / chỉ khoảng trắng → REASON_REQUIRED
+// (FR36: hủy phải có lý do); không phải chuỗi → INVALID_INPUT; có `<` `>` → TEXT_CONTAINS_HTML; > 255 ký tự sau khi cắt
+// → INVALID_INPUT. Trả mã lỗi hoặc null. Service kiểm lại đúng các quy tắc này.
+export function checkReason(reason) {
+  if (reason === undefined || reason === null) return 'REASON_REQUIRED';
+  if (typeof reason !== 'string') return 'INVALID_INPUT';
+  const trimmed = reason.trim();
+  if (trimmed === '') return 'REASON_REQUIRED';
+  if (hasHtml(trimmed)) return 'TEXT_CONTAINS_HTML';
+  if ([...trimmed].length > REASON_MAX) return 'INVALID_INPUT';
+  return null;
+}
+
 export function parseReviewBody(body) {
   if (!isObject(body) || typeof body.approval_status !== 'string') return { error: 'INVALID_INPUT' };
   const status = body.approval_status.toUpperCase();
@@ -231,12 +245,8 @@ export function parseReviewBody(body) {
   }
   if (status !== 'REJECTED' || !onlyKeys(body, ['approval_status', 'reason'])) return { error: 'INVALID_INPUT' };
   const { reason } = body;
-  if (reason === undefined || reason === null) return { error: 'REASON_REQUIRED' };
-  if (typeof reason !== 'string') return { error: 'INVALID_INPUT' };
-  const trimmed = reason.trim();
-  if (trimmed === '') return { error: 'REASON_REQUIRED' }; // chỉ khoảng trắng = không có lý do (FR36)
-  if (hasHtml(trimmed)) return { error: 'TEXT_CONTAINS_HTML' };
-  if ([...trimmed].length > REASON_MAX) return { error: 'INVALID_INPUT' };
+  const error = checkReason(reason); // chỉ khoảng trắng = không có lý do (FR36)
+  if (error) return { error };
   return { variant: 'A16', request: { reason } };
 }
 
@@ -361,4 +371,45 @@ export function parseCallbackBody(body) {
     request.amount = body.amount;
   }
   return { variant: 'A32', request };
+}
+
+// ---- Chuyến đi, hủy, thông báo (spec 17-18 mục 4) ----
+
+// PATCH /api/v1/bookings/{id} — A22 khách hủy booking: `status` phải là CANCELED, `reason` bắt buộc.
+// `status` khác (SEARCHING…), field lạ, body rỗng → 400 INVALID_INPUT. Đổi trạng thái bằng PATCH + status (ADR-018).
+export function parseCancelBookingBody(body) {
+  if (!isObject(body) || !onlyKeys(body, ['status', 'reason'])) return { error: 'INVALID_INPUT' };
+  if (upperEnum(body.status, ['CANCELED']) !== 'CANCELED') return { error: 'INVALID_INPUT' };
+  const error = checkReason(body.reason);
+  if (error) return { error };
+  return { variant: 'A22', request: { reason: body.reason } };
+}
+
+// PATCH /api/v1/trips/{id} — chọn biến thể theo `status` (04 mục 1.10):
+//   ARRIVED / PICKED_UP / IN_PROGRESS / COMPLETED → A28 tiến trạng thái (chỉ `status`; có `reason` → 400);
+//   CANCELED → A29 hủy (`status` + `reason` bắt buộc).
+//   Thiếu / khác (ACCEPTED, BUSY, số…) → 400: ACCEPTED chỉ có khi tài xế nhận lời mời (A24), không đặt tay được.
+// Trình tự đúng hay sai (nhảy cóc → 409) là việc của trip-service, Gateway không biết trạng thái hiện tại.
+const TRIP_STEPS = ['ARRIVED', 'PICKED_UP', 'IN_PROGRESS', 'COMPLETED'];
+export function parseTripBody(body) {
+  if (!isObject(body)) return { error: 'INVALID_INPUT' };
+  const status = upperEnum(body.status, [...TRIP_STEPS, 'CANCELED']);
+  if (!status) return { error: 'INVALID_INPUT' };
+  if (status === 'CANCELED') {
+    if (!onlyKeys(body, ['status', 'reason'])) return { error: 'INVALID_INPUT' };
+    const error = checkReason(body.reason);
+    if (error) return { error };
+    return { variant: 'A29', request: { reason: body.reason } };
+  }
+  if (!onlyKeys(body, ['status'])) return { error: 'INVALID_INPUT' };
+  return { variant: 'A28', request: { status } };
+}
+
+// GET /api/v1/notifications?page&limit — A33. Chỉ `page`, `limit`; tham số lạ → 400 INVALID_INPUT.
+export function parseNotificationsQuery(query) {
+  if (Object.values(query).some((value) => typeof value !== 'string')) return { error: 'INVALID_INPUT' };
+  if (!onlyKeys(query, ['page', 'limit'])) return { error: 'INVALID_INPUT' };
+  const paging = readPagination(query);
+  if (paging.error) return paging;
+  return { variant: 'A33', request: { page: paging.page, limit: paging.limit } };
 }

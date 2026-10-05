@@ -1,11 +1,12 @@
 // Logic nghiệp vụ của Booking (spec 14-15-16-19-30): đặt xe (UC04, UC05), xem booking (UC18), xem lời mời,
-// tài xế nhận (UC08) / từ chối (UC09), nghe kết quả thanh toán K6 (UC14, BRULE13, BRULE17).
+// tài xế nhận (UC08) / từ chối (UC09), nghe kết quả thanh toán K6 (UC14, BRULE13, BRULE17);
+// khách hủy booking chưa có tài xế (spec 17-18 mục 2.4; UC27, mục chấm 18 phụ).
 // Mọi phụ thuộc (kho dữ liệu, client gRPC tới payment / driver / trip, bộ ghép, bộ phát event, log, cấu hình)
 // truyền từ ngoài vào nên test chạy được không cần PostgreSQL, Kafka hay gRPC.
 // `identity` = { accountId, role, requestId } lấy từ metadata do Gateway dựng (tầng gRPC đọc giúp).
 import { estimateDistanceM } from './distance.js';
 import {
-  BOOKING_STATUSES, BookingError, checkId, checkPagination, checkPoint, cleanAddress, conflict, invalid, iso,
+  BOOKING_STATUSES, BookingError, checkId, checkPagination, checkPoint, checkReason, cleanAddress, conflict, invalid, iso,
   normalizeEnum, OFFER_STATUSES, pagination, PAY_METHODS, requireRole, unavailable,
 } from './rules.js';
 import { createSafePublisher, TOPIC_BOOKING_CANCELED, TOPIC_BOOKING_CREATED } from './topics.js';
@@ -242,6 +243,41 @@ export function createBookingLogic({ bookings, services, dispatcher, events, log
       log.info('offer_rejected', { offer_id: offerId, booking_id: found.booking_id, driver_id: accountId });
       dispatcher.schedule(found.booking_id, identity.requestId);
       return { offer_id: offerId, status: 'REJECTED' };
+    },
+
+    // A22 — khách hủy booking CHƯA có tài xế (UC27; B12, B13). Đã có tài xế thì phải hủy CHUYẾN (A29 ở Trip).
+    // Booking KHÔNG gọi Payment: hủy bỏ / hoàn tiền đi bằng K4 (NFR05) — Payment đang dừng thì hủy vẫn thành công,
+    // Payment chạy lại sẽ đọc K4 và hoàn tiền sau.
+    async cancelBooking({ booking_id: bookingId, reason: rawReason }, identity) {
+      const { accountId } = requireRole(identity, ['customer']);
+      const { requestId } = identity;
+      checkId(bookingId);
+      const reason = checkReason(rawReason);
+
+      // Một giao dịch, khóa booking TRƯỚC rồi mới tới Offer (quy ước khóa — không deadlock). Tài xế bấm nhận cùng lúc
+      // cũng khóa đúng dòng booking này: bên đến sau thấy trạng thái mới → 409 (B12).
+      const outcome = await bookings.transaction(async (tx) => {
+        const booking = await tx.lockBooking(bookingId);
+        if (!booking) throw bookingNotFound();
+        if (booking.customer_id !== accountId) throw notOwner();
+        if (booking.status === 'DRIVER_ASSIGNED') throw conflict('BOOKING_ALREADY_ASSIGNED');
+        if (booking.status !== 'PENDING_PAYMENT' && booking.status !== 'SEARCHING') throw conflict('BOOKING_NOT_CANCELABLE');
+        await tx.cancelByCustomer(bookingId, reason);
+        const voidedDriverId = await tx.voidPendingOffer(bookingId);
+        return { previousStatus: booking.status, customerId: booking.customer_id, voidedDriverId };
+      });
+
+      // Nhả tài xế "phòng khi" một lần nhận dở dang còn giữ (CD3, như DX5). Lỗi chỉ ghi log, không chặn việc hủy.
+      if (outcome.voidedDriverId !== null) await releaseQuietly(outcome.voidedDriverId, bookingId, requestId);
+      // Không ghi lý do vào log (văn bản người dùng gõ — NFR08).
+      log.info('booking_canceled', { booking_id: bookingId, canceled_by: 'customer' });
+      // K4: Payment hủy bỏ / hoàn tiền; Notification báo khách và tài xế có Offer bị hủy. KHÔNG có key `reason`
+      // (lý do là văn bản người dùng, không đưa lên Kafka — 02 mục 6.1).
+      await publish(TOPIC_BOOKING_CANCELED, bookingId, {
+        booking_id: bookingId, customer_id: outcome.customerId, canceled_by: 'customer',
+        previous_status: outcome.previousStatus, pending_offer_driver_id: outcome.voidedDriverId,
+      });
+      return { booking_id: bookingId, status: 'CANCELED', canceled_by: 'customer' };
     },
 
     // Nghe K6 payment.status-changed (B16, B18). Chống lặp bằng chính trạng thái: chỉ đổi khi booking còn

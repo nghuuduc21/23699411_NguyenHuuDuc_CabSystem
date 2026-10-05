@@ -1,5 +1,6 @@
-// Tầng gRPC của service. Spec 00 chỉ có grpc.health.v1.Health/Check;
-// các spec sau thêm service nghiệp vụ (auth.proto) vào cùng server này.
+// Tầng gRPC của notification-service: grpc.health.v1.Health/Check (spec 00) và cab.notification.v1.NotificationService
+// (spec 17-18 mục 5.3: ListNotifications). Tầng này chỉ đọc danh tính trong metadata, đổi request gRPC → lời gọi logic
+// nghiệp vụ, và lỗi nghiệp vụ → gRPC status. Quy tắc nằm ở src/domain/.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
@@ -25,7 +26,24 @@ export function loadProto(file) {
   return grpc.loadPackageDefinition(definition);
 }
 
-export function createGrpcServer({ health }) {
+// Đổi lỗi nghiệp vụ sang gRPC status, `details` = mã lỗi. Lỗi khác (MongoDB dừng…) → INTERNAL, Gateway trả 503.
+function toGrpcError(err, log) {
+  if (err?.kind && grpc.status[err.kind] !== undefined) return { code: grpc.status[err.kind], details: err.code };
+  log.error('lỗi không lường trước', { name: err?.name, code: err?.code });
+  return { code: grpc.status.INTERNAL, details: 'INTERNAL' };
+}
+
+// Danh tính do Gateway dựng từ token đã kiểm tra (04 mục 1.7).
+export function readIdentity(metadata) {
+  const first = (key) => {
+    const value = metadata.get(key)[0];
+    return typeof value === 'string' ? value : undefined;
+  };
+  return { accountId: first('x-account-id'), role: first('x-role') };
+}
+
+// notifications = logic nghiệp vụ (src/domain/notifications.js). Test chỉ kiểm tra health thì không truyền.
+export function createGrpcServer({ health, notifications, log }) {
   const server = new grpc.Server();
   const healthProto = loadProto('health.proto');
 
@@ -40,6 +58,16 @@ export function createGrpcServer({ health }) {
       health.check().then((status) => callback(null, { status }));
     },
   });
+  if (notifications) {
+    const proto = loadProto('notification.proto');
+    server.addService(proto.cab.notification.v1.NotificationService.service, {
+      ListNotifications: (call, callback) => {
+        Promise.resolve()
+          .then(() => notifications.listNotifications(call.request, readIdentity(call.metadata)))
+          .then((result) => callback(null, result), (err) => callback(toGrpcError(err, log)));
+      },
+    });
+  }
   return server;
 }
 

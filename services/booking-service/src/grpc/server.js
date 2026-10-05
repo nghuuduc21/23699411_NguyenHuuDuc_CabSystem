@@ -1,6 +1,6 @@
 // Tầng gRPC của booking-service: grpc.health.v1.Health/Check (spec 00) và cab.booking.v1.BookingService
-// (spec 14-15-16-19-30 mục 5.1). Tầng này chỉ đọc danh tính trong metadata, đổi request gRPC → lời gọi logic
-// nghiệp vụ, và lỗi nghiệp vụ → gRPC status. Quy tắc nghiệp vụ nằm ở src/domain/.
+// (spec 14-15-16-19-30 mục 5.1; spec 17-18 mục 5.2: CancelBooking). Tầng này chỉ đọc danh tính trong metadata,
+// đổi request gRPC → lời gọi logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status. Quy tắc nghiệp vụ nằm ở src/domain/.
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -81,6 +81,7 @@ export function createGrpcServer({ health, bookings, log }) {
       ListOffers: unary((req, identity) => bookings.listOffers(req, identity), log),
       AcceptOffer: unary((req, identity) => bookings.acceptOffer(req, identity), log),
       RejectOffer: unary((req, identity) => bookings.rejectOffer(req, identity), log),
+      CancelBooking: unary((req, identity) => bookings.cancelBooking(req, identity), log),
     });
   }
   return server;

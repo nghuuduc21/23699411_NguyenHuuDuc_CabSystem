@@ -77,6 +77,18 @@ export function createPaymentClient(addr) {
   return new PaymentService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
 }
 
+// Client nghiệp vụ của trip-service (A27–A29).
+export function createTripClient(addr) {
+  const { TripService } = loadProto('trip.proto').cab.trip.v1;
+  return new TripService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
+}
+
+// Client nghiệp vụ của notification-service (A33).
+export function createNotificationClient(addr) {
+  const { NotificationService } = loadProto('notification.proto').cab.notification.v1;
+  return new NotificationService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
+}
+
 // Metadata Gateway gửi kèm mỗi lời gọi (04 mục 1.7). Gateway TỰ DỰNG từ token đã kiểm tra,
 // không chép header cùng tên của client — nếu chép thì ai cũng giả được danh tính bằng một header.
 //   x-request-id: luôn có, để lần theo một request qua log của nhiều service.

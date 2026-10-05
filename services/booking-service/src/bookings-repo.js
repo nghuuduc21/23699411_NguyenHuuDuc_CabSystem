@@ -79,6 +79,28 @@ function txStatements(db) {
       return rowCount > 0;
     },
 
+    // A22 khách hủy (spec 17-18 mục 2.4). Chỉ gọi khi đã khóa booking và kiểm trạng thái; CHECK của bảng đòi
+    // canceled_at, canceled_by đi cùng status CANCELED nên ghi một lệnh.
+    async cancelByCustomer(bookingId, reason) {
+      await db.query(
+        `UPDATE bookings SET status = 'CANCELED', canceled_by = 'customer', cancel_reason = $2, canceled_at = now(), updated_at = now()
+         WHERE booking_id = $1`,
+        [bookingId, reason],
+      );
+    },
+
+    // Offer đang chờ của booking vừa hủy → VOIDED (không còn hiệu lực). Trả mã tài xế được mời, hoặc null.
+    // Tiến trình hết hạn chỉ chạm Offer PENDING nên không đụng Offer đã VOIDED.
+    async voidPendingOffer(bookingId) {
+      const { rows } = await db.query(
+        `UPDATE driver_offers SET status = 'VOIDED', responded_at = now()
+         WHERE booking_id = $1 AND status = 'PENDING'
+         RETURNING driver_id`,
+        [bookingId],
+      );
+      return rows[0]?.driver_id ?? null;
+    },
+
     async insertAssignment({ bookingId, offerId, driverId, tripId }) {
       await db.query(
         `INSERT INTO driver_assignments (booking_id, offer_id, driver_id, trip_id, assigned_at)

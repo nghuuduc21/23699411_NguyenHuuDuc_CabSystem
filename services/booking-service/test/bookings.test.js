@@ -37,6 +37,13 @@ function fakeRepo() {
       return true;
     },
     async insertAssignment(a) { db.assignments.push(a); },
+    async cancelByCustomer(id, reason) { Object.assign(db.bookings.get(id), { status: 'CANCELED', canceled_by: 'customer', cancel_reason: reason }); },
+    async voidPendingOffer(id) {
+      const o = db.offers.find((x) => x.booking_id === id && pending(x));
+      if (!o) return null;
+      o.status = 'VOIDED';
+      return o.driver_id;
+    },
   });
   return {
     get db() { return db; },
@@ -323,4 +330,65 @@ test('khởi động lại: booking SEARCHING chưa có Offer được ghép ti�
   assert.equal(await dispatcher.resume(), 1);
   await flush();
   assert.deepEqual(repo.db.offers.map((o) => [o.booking_id, o.driver_id]), [[1000, 11], [1001, 13]]);
+});
+
+// ---- Spec 17-18 mục 2.4: A22 khách hủy booking chưa có tài xế ----
+
+test('A22 SEARCHING có Offer chờ: CANCELED, Offer VOIDED, nhả TX1 phòng khi, K4 không có key reason; bộ ghép dừng', async () => {
+  const { logic, repo, published, calls, flush } = setup();
+  await logic.createBooking(ROUTE, KH1);
+  await flush();
+  const res = await logic.cancelBooking({ booking_id: 1000, reason: '  doi y ' }, KH1);
+  assert.deepEqual(res, { booking_id: 1000, status: 'CANCELED', canceled_by: 'customer' });
+  const b = repo.db.bookings.get(1000);
+  assert.deepEqual([b.status, b.canceled_by, b.cancel_reason], ['CANCELED', 'customer', 'doi y']);
+  assert.equal(repo.db.offers[0].status, 'VOIDED');
+  assert.ok(calls.some(([n, req]) => n === 'releaseDriver' && req.driver_id === 11 && req.booking_id === 1000));
+  assert.deepEqual(published.at(-1), {
+    topic: 'booking.canceled', key: '1000',
+    data: { booking_id: 1000, customer_id: 1, canceled_by: 'customer', previous_status: 'SEARCHING', pending_offer_driver_id: 11 },
+  });
+  // Tài xế bấm nhận Offer đã VOIDED → 409; bộ ghép không mời ai nữa.
+  await rejectsWith(logic.acceptOffer({ offer_id: 1000 }, TX1), 'FAILED_PRECONDITION', 'INVALID_STATUS_TRANSITION');
+  await logic.rejectOffer({ offer_id: 1000 }, TX1).catch(() => {});
+  await flush();
+  assert.equal(repo.db.offers.length, 1);
+  // Hủy lại → 409 BOOKING_NOT_CANCELABLE.
+  await rejectsWith(logic.cancelBooking({ booking_id: 1000, reason: 'x' }, KH1), 'FAILED_PRECONDITION', 'BOOKING_NOT_CANCELABLE');
+});
+
+test('A22 PENDING_PAYMENT (chưa có Offer): CANCELED, K4 pending_offer_driver_id null, không gọi ReleaseDriver; nhả lỗi cũng không chặn hủy', async () => {
+  const { logic, published, calls } = setup({ async releaseDriver() { throw grpcError('UNAVAILABLE', 'x'); } });
+  await logic.createBooking({ ...ROUTE, pay: 'ONLINE' }, KH1);
+  const res = await logic.cancelBooking({ booking_id: 1000, reason: 'doi y' }, KH1);
+  assert.equal(res.status, 'CANCELED');
+  assert.equal(published.at(-1).data.previous_status, 'PENDING_PAYMENT');
+  assert.equal(published.at(-1).data.pending_offer_driver_id, null);
+  assert.ok(!('reason' in published.at(-1).data));
+  assert.equal(calls.filter(([n]) => n === 'releaseDriver').length, 0);
+
+  const down = setup({ async releaseDriver() { throw grpcError('UNAVAILABLE', 'x'); } });
+  await down.logic.createBooking(ROUTE, KH1);
+  await down.flush();
+  assert.equal((await down.logic.cancelBooking({ booking_id: 1000, reason: 'x' }, KH1)).status, 'CANCELED');
+});
+
+test('A22 lỗi: DRIVER_ASSIGNED 409; NO_DRIVER_FOUND 409; không phải chủ 403; 999 → 404; reason sai → 400; tài xế / admin 403', async () => {
+  const { logic, flush, repo } = setup();
+  await logic.createBooking(ROUTE, KH1);
+  await flush();
+  await logic.acceptOffer({ offer_id: 1000 }, TX1);
+  await rejectsWith(logic.cancelBooking({ booking_id: 1000, reason: 'x' }, KH1), 'FAILED_PRECONDITION', 'BOOKING_ALREADY_ASSIGNED');
+  await logic.createBooking(ROUTE, KH1);
+  repo.db.bookings.get(1001).status = 'NO_DRIVER_FOUND';
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: 'x' }, KH1), 'FAILED_PRECONDITION', 'BOOKING_NOT_CANCELABLE');
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: 'x' }, KH2), 'PERMISSION_DENIED', 'NOT_OWNER');
+  await rejectsWith(logic.cancelBooking({ booking_id: 999, reason: 'x' }, KH1), 'NOT_FOUND', 'BOOKING_NOT_FOUND');
+  await rejectsWith(logic.cancelBooking({ booking_id: 0, reason: 'x' }, KH1), 'INVALID_ARGUMENT', 'INVALID_ID');
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: '' }, KH1), 'INVALID_ARGUMENT', 'REASON_REQUIRED');
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: '  ' }, KH1), 'INVALID_ARGUMENT', 'REASON_REQUIRED');
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: '<b>' }, KH1), 'INVALID_ARGUMENT', 'TEXT_CONTAINS_HTML');
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: 'a'.repeat(256) }, KH1), 'INVALID_ARGUMENT', 'INVALID_INPUT');
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: 'x' }, TX1), 'PERMISSION_DENIED', 'FORBIDDEN');
+  await rejectsWith(logic.cancelBooking({ booking_id: 1001, reason: 'x' }, AD1), 'PERMISSION_DENIED', 'FORBIDDEN');
 });

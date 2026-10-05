@@ -1,0 +1,51 @@
+// Hợp đồng gRPC của notification-service (spec 17-18 mục 5.3). Mục chấm 16, 18 (xem thông báo).
+// Chỉ Gateway gọi (A33). KHÔNG service nào gọi Notification bằng gRPC: thông báo sinh ra từ event Kafka
+// K1–K7, để không nghiệp vụ nào phải chờ hay lỗi theo Notification (NFR05).
+// Danh tính người xem nằm trong metadata `x-account-id`, `x-role` do Gateway dựng từ token: chỉ xem được
+// thông báo của chính mình (N2), không có tham số "của ai".
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi.
+syntax = "proto3";
+
+package cab.notification.v1;
+
+service NotificationService {
+  // A33 GET /api/v1/notifications?page&limit — thông báo của người trong token, mới nhất trước.
+  rpc ListNotifications (ListNotificationsRequest) returns (ListNotificationsResponse);
+}
+
+message ListNotificationsRequest {
+  int32 page = 1;
+  int32 limit = 2;
+}
+
+// Phần dữ liệu đi kèm: chỉ mã, số tiền, trạng thái — không họ tên, số điện thoại, tọa độ.
+// Mỗi loại thông báo chỉ có một vài key; key không có thì vắng hẳn.
+message NotificationData {
+  optional int64 booking_id = 1;
+  optional int64 trip_id = 2;
+  optional int64 payment_id = 3;
+  optional int64 offer_id = 4;
+  optional int64 driver_id = 5;
+  optional int32 amount = 6;
+  optional string status = 7;
+}
+
+message Notification {
+  string type = 1;                      // ví dụ TRIP_ACCEPTED, PAYMENT_REFUNDED (spec 17-18 mục 2.7)
+  string title = 2;
+  string body = 3;
+  NotificationData data = 4;
+  string created_at = 5;                // ISO 8601 UTC = lúc sự việc xảy ra (occurred_at của event)
+}
+
+message Pagination {
+  int32 page = 1;
+  int32 limit = 2;
+  int32 total = 3;
+  int32 total_pages = 4;
+}
+
+message ListNotificationsResponse {
+  repeated Notification data = 1;
+  Pagination pagination = 2;
+}

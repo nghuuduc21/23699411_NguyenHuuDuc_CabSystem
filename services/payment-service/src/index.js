@@ -1,6 +1,6 @@
 // Điểm khởi động payment-service: ghép các phần theo thứ tự của spec 00 mục 2.1
 // đọc biến môi trường → nối database (thử lại) → migration → seed (nếu giả lập) → mở gRPC → SERVING
-// → chạy tiến trình nền hết hạn thanh toán (mỗi giây).
+// → chạy tiến trình nền hết hạn thanh toán (mỗi giây) → nghe K3, K4, K5 (spec 17-18: hoàn tiền, tiền mặt).
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createLogger } from './log.js';
@@ -11,7 +11,10 @@ import { runSeed } from './seed.js';
 import { createHealth } from './health.js';
 import { createGrpcServer, startGrpcServer } from './grpc/server.js';
 import { createPaymentsRepo } from './payments-repo.js';
-import { createPaymentLogic } from './domain/payments.js';
+import {
+  createPaymentLogic, TOPIC_BOOKING_CANCELED, TOPIC_NO_DRIVER_FOUND, TOPIC_TRIP_STATUS_CHANGED,
+} from './domain/payments.js';
+import { startConsumer } from './consumer.js';
 import { createSimulatedProvider } from './adapters/provider-sim.js';
 import { createEventPublisher, createKafkaProducer } from './events.js';
 
@@ -73,13 +76,24 @@ const timer = setInterval(() => {
     .finally(() => { expiring = false; });
 }, EXPIRE_INTERVAL_MS);
 
+// Nghe K3, K4, K5 trong nền (group `payment-service`): Kafka chưa sẵn sàng thì consumer tự thử lại, gRPC vẫn phục vụ.
+const consumer = startConsumer({
+  brokers: config.kafkaBrokers,
+  groupId: config.serviceName,
+  topics: [TOPIC_NO_DRIVER_FOUND, TOPIC_BOOKING_CANCELED, TOPIC_TRIP_STATUS_CHANGED],
+  onEvent: (topic, envelope) => payments.onBookingEvent(topic, envelope),
+  log,
+});
+
 // `docker compose stop` gửi SIGTERM. Node chạy là tiến trình số 1 trong container nên phải tự bắt,
 // nếu không Docker chờ 10 giây rồi mới giết — demo dừng/bật service sẽ chậm.
 const shutdown = () => {
   log.info('đang dừng');
   clearInterval(timer);
   server.forceShutdown();
-  Promise.allSettled([events.close(), pool.end()]).finally(() => process.exit(0));
+  Promise.allSettled([consumer.stop(), events.close()])
+    .then(() => pool.end())
+    .finally(() => process.exit(0));
 };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);

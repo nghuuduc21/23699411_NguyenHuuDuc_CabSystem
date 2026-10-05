@@ -38,7 +38,7 @@ export function loadConfig(env = process.env) {
     serviceName: required(env, 'SERVICE_NAME'),
     databaseUrl: required(env, 'DATABASE_URL'),
     driverDataKey: dataKey(env, 'DRIVER_DATA_KEY'),
-    // Địa chỉ Kafka: phát K7 driver.application-reviewed (spec 12-13-21-23); spec sau nghe K5.
+    // Địa chỉ Kafka: phát K7 driver.application-reviewed (spec 12-13-21-23); nghe K5 trip.status-changed (spec 17-18).
     kafkaBrokers: required(env, 'KAFKA_BROKERS'),
     simulationMode: bool(env, 'SIMULATION_MODE'),
   });

@@ -33,6 +33,7 @@ function fakeRepo() {
       return view(p);
     },
     async lockPayment(id) { const p = db.payments.find((x) => x.payment_id === id); return p ? view(p) : null; },
+    async lockPaymentByBooking(bookingId) { const p = db.payments.find((x) => x.booking_id === bookingId); return p ? view(p) : null; },
     async findIdempotencyKey(id, key) { return db.keys.find((k) => k.payment_id === id && k.key === key) ?? null; },
     async insertIdempotencyKey(id, key, hash) { db.keys.push({ payment_id: id, key, request_hash: hash, response: null }); },
     async saveIdempotencyResponse(id, key, response) { db.keys.find((k) => k.payment_id === id && k.key === key).response = structuredClone(response); },
@@ -264,4 +265,115 @@ test('rules: hash chuẩn hóa; so khóa bí mật', () => {
   assert.equal(secretMatches('cab-secreT', 'cab-secret'), false);
   assert.equal(secretMatches('cab', 'cab-secret'), false);
   assert.equal(secretMatches(undefined, 'cab-secret'), false);
+});
+
+// ---- Spec 17-18 mục 2.5: nghe K3, K4, K5 — hủy bỏ, hoàn tiền, ghi nhận tiền mặt ----
+
+const env = (data) => ({ event_id: 'e1', occurred_at: '2026-10-05T01:00:00.000Z', data });
+const K3 = 'booking.no-driver-found';
+const K4 = 'booking.canceled';
+const K5 = 'trip.status-changed';
+const refunds = (repo, id) => repo.db.txns.filter((t) => t.payment_id === id && t.type === 'REFUND');
+
+async function paidOnline(logic, bookingId = 7) {
+  const { payment_id: id } = await logic.createPayment({ ...onlineCar7, booking_id: bookingId }, SYSTEM);
+  await pay(logic, id, {}, 'k1');
+  return id;
+}
+
+test('K5 CANCELED trên thanh toán ONLINE đã thu → REFUNDED (TRIP_CANCELED), SIM-R-<id>, K6 REFUNDED; event lặp không hoàn lần hai', async () => {
+  const { logic, repo, published } = setup();
+  const id = await paidOnline(logic);
+  const before = published.length;
+  const event = env({ trip_id: 5, booking_id: 7, customer_id: 1, driver_id: 16, status: 'CANCELED', previous_status: 'ACCEPTED', canceled_by: 'customer' });
+  assert.equal(await logic.onBookingEvent(K5, event), 'REFUNDED');
+  const p = repo.db.payments.find((x) => x.payment_id === id);
+  assert.deepEqual([p.status, p.status_reason, Boolean(p.refunded_at), Boolean(p.paid_at)], ['REFUNDED', 'TRIP_CANCELED', true, true]);
+  assert.deepEqual(refunds(repo, id).map((t) => [t.provider_transaction_id, t.status, t.amount]), [[`SIM-R-${id}`, 'SUCCEEDED', 56000]]);
+  assert.deepEqual(published.slice(before), [{
+    topic: TOPIC_PAYMENT_STATUS_CHANGED, key: '7',
+    data: { payment_id: id, booking_id: 7, customer_id: 1, method: 'ONLINE', amount: 56000, status: 'REFUNDED', previous_status: 'COMPLETED' },
+  }]);
+  assert.equal(await logic.onBookingEvent(K5, event), null);
+  assert.equal(refunds(repo, id).length, 1);
+  assert.equal(published.length, before + 1);
+  const view = await logic.getPayment({ payment_id: id }, KH1);
+  assert.deepEqual(view.transactions.map((t) => t.type), ['CHARGE', 'REFUND']);
+});
+
+test('K5 CANCELED tiền mặt → CANCELED (TRIP_CANCELED), không giao dịch hoàn, không K6', async () => {
+  const { logic, repo, published } = setup();
+  const { payment_id: id } = await logic.createPayment({ ...onlineCar7, booking_id: 9, method: 'CASH' }, SYSTEM);
+  assert.equal(await logic.onBookingEvent(K5, env({ booking_id: 9, status: 'CANCELED', canceled_by: 'customer' })), 'CANCELED');
+  const p = repo.db.payments.find((x) => x.payment_id === id);
+  assert.deepEqual([p.status, p.status_reason], ['CANCELED', 'TRIP_CANCELED']);
+  assert.equal(refunds(repo, id).length, 0);
+  assert.equal(published.length, 0);
+});
+
+test('K5 COMPLETED: tiền mặt PENDING → COMPLETED + paid_at + K6 COMPLETED CASH (FR17); ONLINE đã thu giữ nguyên, không hoàn (BRULE15)', async () => {
+  const { logic, repo, published } = setup();
+  const { payment_id: cash } = await logic.createPayment({ ...onlineCar7, booking_id: 1000, vehicle_type: 'CAR_4', method: 'CASH' }, SYSTEM);
+  assert.equal(await logic.onBookingEvent(K5, env({ trip_id: 1000, booking_id: 1000, status: 'COMPLETED' })), 'COMPLETED');
+  const p = repo.db.payments.find((x) => x.payment_id === cash);
+  assert.equal(p.status, 'COMPLETED');
+  assert.ok(p.paid_at);
+  assert.deepEqual(published.at(-1).data, { payment_id: cash, booking_id: 1000, customer_id: 1, method: 'CASH', amount: 45000, status: 'COMPLETED', previous_status: 'PENDING' });
+  assert.equal(repo.db.txns.filter((t) => t.payment_id === cash).length, 0, 'tiền mặt không có giao dịch cổng');
+  assert.equal(await logic.onBookingEvent(K5, env({ booking_id: 1000, status: 'COMPLETED' })), null);
+
+  const online = await paidOnline(logic, 4);
+  const count = published.length;
+  assert.equal(await logic.onBookingEvent(K5, env({ booking_id: 4, status: 'COMPLETED' })), null);
+  assert.equal(repo.db.payments.find((x) => x.payment_id === online).status, 'COMPLETED');
+  assert.equal(refunds(repo, online).length, 0);
+  assert.equal(published.length, count);
+  for (const status of ['ACCEPTED', 'ARRIVED', 'PICKED_UP', 'IN_PROGRESS']) assert.equal(await logic.onBookingEvent(K5, env({ booking_id: 1000, status })), null);
+});
+
+test('K3: ONLINE đã thu → REFUNDED (NO_DRIVER_FOUND); tiền mặt → CANCELED (NO_DRIVER_FOUND)', async () => {
+  const { logic, repo } = setup();
+  const online = await paidOnline(logic, 20);
+  assert.equal(await logic.onBookingEvent(K3, env({ booking_id: 20, customer_id: 1, offers_tried: 0 })), 'REFUNDED');
+  assert.equal(repo.db.payments.find((x) => x.payment_id === online).status_reason, 'NO_DRIVER_FOUND');
+  const { payment_id: cash } = await logic.createPayment({ ...onlineCar7, booking_id: 21, method: 'CASH' }, SYSTEM);
+  assert.equal(await logic.onBookingEvent(K3, env({ booking_id: 21, customer_id: 1, offers_tried: 0 })), 'CANCELED');
+  assert.equal(repo.db.payments.find((x) => x.payment_id === cash).status_reason, 'NO_DRIVER_FOUND');
+});
+
+test('K4: khách hủy → chưa thu CANCELED (BOOKING_CANCELED) rồi A31 → PAYMENT_CANCELED; đã thu → REFUNDED; system → bỏ qua', async () => {
+  const { logic, repo, published } = setup();
+  const { payment_id: pending } = await logic.createPayment({ ...onlineCar7, booking_id: 30 }, SYSTEM);
+  assert.equal(await logic.onBookingEvent(K4, env({ booking_id: 30, customer_id: 1, canceled_by: 'customer', previous_status: 'PENDING_PAYMENT', pending_offer_driver_id: null })), 'CANCELED');
+  assert.equal(repo.db.payments.find((x) => x.payment_id === pending).status_reason, 'BOOKING_CANCELED');
+  assert.equal(published.length, 0);
+  await rejectsWith(pay(logic, pending, {}, 'k1'), 'FAILED_PRECONDITION', 'PAYMENT_CANCELED');
+
+  const paid = await paidOnline(logic, 31);
+  assert.equal(await logic.onBookingEvent(K4, env({ booking_id: 31, canceled_by: 'customer' })), 'REFUNDED');
+  assert.equal(repo.db.payments.find((x) => x.payment_id === paid).status_reason, 'BOOKING_CANCELED');
+
+  const { payment_id: sys } = await logic.createPayment({ ...onlineCar7, booking_id: 32 }, SYSTEM);
+  assert.equal(await logic.onBookingEvent(K4, env({ booking_id: 32, canceled_by: 'system', reason: 'PAYMENT_EXPIRED' })), null);
+  assert.equal(repo.db.payments.find((x) => x.payment_id === sys).status, 'PENDING');
+});
+
+test('K4 rồi callback MANUAL đến muộn (M11) → ghi nhận rồi hoàn ngay, giữ lý do BOOKING_CANCELED', async () => {
+  const { logic, repo, published } = setup();
+  const { payment_id: id } = await logic.createPayment({ ...onlineCar7, booking_id: 40 }, SYSTEM);
+  await pay(logic, id, { simulate_result: 'MANUAL' }, 'k1');
+  assert.equal(await logic.onBookingEvent(K4, env({ booking_id: 40, canceled_by: 'customer' })), 'CANCELED');
+  const res = await callback(logic, { txn_id: `SIM-${id}-1` });
+  assert.deepEqual([res.txn_status, res.status], ['SUCCEEDED', 'REFUNDED']);
+  const p = repo.db.payments.find((x) => x.payment_id === id);
+  assert.deepEqual([p.status, p.status_reason, Boolean(p.paid_at), Boolean(p.refunded_at)], ['REFUNDED', 'BOOKING_CANCELED', true, true]);
+  assert.equal(published.at(-1).data.status, 'REFUNDED');
+  assert.equal(published.at(-1).data.previous_status, 'CANCELED');
+});
+
+test('event sai dạng / không có thanh toán → bỏ qua, không lỗi', async () => {
+  const { logic } = setup();
+  assert.equal(await logic.onBookingEvent(K5, {}), null);
+  assert.equal(await logic.onBookingEvent(K5, env({ booking_id: '7', status: 'CANCELED' })), null);
+  assert.equal(await logic.onBookingEvent(K5, env({ booking_id: 999, status: 'CANCELED' })), null);
 });

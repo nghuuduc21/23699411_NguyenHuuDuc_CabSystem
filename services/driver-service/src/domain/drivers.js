@@ -252,6 +252,28 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
       return { driver_id: driverId, released };
     },
 
+    // D9 (spec 17-18 mục 2.6): nghe K5 trip.status-changed. Chuyến COMPLETED / CANCELED → tài xế rảnh lại (ONLINE).
+    // Vì sao Kafka chứ không để Trip gọi gRPC: chuyến kết thúc ngoài đời thì phải được ghi nhận dù driver-service đang
+    // dừng; chạy lại thì đọc bù event (NFR05). Đánh đổi: tài xế rảnh lại trễ khoảng một giây.
+    // DÙNG CHUNG câu lệnh với ReleaseDriver: chỉ nhả khi tài xế đang giữ ĐÚNG booking của chuyến. Nhờ vậy event lặp
+    // (đã nhả rồi), event cũ của booking khác (tài xế đang chở người khác — AC-HT-05) không làm gì: chống lặp bằng
+    // chính trạng thái, không cần bảng event đã xử lý (03 mục 11.3). Lỗi database → ném để Kafka giao lại.
+    async onTripStatusChanged(envelope) {
+      const data = envelope?.data;
+      if (!data || typeof data.status !== 'string') {
+        log.warn('bỏ qua event sai dạng', { topic: 'trip.status-changed', event_id: envelope?.event_id });
+        return false;
+      }
+      if (data.status !== 'COMPLETED' && data.status !== 'CANCELED') return false;
+      if (!Number.isSafeInteger(data.driver_id) || !Number.isSafeInteger(data.booking_id)) {
+        log.warn('bỏ qua event sai dạng', { topic: 'trip.status-changed', event_id: envelope?.event_id });
+        return false;
+      }
+      const released = await drivers.release(data.driver_id, data.booking_id);
+      if (released) log.info('driver_released', { driver_id: data.driver_id, booking_id: data.booking_id, trip_status: data.status });
+      return released;
+    },
+
     // A18: ghi vị trí mới nhất ở mọi trạng thái (tài xế cập nhật trước khi bật Online — TX9).
     async updateLocation({ lat, lng }, identity) {
       const { accountId } = requireRole(identity, ['driver']);

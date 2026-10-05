@@ -1,5 +1,6 @@
 // Điểm khởi động driver-service: ghép các phần theo thứ tự của spec 00 mục 2.1
-// đọc biến môi trường → nối database (thử lại) → migration → seed (nếu giả lập) → mở gRPC → SERVING.
+// đọc biến môi trường → nối database (thử lại) → migration → seed (nếu giả lập) → mở gRPC → SERVING
+// → nghe K5 trip.status-changed (spec 17-18: trả tài xế về rảnh sau chuyến).
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createLogger } from './log.js';
@@ -13,6 +14,9 @@ import { createDriversRepo } from './drivers-repo.js';
 import { createDriverLogic } from './domain/drivers.js';
 import { createFieldCipher } from './domain/crypto.js';
 import { createEventPublisher, createKafkaProducer } from './events.js';
+import { startConsumer } from './consumer.js';
+
+const TOPIC_TRIP_STATUS_CHANGED = 'trip.status-changed'; // K5 — trip-service phát
 
 const log = createLogger(process.env.SERVICE_NAME || 'driver-service');
 const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
@@ -58,12 +62,23 @@ try {
   process.exit(1);
 }
 
+// Nghe K5 trong nền: Kafka chưa sẵn sàng thì consumer tự thử lại, gRPC vẫn phục vụ (NFR05).
+const consumer = startConsumer({
+  brokers: config.kafkaBrokers,
+  groupId: config.serviceName,
+  topics: [TOPIC_TRIP_STATUS_CHANGED],
+  onEvent: (topic, envelope) => drivers.onTripStatusChanged(envelope),
+  log,
+});
+
 // `docker compose stop` gửi SIGTERM. Node chạy là tiến trình số 1 trong container nên phải tự bắt,
 // nếu không Docker chờ 10 giây rồi mới giết — demo dừng/bật service sẽ chậm.
 const shutdown = () => {
   log.info('đang dừng');
   server.forceShutdown();
-  Promise.allSettled([events.close(), pool.end()]).finally(() => process.exit(0));
+  Promise.allSettled([consumer.stop(), events.close()])
+    .then(() => pool.end())
+    .finally(() => process.exit(0));
 };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);

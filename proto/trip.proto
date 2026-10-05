@@ -1,6 +1,9 @@
-// Hợp đồng gRPC của trip-service (spec 14-15-16-19-30 mục 5.3). Mục chấm 16.
-// Spec này chỉ có CreateTrip (S5): booking-service gọi khi tài xế nhận chuyến, với metadata `x-role: system`.
-// ListTrips, GetTrip, UpdateTripStatus, CancelTrip, GetTripForRating thêm ở spec 17, 18, 20.
+// Hợp đồng gRPC của trip-service (spec 14-15-16-19-30 mục 5.3; spec 17-18 mục 5.1). Mục chấm 16, 17, 18.
+// Hai loại bên gọi:
+//   - booking-service (S5 CreateTrip) với metadata `x-role: system` — không có tài khoản nào đứng sau.
+//   - Gateway (A27 GetTrip, A28 UpdateTripStatus, A29 CancelTrip) với danh tính dựng từ token
+//     (`x-account-id`, `x-role`): tài xế / khách không tự khai mình là ai trong message.
+// ListTrips, GetTripForRating thêm ở spec sau.
 // Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi.
 syntax = "proto3";
 
@@ -9,6 +12,12 @@ package cab.trip.v1;
 service TripService {
   // S5: tạo chuyến ACCEPTED từ bản chụp booking. Gọi lặp cùng booking_id + cùng tài xế → trả Trip cũ (T1).
   rpc CreateTrip (CreateTripRequest) returns (CreateTripResponse);
+  // A27 GET /api/v1/trips/{id} — khách / tài xế của chuyến, hoặc admin; kèm lịch sử trạng thái.
+  rpc GetTrip (TripIdRequest) returns (Trip);
+  // A28 PATCH /api/v1/trips/{id} {"status":"ARRIVED"} — tài xế tiến ĐÚNG bước kế tiếp (mục 17).
+  rpc UpdateTripStatus (UpdateTripStatusRequest) returns (UpdateTripStatusResponse);
+  // A29 PATCH /api/v1/trips/{id} {"status":"CANCELED","reason":"…"} — khách / tài xế hủy trước khi đón khách (mục 18).
+  rpc CancelTrip (CancelTripRequest) returns (CancelTripResponse);
 }
 
 // Bản chụp booking: tài xế biết đón / trả ở đâu, thu tiền mặt hay không, bao nhiêu (03 mục 11.2).
@@ -31,4 +40,60 @@ message CreateTripResponse {
   int64 trip_id = 1;
   string status = 2;
   bool created = 3;                     // false = Trip đã có từ lần gọi trước
+}
+
+message TripIdRequest {
+  int64 trip_id = 1;
+}
+
+// Một dòng lịch sử: trạng thái và lúc đổi (ISO 8601 UTC), cũ nhất trước.
+message HistoryItem {
+  string status = 1;
+  string at = 2;
+}
+
+// Tên field ngắn trùng tên JSON của API (`vehicle`, `pay`, `fare`, `from`, `to`); cột database vẫn tên đầy đủ.
+// Field `optional` không có giá trị thì vắng hẳn (không có key trong JSON).
+message Trip {
+  int64 trip_id = 1;
+  int64 booking_id = 2;
+  string status = 3;                    // ACCEPTED | ARRIVED | PICKED_UP | IN_PROGRESS | COMPLETED | CANCELED
+  string vehicle = 4;
+  string pay = 5;                       // CASH | ONLINE
+  int32 fare = 6;
+  int64 customer_id = 7;
+  int64 driver_id = 8;
+  repeated double from = 9;             // [lat, lng]
+  repeated double to = 10;
+  optional string from_address = 11;
+  optional string to_address = 12;
+  optional string started_at = 13;      // lúc PICKED_UP = "chuyến bắt đầu" (BRULE16)
+  optional string ended_at = 14;        // lúc COMPLETED hoặc CANCELED
+  optional string canceled_by = 15;     // customer | driver
+  optional string cancel_reason = 16;
+  string created_at = 17;
+  repeated HistoryItem history = 18;
+}
+
+message UpdateTripStatusRequest {
+  int64 trip_id = 1;
+  string status = 2;                    // ARRIVED | PICKED_UP | IN_PROGRESS | COMPLETED
+}
+
+message UpdateTripStatusResponse {
+  int64 trip_id = 1;
+  string status = 2;
+  repeated HistoryItem history = 3;
+}
+
+message CancelTripRequest {
+  int64 trip_id = 1;
+  string reason = 2;                    // bắt buộc (FR36)
+}
+
+message CancelTripResponse {
+  int64 trip_id = 1;
+  string status = 2;                    // CANCELED
+  string canceled_by = 3;               // customer | driver — lấy từ role trong token, không do client khai
+  string reason = 4;
 }

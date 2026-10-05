@@ -1,6 +1,7 @@
 // Tầng gRPC của trip-service: grpc.health.v1.Health/Check (spec 00) và cab.trip.v1.TripService
-// (spec 14-15-16-19-30: CreateTrip). Tầng này chỉ đọc danh tính trong metadata, đổi request gRPC → lời gọi
-// logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status. Quy tắc nghiệp vụ nằm ở src/domain/.
+// (spec 14-15-16-19-30: CreateTrip; spec 17-18: GetTrip, UpdateTripStatus, CancelTrip). Tầng này chỉ đọc danh tính
+// trong metadata, đổi request gRPC → lời gọi logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status.
+// Quy tắc nghiệp vụ nằm ở src/domain/.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
@@ -34,7 +35,8 @@ function toGrpcError(err, log) {
   return { code: grpc.status.INTERNAL, details: 'INTERNAL' };
 }
 
-// Danh tính người gọi: CreateTrip chỉ nhận `x-role: system` của booking-service (spec mục 5.5).
+// Danh tính người gọi: CreateTrip chỉ nhận `x-role: system` của booking-service (spec 14 mục 5.5); GetTrip,
+// UpdateTripStatus, CancelTrip nhận `x-account-id`, `x-role` do Gateway dựng từ token (04 mục 1.7).
 export function readIdentity(metadata) {
   const first = (key) => {
     const value = metadata.get(key)[0];
@@ -74,6 +76,9 @@ export function createGrpcServer({ health, trips, log }) {
     const tripProto = loadProto('trip.proto');
     server.addService(tripProto.cab.trip.v1.TripService.service, {
       CreateTrip: unary((req, identity) => trips.createTrip(req, identity), log),
+      GetTrip: unary((req, identity) => trips.getTrip(req, identity), log),
+      UpdateTripStatus: unary((req, identity) => trips.updateTripStatus(req, identity), log),
+      CancelTrip: unary((req, identity) => trips.cancelTrip(req, identity), log),
     });
   }
   return server;

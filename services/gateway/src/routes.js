@@ -9,8 +9,9 @@
 // A01–A03 nằm ngoài tiền tố /api/v1 vì không phải tài nguyên nghiệp vụ.
 import { ROLES } from './token.js';
 import {
-  parseBookingsQuery, parseCallbackBody, parseCreateBooking, parseDriverMeBody, parseDriversQuery, parseOfferBody,
-  parseOffersQuery, parsePayRequest, parseReviewBody, validateCreateCustomer, validateIdParam, validateLogin,
+  parseBookingsQuery, parseCallbackBody, parseCancelBookingBody, parseCreateBooking, parseDriverMeBody, parseDriversQuery,
+  parseNotificationsQuery, parseOfferBody, parseOffersQuery, parsePayRequest, parseReviewBody, parseTripBody,
+  validateCreateCustomer, validateIdParam, validateLogin,
   validateRegister, validateRegisterDriver, validateRequestOtp, validateSubmitDriver, validateUpdateCustomer,
 } from './validate.js';
 
@@ -26,9 +27,9 @@ function selectBy(parse, variants) {
 }
 
 // customers: handler hồ sơ khách (spec 11); drivers: handler tài xế (spec 12-13-21-23);
-// bookings, payments: đặt xe, lời mời, thanh toán (spec 14-15-16-19-30).
-// Test chỉ thử health / auth thì không truyền → không có các route này.
-export function buildRoutes({ health, auth, customers, drivers, bookings, payments }) {
+// bookings, payments: đặt xe, lời mời, thanh toán (spec 14-15-16-19-30); trips, notifications: chuyến đi, hủy,
+// thông báo (spec 17-18). Test chỉ thử health / auth thì không truyền → không có các route này.
+export function buildRoutes({ health, auth, customers, drivers, bookings, payments, trips, notifications }) {
   return [
     { code: 'A01', method: 'GET', path: '/health', roles: null, rpc: null, handler: health.live },
     { code: 'A02', method: 'GET', path: '/ready', roles: null, rpc: null, handler: health.ready },
@@ -107,6 +108,13 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
       },
       // A21: chủ (service kiểm) hoặc admin.
       { code: 'A21', method: 'GET', path: '/api/v1/bookings/:id', roles: ['customer', 'admin'], rpc: 'cab.booking.v1.BookingService/GetBooking', validateParams: validateIdParam, handler: bookings.byId },
+      // A22 (spec 17-18): hủy = PATCH + `status` CANCELED (không có động từ trong đường dẫn). Chỉ khách; tài xế, admin
+      // bị 403 TRƯỚC khi đọc body (mục chấm 28).
+      {
+        code: 'A22', method: 'PATCH', path: '/api/v1/bookings/:id', roles: ['customer'], rpc: 'cab.booking.v1.BookingService/CancelBooking',
+        validateParams: validateIdParam,
+        select: selectBy((req) => parseCancelBookingBody(req.body), { A22: { handler: bookings.cancel } }),
+      },
       // A23: lời mời của chính tài xế.
       {
         code: 'A23', method: 'GET', path: '/api/v1/offers', roles: ['driver'], rpc: 'cab.booking.v1.BookingService/ListOffers',
@@ -137,6 +145,30 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
       {
         code: 'A32', method: 'POST', path: '/api/v1/payment-callbacks', roles: null, rpc: 'cab.payment.v1.PaymentService/HandleProviderCallback',
         select: selectBy((req) => parseCallbackBody(req.body), { A32: { handler: payments.callback } }),
+      },
+    ] : []),
+
+    // Spec 17-18 — chuyến đi (mục 17, 18).
+    ...(trips ? [
+      // A27: cả ba role; service kiểm khách / tài xế CỦA CHUYẾN (403 NOT_OWNER), admin xem mọi chuyến.
+      { code: 'A27', method: 'GET', path: '/api/v1/trips/:id', roles: ROLES, rpc: 'cab.trip.v1.TripService/GetTrip', validateParams: validateIdParam, handler: trips.byId },
+      // A28 / A29: một đường dẫn, chọn theo `status`. Admin bị 403 ở role đường dẫn (trước body — CD-Q7); khách gửi
+      // A28 (tiến trạng thái) bị 403 ở role biến thể: chỉ tài xế đón / trả khách.
+      {
+        code: 'A28|A29', method: 'PATCH', path: '/api/v1/trips/:id', roles: ['customer', 'driver'],
+        rpc: 'cab.trip.v1.TripService/UpdateTripStatus|CancelTrip', validateParams: validateIdParam,
+        select: selectBy((req) => parseTripBody(req.body), {
+          A28: { roles: ['driver'], handler: trips.update },
+          A29: { roles: ['customer', 'driver'], handler: trips.cancel },
+        }),
+      },
+    ] : []),
+
+    // Spec 17-18 — thông báo của tôi (mục 16, 18). Cả ba role; danh sách lọc theo người trong token (N2).
+    ...(notifications ? [
+      {
+        code: 'A33', method: 'GET', path: '/api/v1/notifications', roles: ROLES, rpc: 'cab.notification.v1.NotificationService/ListNotifications',
+        select: selectBy((req) => parseNotificationsQuery(req.query), { A33: { handler: notifications.list } }),
       },
     ] : []),
   ];

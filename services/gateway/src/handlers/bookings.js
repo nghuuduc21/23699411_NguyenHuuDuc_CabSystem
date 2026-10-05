@@ -1,4 +1,4 @@
-// Hàm xử lý A19–A21, A23–A25 — đặt xe và lời mời (spec 14-15-16-19-30 mục 4.2–4.6).
+// Hàm xử lý A19–A25 — đặt xe, lời mời (spec 14-15-16-19-30 mục 4.2–4.6), hủy booking A22 (spec 17-18 mục 4.3).
 // Không có logic nghiệp vụ: chỉ đổi REST ↔ gRPC. Tính quãng đường, ai được mời, khi nào nhận được… là việc
 // của booking-service. Token, role, hình thức, chọn biến thể đã làm ở app.js / validate.js; message gRPC đã
 // dựng sẵn ở `req.rpcRequest`.
@@ -38,5 +38,8 @@ export function createBookingHandlers({ bookingClient }) {
     accept: forward('AcceptOffer', (req) => ({ offer_id: req.params.id }),
       (r) => pick(r, ['offer_id', 'status', 'booking_id', 'booking_status', 'trip_id', 'trip_status'])),
     reject: forward('RejectOffer', (req) => ({ offer_id: req.params.id }), (r) => pick(r, ['offer_id', 'status'])),
+    // A22: khách hủy booking chưa có tài xế. Không cần payment-service chạy: hoàn / hủy bỏ đi bằng K4 (NFR05).
+    cancel: forward('CancelBooking', (req) => ({ booking_id: req.params.id, ...req.rpcRequest }),
+      (r) => pick(r, ['booking_id', 'status', 'canceled_by'])),
   };
 }

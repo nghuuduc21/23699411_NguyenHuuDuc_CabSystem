@@ -1,6 +1,7 @@
 // Logic nghiệp vụ của Fare & Payment (spec 14-15-16-19-30 mục 2.5, 4.7–4.9, 5.2, 5.7):
 // tính cước và tạo thanh toán (S4), xem thanh toán (A30), thanh toán trả trước có chống lặp (A31),
-// nhận callback của cổng thanh toán (A32), hết hạn thanh toán (tiến trình nền).
+// nhận callback của cổng thanh toán (A32), hết hạn thanh toán (tiến trình nền);
+// nghe K3 / K4 / K5 để hủy bỏ, hoàn tiền, ghi nhận tiền mặt (spec 17-18 mục 2.5; FR17, FR40, BRULE14, BRULE15).
 // Mọi phụ thuộc (kho dữ liệu, adapter cổng thanh toán, bộ phát event, log, cấu hình) truyền từ ngoài vào
 // nên test chạy được không cần PostgreSQL, Kafka hay gRPC.
 //
@@ -13,6 +14,11 @@ import {
 } from './rules.js';
 
 export const TOPIC_PAYMENT_STATUS_CHANGED = 'payment.status-changed'; // K6
+// Topic payment NGHE (spec 17-18 mục 5.4). Vì sao Kafka: hủy chuyến / hủy booking phải thành công dù Payment đang dừng
+// (NFR05); Payment chạy lại thì đọc bù và hoàn tiền. Không bên nào gọi gRPC sang Payment để hoàn tiền.
+export const TOPIC_NO_DRIVER_FOUND = 'booking.no-driver-found'; // K3
+export const TOPIC_BOOKING_CANCELED = 'booking.canceled'; // K4
+export const TOPIC_TRIP_STATUS_CHANGED = 'trip.status-changed'; // K5
 
 const notFound = () => new PaymentError('NOT_FOUND', 'PAYMENT_NOT_FOUND');
 const notOwner = () => new PaymentError('PERMISSION_DENIED', 'NOT_OWNER');
@@ -48,6 +54,40 @@ export function createPaymentLogic({ payments, provider, events, log, config }) 
     }
   }
 
+  // MỘT chỗ hoàn tiền (CD5) cho mọi đường: callback muộn sau khi đã hủy (M11), không tìm được tài xế (K3), khách hủy
+  // booking đã trả (K4), chuyến bị hủy (K5). Gọi bên trong giao dịch đã khóa thanh toán. Cổng giả lập hoàn thành công
+  // ngay (ADR-014). UNIQUE (payment_id) WHERE type = 'REFUND' ở database chặn hoàn lần hai (M8) kể cả khi code có lỗi.
+  //   reason: lý do mới (NO_DRIVER_FOUND, BOOKING_CANCELED, TRIP_CANCELED); null = giữ lý do cũ (M11).
+  //   markPaid: true khi tiền vừa vào lúc này (M11) — các đường khác đã có paid_at từ lúc COMPLETED.
+  // Trả dữ liệu K6 REFUNDED để bên gọi phát SAU KHI commit.
+  async function refundNow(tx, payment, { reason = null, markPaid = false } = {}) {
+    const refundTxnId = provider.refundId(payment.payment_id);
+    const refundStatus = provider.refundResult();
+    await tx.insertRefund({
+      paymentId: payment.payment_id, txnId: refundTxnId, amount: payment.amount, status: refundStatus,
+      callbackResponse: { txn_id: refundTxnId, txn_status: refundStatus, payment_id: payment.payment_id, status: 'REFUNDED' },
+    });
+    await tx.updatePayment(payment.payment_id, { status: 'REFUNDED', reason, paid: markPaid, refunded: true });
+    log.info('payment_refunded', { payment_id: payment.payment_id, reason: reason ?? payment.status_reason });
+    return statusEvent(payment, 'REFUNDED', payment.status);
+  }
+
+  // Đọc một event K3 / K4 / K5 thành việc cần làm với tiền của booking (bảng spec 17-18 mục 2.5):
+  //   { action: 'settle', reason } — chuyến KHÔNG được thực hiện: chưa thu → hủy bỏ; đã thu → hoàn đủ (BRULE14)
+  //   { action: 'cash' }           — chuyến hoàn thành: tiền mặt thì ghi nhận đã thu (FR17)
+  //   null                         — không liên quan tiền (bỏ qua)
+  // Tài xế TỪ CHỐI lời mời không có event nào → Payment không biết → không thể hoàn nhầm (BRULE15).
+  function eventAction(topic, data) {
+    if (topic === TOPIC_NO_DRIVER_FOUND) return { action: 'settle', reason: 'NO_DRIVER_FOUND' };
+    // Hệ thống hủy (quá hạn / hết lượt) thì chính Payment đã CANCELED trước đó → bỏ qua (02 K4).
+    if (topic === TOPIC_BOOKING_CANCELED) return data.canceled_by === 'customer' ? { action: 'settle', reason: 'BOOKING_CANCELED' } : null;
+    if (topic === TOPIC_TRIP_STATUS_CHANGED) {
+      if (data.status === 'CANCELED') return { action: 'settle', reason: 'TRIP_CANCELED' };
+      if (data.status === 'COMPLETED') return { action: 'cash' };
+    }
+    return null;
+  }
+
   // MỘT hàm xử lý kết quả từ cổng thanh toán, dùng cho cả adapter giả lập (A31) và callback từ ngoài (A32).
   // Gọi bên trong giao dịch, khi đã khóa giao dịch (txn) và thanh toán (payment). Trả kết quả và event cần
   // phát — bên gọi phát SAU KHI commit.
@@ -65,17 +105,10 @@ export function createPaymentLogic({ payments, provider, events, log, config }) 
         await tx.updatePayment(payment.payment_id, { status: 'COMPLETED', paid: true });
         out.push(statusEvent(payment, 'COMPLETED', previous));
       } else if (previous === 'CANCELED') {
-        // M11: tiền bị trừ SAU KHI thanh toán đã hủy (quá hạn) → ghi nhận rồi HOÀN NGAY: tiền đã trừ phải trả lại.
-        const refundTxnId = provider.refundId(payment.payment_id);
-        const refundStatus = provider.refundResult();
+        // M11: tiền bị trừ SAU KHI thanh toán đã hủy (quá hạn / khách hủy booking) → ghi nhận rồi HOÀN NGAY: tiền đã
+        // trừ phải trả lại. Giữ status_reason (vì sao đã hủy); thêm paid_at (lúc tiền vào) và refunded_at (FR20).
         paymentStatus = 'REFUNDED';
-        await tx.insertRefund({
-          paymentId: payment.payment_id, txnId: refundTxnId, amount: payment.amount, status: refundStatus,
-          callbackResponse: { txn_id: refundTxnId, txn_status: refundStatus, payment_id: payment.payment_id, status: 'REFUNDED' },
-        });
-        // Giữ status_reason (vì sao đã hủy); thêm paid_at và refunded_at để đối soát (FR20).
-        await tx.updatePayment(payment.payment_id, { status: 'REFUNDED', paid: true, refunded: true });
-        out.push(statusEvent(payment, 'REFUNDED', previous));
+        out.push(await refundNow(tx, payment, { markPaid: true }));
       }
     } else {
       txnStatus = 'FAILED'; // lần thất bại vẫn được lưu (BRULE10)
@@ -103,6 +136,50 @@ export function createPaymentLogic({ payments, provider, events, log, config }) 
 
   return {
     applyProviderResult,
+
+    // Nghe K3, K4, K5 (spec 17-18 mục 2.5, 5.4). Một giao dịch: khóa thanh toán của booking → làm theo bảng → commit →
+    // phát K6 nếu có. Chống lặp bằng CHÍNH trạng thái (03 mục 11.3): event lặp gặp thanh toán đã CANCELED / REFUNDED /
+    // COMPLETED thì không còn nhánh nào khớp → không làm gì. Lỗi database → ném để Kafka giao lại (không mất hoàn tiền).
+    async onBookingEvent(topic, envelope) {
+      const data = envelope?.data;
+      if (!data || !Number.isSafeInteger(data.booking_id)) {
+        log.warn('bỏ qua event sai dạng', { topic, event_id: envelope?.event_id });
+        return null;
+      }
+      const todo = eventAction(topic, data);
+      if (!todo) return null;
+
+      const outcome = await payments.transaction(async (tx) => {
+        const payment = await tx.lockPaymentByBooking(data.booking_id);
+        if (!payment) return { result: 'NO_PAYMENT', events: [] };
+        if (todo.action === 'cash') {
+          // FR17: tài xế đã thu tiền mặt khi chuyến xong → ghi nhận COMPLETED. ONLINE đã COMPLETED từ trước → giữ
+          // nguyên, KHÔNG hoàn (chuyến đã thực hiện — BRULE15).
+          if (payment.method !== 'CASH' || payment.status !== 'PENDING') return { result: null, events: [] };
+          await tx.updatePayment(payment.payment_id, { status: 'COMPLETED', paid: true });
+          log.info('cash_recorded', { payment_id: payment.payment_id });
+          return { result: 'COMPLETED', events: [statusEvent(payment, 'COMPLETED', payment.status)] };
+        }
+        if (payment.status === 'PENDING' || payment.status === 'FAILED') {
+          // Chưa thu được đồng nào → chỉ hủy bỏ, không K6: Booking / Trip đã là bên báo tin (CD4, 02 mục 6.2).
+          await tx.updatePayment(payment.payment_id, { status: 'CANCELED', reason: todo.reason });
+          log.info('payment_canceled', { payment_id: payment.payment_id, reason: todo.reason });
+          return { result: 'CANCELED', events: [] };
+        }
+        if (payment.status === 'COMPLETED') {
+          // Đã thu mà chuyến không được thực hiện → hoàn đủ (BRULE14).
+          return { result: 'REFUNDED', events: [await refundNow(tx, payment, { reason: todo.reason })] };
+        }
+        return { result: null, events: [] }; // đã CANCELED / REFUNDED: event lặp
+      });
+
+      if (outcome.result === 'NO_PAYMENT') {
+        log.warn('không có thanh toán cho booking', { topic, booking_id: data.booking_id });
+        return null;
+      }
+      await publishAll(outcome.events);
+      return outcome.result;
+    },
 
     // S4 CreatePayment: booking gọi khi khách đặt xe (B15). Tính cước cố định MỘT lần, tạo Payment PENDING.
     // Không phát event: chưa có gì xảy ra với tiền.

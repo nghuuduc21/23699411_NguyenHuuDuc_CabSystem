@@ -46,6 +46,12 @@ function statements(db) {
       return rows[0];
     },
 
+    // Consumer K3 / K4 / K5 (spec 17-18 mục 5.4): khóa thanh toán của một booking — callback đến cùng lúc thì xếp hàng.
+    async lockPaymentByBooking(bookingId) {
+      const { rows } = await db.query(`SELECT ${PAYMENT_COLUMNS} FROM payments WHERE booking_id = $1 FOR UPDATE`, [bookingId]);
+      return rows[0] ?? null;
+    },
+
     // Khóa dòng thanh toán đến hết giao dịch: request khác trên cùng thanh toán phải chờ.
     async lockPayment(paymentId) {
       const { rows } = await db.query(`SELECT ${PAYMENT_COLUMNS} FROM payments WHERE payment_id = $1 FOR UPDATE`, [paymentId]);

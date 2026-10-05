@@ -81,3 +81,16 @@ export function checkPagination(page, limit) {
 
 export const pagination = (page, limit, total) => ({ page, limit, total, total_pages: Math.ceil(total / limit) });
 export const iso = (value) => new Date(value).toISOString();
+
+// Lý do hủy (spec 17-18 mục 4): bắt buộc (FR36), chặn `<` `>` (mục chấm 26), tối đa 255 ký tự sau khi cắt.
+// proto3 `string` không gửi thì là chuỗi rỗng → REASON_REQUIRED như khi gửi toàn khoảng trắng.
+export const REASON_MAX = 255;
+export function checkReason(value) {
+  if (value === undefined || value === null) throw invalid('REASON_REQUIRED');
+  if (typeof value !== 'string') throw invalid();
+  const text = value.trim();
+  if (text === '') throw invalid('REASON_REQUIRED');
+  if (text.includes('<') || text.includes('>')) throw invalid('TEXT_CONTAINS_HTML');
+  if ([...text].length > REASON_MAX) throw invalid();
+  return text;
+}

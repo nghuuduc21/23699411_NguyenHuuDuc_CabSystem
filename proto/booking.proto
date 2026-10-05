@@ -1,4 +1,4 @@
-// Hợp đồng gRPC của booking-service (spec 14-15-16-19-30 mục 5.1). Mục chấm 14, 15, 16.
+// Hợp đồng gRPC của booking-service (spec 14-15-16-19-30 mục 5.1; spec 17-18 mục 5.2). Mục chấm 14, 15, 16, 18.
 // Chỉ Gateway gọi vào booking (02 mục 4.3: không có gRPC nào từ service khác đi VÀO booking).
 // Danh tính người gọi KHÔNG nằm trong message mà trong metadata `x-account-id`, `x-role` do Gateway
 // dựng từ token: khách không tự khai được `customer_id`, tài xế không tự khai được `driver_id`.
@@ -22,6 +22,9 @@ service BookingService {
   rpc AcceptOffer (OfferIdRequest) returns (AcceptOfferResponse);
   // A25 PATCH /api/v1/offers/{id} {"status":"REJECTED"} — tài xế từ chối → hỏi người kế tiếp.
   rpc RejectOffer (OfferIdRequest) returns (RejectOfferResponse);
+  // A22 PATCH /api/v1/bookings/{id} {"status":"CANCELED","reason":"…"} — khách hủy booking CHƯA có tài xế
+  // (spec 17-18 mục 4.3). Đã có tài xế thì phải hủy chuyến (A29).
+  rpc CancelBooking (CancelBookingRequest) returns (CancelBookingResponse);
 }
 
 // Mỗi rpc chỉ điền field của response tương ứng; field `optional` không có giá trị thì vắng hẳn.
@@ -117,4 +120,15 @@ message AcceptOfferResponse {
 message RejectOfferResponse {
   int64 offer_id = 1;
   string status = 2;
+}
+
+message CancelBookingRequest {
+  int64 booking_id = 1;
+  string reason = 2;                    // bắt buộc (FR36)
+}
+
+message CancelBookingResponse {
+  int64 booking_id = 1;
+  string status = 2;                    // CANCELED
+  string canceled_by = 3;               // customer
 }

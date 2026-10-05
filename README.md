@@ -102,6 +102,11 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | `GET /api/v1/offers` (token tài xế) → `PATCH /api/v1/offers/{id}` `{"status":"ACCEPTED"}` | Lời mời đang chờ (A23); nhận → `DRIVER_ASSIGNED` + `trip_id` (A24, mục 16) |
 | `POST /api/v1/payments/7/transactions` + `Idempotency-Key: k1` `{"simulate_result":"MANUAL"}` | 200 `PENDING`, `txn_id` `SIM-7-1` (A31, mục 19); gửi lại → header `Idempotency-Replayed: true` (mục 30) |
 | `POST /api/v1/payment-callbacks` + `X-Callback-Secret: cab-secret` `{"txn_id":"SIM-7-1"}` (không token) | 200 `COMPLETED` (A32, mục 19) |
+| `GET /api/v1/notifications` (token bất kỳ) | Thông báo của chính mình, mới nhất trước (A33); sau mục 16: `TRIP_ACCEPTED`, `BOOKING_CREATED` |
+| `PATCH /api/v1/trips/1000` `{"status":"ARRIVED"}` (token tài xế của chuyến) | 200 kèm `history` (A28, mục 17); nhảy cóc → 409 `INVALID_STATUS_TRANSITION`; `COMPLETED` → tài xế về `ONLINE`, tiền mặt `COMPLETED` |
+| `PATCH /api/v1/trips/5` `{"status":"CANCELED","reason":"ban viec"}` (token KH1) | 200 `CANCELED` (A29, mục 18); ≈ 1 s sau Payment 5 `REFUNDED`, TX6 `ONLINE`, thông báo `PAYMENT_REFUNDED`, `TRIP_CANCELED` |
+| `PATCH /api/v1/bookings/{id}` `{"status":"CANCELED","reason":"doi y"}` (token khách) | 200 (A22); chỉ khi chưa có tài xế, đã có → 409 `BOOKING_ALREADY_ASSIGNED` |
+| `GET /api/v1/trips/{id}` | Chuyến + lịch sử (A27): khách / tài xế của chuyến, admin |
 | Đường dẫn khác | 404 `{"error":"ROUTE_NOT_FOUND"}` |
 
 API nghiệp vụ nằm dưới `/api/v1/…` (`docs/design/04-api.md`) và được thêm theo từng đặc tả.
