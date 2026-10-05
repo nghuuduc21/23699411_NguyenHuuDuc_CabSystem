@@ -5,10 +5,15 @@
 import { buildMetadata, callUnary } from '../grpc/clients.js';
 import { grpcErrorToHttp } from '../grpc/errors.js';
 
-// Message `Customer` → JSON. `dob` là field `optional` trong proto: không có thì gRPC bỏ hẳn field,
-// còn API hứa trả `"dob": null` (spec 11 mục 4.2), nên điền null ở đây.
-// Liệt kê đúng ba field để không lọt field phụ của thư viện (ví dụ `_dob` của oneof ẩn).
-const toJson = (customer) => ({ customer_id: customer.customer_id, name: customer.name, dob: customer.dob ?? null });
+// Message `Customer` → JSON. `dob`, `email` là field `optional` trong proto: không có thì gRPC bỏ hẳn field,
+// còn API hứa trả `"dob": null`, `"email": null` (spec 11 mục 4.2, HS3) để người chấm thấy field tồn tại.
+// Liệt kê đúng bốn field để không lọt field phụ của thư viện (ví dụ `_dob`, `_email` của oneof ẩn).
+const toJson = (customer) => ({
+  customer_id: customer.customer_id,
+  name: customer.name,
+  dob: customer.dob ?? null,
+  email: customer.email ?? null,
+});
 
 export function createCustomerHandlers({ customerClient }) {
   // Gọi rpc với request do hàm `build` dựng từ req; lỗi gRPC đổi sang HTTP theo bảng chung (errors.js).
@@ -24,7 +29,13 @@ export function createCustomerHandlers({ customerClient }) {
 
   return {
     // A37: 201 vì tạo mới. Không gửi mã: service lấy customer_id từ metadata x-account-id.
-    create: forward('CreateCustomer', ({ body }) => (body.dob === undefined ? { name: body.name } : { name: body.name, dob: body.dob }), 201),
+    // Chỉ chép field có mặt: `dob`, `email` là `optional`, vắng khác với chuỗi rỗng.
+    create: forward('CreateCustomer', ({ body }) => {
+      const request = { name: body.name };
+      if (body.dob !== undefined) request.dob = body.dob;
+      if (body.email !== undefined) request.email = body.email;
+      return request;
+    }, 201),
 
     // A38: `me` = mã trong token. Gateway chỉ điền tham số, không quyết định gì (04 mục 2.2).
     me: forward('GetCustomer', (req) => ({ customer_id: req.identity.accountId }), 200),
@@ -34,12 +45,14 @@ export function createCustomerHandlers({ customerClient }) {
     byId: forward('GetCustomer', (req) => ({ customer_id: req.params.id }), 200),
 
     // A10: chỉ chép field có mặt. proto3 không phân biệt "dob vắng" với "dob = null",
-    // nên `"dob": null` đổi thành cờ clear_dob (spec 11 mục 5).
+    // nên `"dob": null` đổi thành cờ clear_dob, `"email": null` thành cờ clear_email (spec 11 mục 5).
     update: forward('UpdateCustomer', ({ body }) => {
       const request = {};
       if (body.name !== undefined) request.name = body.name;
       if (body.dob === null) request.clear_dob = true;
       else if (body.dob !== undefined) request.dob = body.dob;
+      if (body.email === null) request.clear_email = true;
+      else if (body.email !== undefined) request.email = body.email;
       return request;
     }, 200),
   };

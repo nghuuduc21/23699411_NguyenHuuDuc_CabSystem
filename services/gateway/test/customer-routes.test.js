@@ -62,7 +62,7 @@ async function expectJson(res, status, json) {
 
 test('A09: khách xem mã của mình → 200; mã gửi xuống service dạng chuỗi, metadata từ token', async () => {
   const res = await send('GET', '/api/v1/customers/1', { t: KH1, headers: { 'x-account-id': '2', 'x-role': 'admin' } });
-  await expectJson(res, 200, { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01' });
+  await expectJson(res, 200, { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01', email: null });
   assert.equal(calls[0].name, 'GetCustomer');
   assert.deepEqual(calls[0].request, { customer_id: '1' });
   // Header giả của client bị bỏ qua: metadata lấy từ token.
@@ -98,7 +98,7 @@ test('A09: tài xế → 403 FORBIDDEN; không token → 401 TOKEN_MISSING (AC-H
 
 test('A38: mã = sub trong token; dob vắng trả null; admin, tài xế → 403', async () => {
   next = () => ({ res: { customer_id: 3, name: 'Pham Duc' } });
-  await expectJson(await send('GET', '/api/v1/customers/me', { t: token('3', 'customer') }), 200, { customer_id: 3, name: 'Pham Duc', dob: null });
+  await expectJson(await send('GET', '/api/v1/customers/me', { t: token('3', 'customer') }), 200, { customer_id: 3, name: 'Pham Duc', dob: null, email: null });
   assert.deepEqual(calls[0].request, { customer_id: '3' });
   await expectJson(await send('GET', '/api/v1/customers/me', { t: AD1 }), 403, { error: 'FORBIDDEN' });
   await expectJson(await send('GET', '/api/v1/customers/me', { t: TX1 }), 403, { error: 'FORBIDDEN' });
@@ -108,7 +108,7 @@ test('A38: mã = sub trong token; dob vắng trả null; admin, tài xế → 40
 test('A37: 201, chỉ chuyển name / dob; đọc JSON bất kể Content-Type; 409 từ service', async () => {
   next = () => ({ res: { customer_id: 1000, name: 'Pham Duc' } });
   const res = await send('POST', '/api/v1/customers', { t: KH1, body: { name: 'Pham Duc' }, headers: { 'Content-Type': 'text/plain' } });
-  await expectJson(res, 201, { customer_id: 1000, name: 'Pham Duc', dob: null });
+  await expectJson(res, 201, { customer_id: 1000, name: 'Pham Duc', dob: null, email: null });
   assert.deepEqual(calls[0].request, { name: 'Pham Duc' });
   await send('POST', '/api/v1/customers', { t: KH1, body: { name: 'Pham Duc', dob: '2001-03-10' } });
   assert.deepEqual(calls[1].request, { name: 'Pham Duc', dob: '2001-03-10' });
@@ -128,7 +128,7 @@ test('A37: admin, tài xế → 403 dù body hỏng; body sai → 400 (AC-HS-07,
 });
 
 test('A10: chỉ field có mặt; "dob": null → clear_dob; <script> → 400 không gọi service (AC-HS-11, 16)', async () => {
-  await expectJson(await send('PATCH', '/api/v1/customers/me', { t: KH1, body: { dob: '1999-12-31' } }), 200, { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01' });
+  await expectJson(await send('PATCH', '/api/v1/customers/me', { t: KH1, body: { dob: '1999-12-31' } }), 200, { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01', email: null });
   assert.deepEqual(calls[0].request, { dob: '1999-12-31' });
   await send('PATCH', '/api/v1/customers/me', { t: KH1, body: { name: 'An Nguyen', dob: null } });
   assert.deepEqual(calls[1].request, { name: 'An Nguyen', clear_dob: true });
@@ -139,6 +139,41 @@ test('A10: chỉ field có mặt; "dob": null → clear_dob; <script> → 400 kh
     await expectJson(await send('PATCH', '/api/v1/customers/me', { t: KH1, body }), 400, { error: 'INVALID_INPUT' });
   }
   await expectJson(await send('PATCH', '/api/v1/customers/me', { t: AD1, body: { name: 'X' } }), 403, { error: 'FORBIDDEN' });
+  assert.equal(calls.length, 0);
+});
+
+// ---------- Email trong hồ sơ (ADR-019; spec 11 mục 4.1, HS-Q6) ----------
+
+test('A09 / A37: email trả về khi có; A37 chuyển email nguyên văn xuống service (AC-HS-01, 19)', async () => {
+  next = () => ({ res: { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01', email: 'kh1@cab.vn', _email: 'email' } });
+  await expectJson(await send('GET', '/api/v1/customers/1', { t: KH1 }), 200, { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01', email: 'kh1@cab.vn' });
+  next = () => ({ res: { customer_id: 1000, name: 'Pham Duc', email: 'duc@cab.vn' } });
+  await expectJson(await send('POST', '/api/v1/customers', { t: KH1, body: { name: 'Pham Duc', email: '  Duc@Cab.VN ' } }), 201, { customer_id: 1000, name: 'Pham Duc', dob: null, email: 'duc@cab.vn' });
+  // Gateway không chuẩn hóa: chữ thường, cắt khoảng trắng là việc của chủ dữ liệu.
+  assert.deepEqual(calls[1].request, { name: 'Pham Duc', email: '  Duc@Cab.VN ' });
+});
+
+test('A37 email: sai kiểu / null → INVALID_INPUT; > 254 → INVALID_EMAIL không gọi service; sai định dạng để service kiểm (AC-HS-20)', async () => {
+  for (const email of [123, null, {}, ['a@b.vn']]) {
+    await expectJson(await send('POST', '/api/v1/customers', { t: KH1, body: { name: 'X', email } }), 400, { error: 'INVALID_INPUT' });
+  }
+  await expectJson(await send('POST', '/api/v1/customers', { t: KH1, body: { name: 'X', email: `${'a'.repeat(248)}@cab.vn` } }), 400, { error: 'INVALID_EMAIL' });
+  assert.equal(calls.length, 0);
+  // Định dạng (`abc`, rỗng, `<a>@x.vn`) không kiểm ở Gateway (HS-Q6 a): chuyển xuống, service trả INVALID_EMAIL.
+  next = () => ({ err: { code: grpc.status.INVALID_ARGUMENT, details: 'INVALID_EMAIL' } });
+  for (const email of ['abc', '', '<a>@x.vn']) {
+    await expectJson(await send('POST', '/api/v1/customers', { t: KH1, body: { name: 'X', email } }), 400, { error: 'INVALID_EMAIL' });
+  }
+  assert.equal(calls.length, 3);
+});
+
+test('A10 email: đặt → email; "email": null → clear_email; sai kiểu → 400 (AC-HS-21, 22)', async () => {
+  await send('PATCH', '/api/v1/customers/me', { t: KH1, body: { email: 'kh1@cab.vn' } });
+  assert.deepEqual(calls[0].request, { email: 'kh1@cab.vn' });
+  await send('PATCH', '/api/v1/customers/me', { t: KH1, body: { email: null } });
+  assert.deepEqual(calls[1].request, { clear_email: true });
+  calls.length = 0;
+  await expectJson(await send('PATCH', '/api/v1/customers/me', { t: KH1, body: { email: 5 } }), 400, { error: 'INVALID_INPUT' });
   assert.equal(calls.length, 0);
 });
 

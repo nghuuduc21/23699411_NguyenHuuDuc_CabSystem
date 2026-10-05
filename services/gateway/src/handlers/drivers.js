@@ -40,8 +40,19 @@ export function createDriverHandlers({ driverClient }) {
   const prepared = (req) => req.rpcRequest; // request đã dựng ở bước chọn biến thể
 
   return {
-    // A11: 201 vì tạo mới. Không gửi mã: service lấy driver_id từ metadata x-account-id.
-    submit: forward('SubmitApplication', ({ body }) => buildSubmitRequest(body), toDriver, 201),
+    // A11: lần đầu 201 (tạo mới); nộp lại hồ sơ bị từ chối (FR43) 200 kèm `"resubmitted": true` (TX12).
+    // Gateway CHỈ ĐỌC cờ `resubmitted` do driver-service đặt để chọn mã HTTP, không tự quyết nhánh nghiệp vụ.
+    // Không gửi mã: service lấy driver_id từ metadata x-account-id.
+    async submit(req, res) {
+      try {
+        const response = await callUnary(driverClient, 'SubmitApplication', buildSubmitRequest(req.body), buildMetadata(req));
+        const resubmitted = response.resubmitted === true;
+        res.status(resubmitted ? 200 : 201).json(resubmitted ? { ...toDriver(response), resubmitted: true } : toDriver(response));
+      } catch (err) {
+        const { status, body } = grpcErrorToHttp(err);
+        res.status(status).json(body);
+      }
+    },
 
     // A14: mã trong đường dẫn gửi dạng chuỗi để số lớn không bị làm tròn trước khi tới service.
     byId: forward('GetDriver', (req) => ({ driver_id: req.params.id }), toDriver),

@@ -107,6 +107,16 @@ test('A11: 201; vehicle mặc định CAR_4, chữ hoa; metadata từ token (AC-
   assert.deepEqual(calls[1].request, { name: 'A', license: 'B', plate: 'C', vehicle: 'MOTORBIKE', color: 'Do' });
 });
 
+test('A11 nộp lại (FR43): service trả resubmitted = true → 200 kèm cờ; không có cờ → 201 (AC-TX-34, TX12)', async () => {
+  const resubmitted = { driver_id: 17, name: 'Tai Xe 7', vehicle: 'CAR_4', plate: '59A-00007', status: 'OFFLINE', approval_status: 'PENDING', license: 'GPLX-00007' };
+  next = () => ({ res: { ...resubmitted, resubmitted: true, _resubmitted: 'resubmitted' } });
+  const res = await send('POST', '/api/v1/drivers', { t: token('17', 'driver'), body: { name: 'Tai Xe 7', license: 'GPLX-00007', plate: '59A-00007' } });
+  await expectJson(res, 200, { ...resubmitted, resubmitted: true });
+  // proto3 optional bool không đặt → vắng / false: lần nộp đầu vẫn 201, không có cờ.
+  next = () => ({ res: { ...resubmitted, resubmitted: false } });
+  await expectJson(await send('POST', '/api/v1/drivers', { t: token('17', 'driver'), body: { name: 'Tai Xe 7', license: 'GPLX-00007', plate: '59A-00007' } }), 201, resubmitted);
+});
+
 test('A11: 401 / 403 trước hình thức; body sai → 400 (AC-TX-10, 11)', async () => {
   const ok = { name: 'Tai Xe Moi', license: 'GPLX-99', plate: '59A-99999' };
   await expectError(await send('POST', '/api/v1/drivers', { body: ok }), 401, 'TOKEN_MISSING');

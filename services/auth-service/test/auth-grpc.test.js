@@ -33,8 +33,8 @@ test('RegisterCustomer / Login: kết quả và lỗi đổi đúng status + det
   try {
     let r = await call('RegisterCustomer', { phone: '0901234567', password: '12345678' });
     assert.deepEqual(r.res, { account_id: 1000, role: 'customer' });
-    // email `optional` không gửi → undefined (không phải chuỗi rỗng).
-    assert.equal(seen[0].email, undefined);
+    // Field 2 (`email`) đã reserved: request không còn khóa email (ADR-019).
+    assert.equal('email' in seen[0], false);
     r = await call('RegisterCustomer', { phone: 'dup', password: 'x' });
     assert.equal(r.err.code, grpc.status.ALREADY_EXISTS);
     assert.equal(r.err.details, 'PHONE_ALREADY_EXISTS');
@@ -44,9 +44,11 @@ test('RegisterCustomer / Login: kết quả và lỗi đổi đúng status + det
     r = await call('Login', { phone: '0900000001', password: 'sai' });
     assert.equal(r.err.code, grpc.status.UNAUTHENTICATED);
     assert.equal(r.err.details, 'INVALID_CREDENTIALS');
+    // Bên gọi gửi khóa `email` lạ: proto không còn field này nên server không nhận được; thiếu phone → undefined.
     r = await call('Login', { email: 'a@b.vn', password: '12345678' });
     assert.equal(r.res.expires_in, 3600);
     assert.equal(seen.at(-1).phone, undefined);
+    assert.equal('email' in seen.at(-1), false);
   } finally {
     client.close();
     server.forceShutdown();

@@ -51,6 +51,9 @@ message Driver {
   optional string color = 12;
   optional string reason = 13;         // lý do từ chối, khi REJECTED
   optional string created_at = 14;     // ISO 8601 UTC, dùng ở A13
+  // Thêm 2026-10-05 (FR43): CHỈ SubmitApplication đặt, true khi đây là lần NỘP LẠI hồ sơ bị từ chối.
+  // Gateway đọc cờ này để trả 200 (sửa bản ghi đã có) thay vì 201 (tạo mới). Rpc khác để trống.
+  optional bool resubmitted = 15;
 }
 
 message Pagination {

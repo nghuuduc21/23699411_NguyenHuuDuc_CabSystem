@@ -64,6 +64,8 @@ test('K7: APPLICATION_APPROVED / APPLICATION_REJECTED → tài xế (AC20)', () 
   assert.deepEqual(brief(toNotifications(env('driver.application-reviewed', { driver_id: 17, result: 'APPROVED' }))), [['APPLICATION_APPROVED', 17, 'Hồ sơ tài xế 17']]);
   const rejected = toNotifications(env('driver.application-reviewed', { driver_id: 17, result: 'REJECTED' }));
   assert.deepEqual([rejected[0].type, rejected[0].title, rejected[0].data], ['APPLICATION_REJECTED', 'Hồ sơ tài xế bị từ chối', { driver_id: 17, status: 'REJECTED' }]);
+  // AC-TB-03 (đổi 2026-10-05): nội dung chỉ dẫn nộp lại, không chứa lý do từ chối.
+  assert.equal(rejected[0].body, 'Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại.');
 });
 
 test('event sai dạng / topic lạ / thiếu mã → null; occurred_at sai dạng → giờ hiện tại', () => {

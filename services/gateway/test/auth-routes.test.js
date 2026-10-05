@@ -84,6 +84,18 @@ test('A04: thiếu password, field lạ role, sai kiểu, body mảng → 400 IN
   assert.equal(calls.length, 0);
 });
 
+test('A04 / A05: gửi `email` → 400 INVALID_INPUT (field lạ), không gọi service (ADR-019; AC-DN-21, 22)', async () => {
+  let res = await post('/api/v1/accounts', { phone: '0901234569', password: '12345678', email: 'a@b.vn' });
+  assert.equal(res.status, 400);
+  assert.deepEqual(await res.json(), { error: 'INVALID_INPUT' });
+  for (const body of [{ email: 'kh1@cab.vn', password: '12345678' }, { phone: '0900000001', email: 'kh1@cab.vn', password: '12345678' }]) {
+    res = await post('/api/v1/auth/login', body);
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { error: 'INVALID_INPUT' });
+  }
+  assert.equal(calls.length, 0);
+});
+
 test('A04: lỗi gRPC đổi sang HTTP (409, 400, 503)', async () => {
   const cases = [
     [{ code: grpc.status.ALREADY_EXISTS, details: 'PHONE_ALREADY_EXISTS' }, 409, 'PHONE_ALREADY_EXISTS'],

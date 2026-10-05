@@ -20,9 +20,12 @@ service AuthService {
 
 message RegisterCustomerRequest {
   string phone = 1;
-  // `optional`: phân biệt "không gửi email" với "gửi chuỗi rỗng".
-  optional string email = 2;
-  string password = 3;
+  // Số 2 từng là `email` (bỏ 2026-10-05, ADR-019: email chuyển sang hồ sơ khách).
+  // `reserved` để không ai dùng lại số 2 / tên `email` với nghĩa khác: client cũ còn gửi field 2
+  // thì server mới chỉ bỏ qua, không đọc nhầm thành dữ liệu khác.
+  reserved 2;
+  reserved "email";
+  string password = 3; // giữ số 3: đổi số field là phá hợp đồng với bên gọi cũ
 }
 
 message RegisterCustomerResponse {
@@ -31,9 +34,11 @@ message RegisterCustomerResponse {
 }
 
 message LoginRequest {
-  // Đúng một trong hai: phone hoặc email (spec 09-10 DN1).
+  // Chỉ đăng nhập bằng số điện thoại (DN1 sửa 2026-10-05, ADR-019).
+  // `optional` giữ như cũ để không đổi hợp đồng; thiếu số → INVALID_INPUT.
   optional string phone = 1;
-  optional string email = 2;
+  reserved 2;
+  reserved "email";
   string password = 3;
 }
 

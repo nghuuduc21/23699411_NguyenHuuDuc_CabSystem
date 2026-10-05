@@ -62,6 +62,14 @@ test('rpc chuyển request + danh tính từ metadata; lỗi nghiệp vụ thàn
     await call('UpdateCustomer', { clear_dob: true });
     assert.equal(seen[4].req.dob, undefined);
     assert.equal(seen[4].req.clear_dob, true);
+
+    // Email (ADR-019): optional vắng = undefined; clear_email đi qua đúng; field 4 trả về.
+    assert.equal(seen[4].req.email, undefined);
+    assert.equal(seen[4].req.clear_email, false);
+    await call('UpdateCustomer', { email: 'a@b.vn' });
+    assert.equal(seen[5].req.email, 'a@b.vn');
+    await call('UpdateCustomer', { clear_email: true });
+    assert.equal(seen[6].req.clear_email, true);
   } finally {
     client.close();
     server.forceShutdown();

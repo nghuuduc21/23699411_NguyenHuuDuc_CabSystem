@@ -22,25 +22,21 @@ export function checkStringFields(body, fields) {
   return null;
 }
 
-// A04 POST /api/v1/accounts
+// A04 POST /api/v1/accounts — chỉ `phone`, `password` (ADR-019). Gửi `email` là field lạ → 400 INVALID_INPUT
+// (DN-Q5): email nay thuộc hồ sơ khách (A37, A10), tài khoản không còn nhận.
 export function validateRegister(body) {
   return checkStringFields(body, {
     phone: { required: true, max: 20 },
-    email: { required: false, max: 254 },
     password: { required: true, max: 128 },
   });
 }
 
-// A05 POST /api/v1/auth/login — đúng một trong `phone`, `email` (DN1).
+// A05 POST /api/v1/auth/login — chỉ đăng nhập bằng `phone` (DN1 sửa 2026-10-05); `email` là field lạ → 400.
 export function validateLogin(body) {
-  const error = checkStringFields(body, {
-    phone: { required: false, max: 254 },
-    email: { required: false, max: 254 },
+  return checkStringFields(body, {
+    phone: { required: true, max: 20 },
     password: { required: true, max: 128 },
   });
-  if (error) return error;
-  if ((body.phone === undefined) === (body.email === undefined)) return 'INVALID_INPUT';
-  return null;
 }
 
 // ---- Hồ sơ khách (spec 11 mục 4.1) ----
@@ -51,33 +47,43 @@ export function validateLogin(body) {
 // dài hơn số ký tự nhìn thấy, nên không đặt đúng 100 ở Gateway để khỏi từ chối nhầm.
 const NAME_FORM_MAX = 200;
 const DOB_FORM_MAX = 10; // YYYY-MM-DD
+const EMAIL_MAX = 254; // giới hạn độ dài địa chỉ email (RFC 5321), cùng số với CHECK trong database
 
-function checkCustomerBody(body, { nameRequired, dobNullable }) {
+// `nullable`: chỉ A10 nhận `null` cho `dob`, `email` (nghĩa là xóa giá trị); A37 cứ không gửi là được.
+function checkCustomerBody(body, { nameRequired, nullable }) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return 'INVALID_INPUT';
   // Field lạ (ví dụ `customer_id`) → 400: mã khách lấy từ token, client không được gửi.
-  for (const key of Object.keys(body)) if (key !== 'name' && key !== 'dob') return 'INVALID_INPUT';
-  const { name, dob } = body;
+  for (const key of Object.keys(body)) if (!['name', 'dob', 'email'].includes(key)) return 'INVALID_INPUT';
+  const { name, dob, email } = body;
   if (name === undefined) {
     if (nameRequired) return 'INVALID_INPUT';
   } else if (typeof name !== 'string' || name.length < 1 || name.length > NAME_FORM_MAX) {
     return 'INVALID_INPUT'; // gồm cả `"name": null`
   }
   // `"dob": null` chỉ có nghĩa ở A10 (xóa ngày sinh, HS2); ở A37 cứ không gửi là được.
-  if (dob !== undefined && !(dob === null && dobNullable)) {
+  if (dob !== undefined && !(dob === null && nullable)) {
     if (typeof dob !== 'string' || dob.length < 1 || dob.length > DOB_FORM_MAX) return 'INVALID_INPUT';
+  }
+  // Email (ADR-019, HS-Q6 chọn a): Gateway chỉ kiểm KIỂU và ĐỘ DÀI; định dạng là quy tắc của chủ dữ liệu
+  // (customer-service). Sai kiểu (số, object, `null` ở A37) → INVALID_INPUT; quá 254 ký tự → INVALID_EMAIL.
+  // Chuỗi rỗng vẫn chuyển xuống để service trả INVALID_EMAIL (spec 11 mục 4.1). Không chặn `<` `>` ở đây:
+  // biểu thức định dạng của service đã loại chúng và trả đúng mã INVALID_EMAIL.
+  if (email !== undefined && !(email === null && nullable)) {
+    if (typeof email !== 'string') return 'INVALID_INPUT';
+    if (email.trim().length > EMAIL_MAX) return 'INVALID_EMAIL';
   }
   if (typeof name === 'string' && (name.includes('<') || name.includes('>'))) return 'TEXT_CONTAINS_HTML';
   return null;
 }
 
-// A37 POST /api/v1/customers — `name` bắt buộc, `dob` tùy chọn.
+// A37 POST /api/v1/customers — `name` bắt buộc, `dob`, `email` tùy chọn.
 export function validateCreateCustomer(body) {
-  return checkCustomerBody(body, { nameRequired: true, dobNullable: false });
+  return checkCustomerBody(body, { nameRequired: true, nullable: false });
 }
 
-// A10 PATCH /api/v1/customers/me — ít nhất một field; `"dob": null` = xóa ngày sinh.
+// A10 PATCH /api/v1/customers/me — ít nhất một field; `"dob": null` = xóa ngày sinh, `"email": null` = xóa email (HS6).
 export function validateUpdateCustomer(body) {
-  const error = checkCustomerBody(body, { nameRequired: false, dobNullable: true });
+  const error = checkCustomerBody(body, { nameRequired: false, nullable: true });
   if (error) return error;
   return Object.keys(body).length === 0 ? 'INVALID_INPUT' : null;
 }

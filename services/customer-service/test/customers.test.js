@@ -3,7 +3,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createCustomerLogic } from '../src/domain/customers.js';
 import { createFieldCipher } from '../src/domain/crypto.js';
-import { checkDob, normalizeName, todayInVietnam } from '../src/domain/rules.js';
+import { checkDob, normalizeEmail, normalizeName, todayInVietnam } from '../src/domain/rules.js';
 
 const cipher = createFieldCipher(Buffer.alloc(32, 7));
 const logs = [];
@@ -19,9 +19,9 @@ const NOW = Date.parse('2026-10-04T03:00:00Z');
 let table;
 let reads;
 const profiles = {
-  async insert({ customerId, nameEnc, dobEnc }) {
+  async insert({ customerId, nameEnc, dobEnc, email = null }) {
     if (table.has(customerId)) return false;
-    table.set(customerId, { customer_id: customerId, full_name_enc: nameEnc, date_of_birth_enc: dobEnc });
+    table.set(customerId, { customer_id: customerId, full_name_enc: nameEnc, date_of_birth_enc: dobEnc, email });
     return true;
   },
   async findById(id) {
@@ -33,7 +33,7 @@ const profiles = {
     const row = table.get(id);
     if (!row) return null;
     const next = await change(row);
-    table.set(id, { customer_id: id, full_name_enc: next.nameEnc, date_of_birth_enc: next.dobEnc });
+    table.set(id, { customer_id: id, full_name_enc: next.nameEnc, date_of_birth_enc: next.dobEnc, email: next.email });
     return next;
   },
 };
@@ -159,4 +159,54 @@ test('Ngày sinh: ngày có thật, từ 1900-01-01 đến hôm nay giờ Việt
   for (const bad of ['1899-12-31', '2026-10-05', '2000-02-30', '2001-02-29', '2000-1-1', 20000101, '2000-01-01T00:00']) {
     assert.throws(() => checkDob(bad, NOW), String(bad));
   }
+});
+
+// ---------- Email trong hồ sơ (ADR-019; spec 11 AC-HS-19 … AC-HS-22) ----------
+
+test('normalizeEmail: cắt khoảng trắng, chữ thường; sai dạng / rỗng / > 254 → INVALID_EMAIL; sai kiểu → INVALID_INPUT', () => {
+  assert.equal(normalizeEmail('  Duc@Cab.VN '), 'duc@cab.vn');
+  const long = `${'a'.repeat(245)}@cab.vn.vn`; // 255 ký tự
+  assert.equal(long.length, 255);
+  for (const bad of ['abc', '', '   ', '<a>@x.vn', long]) {
+    assert.throws(() => normalizeEmail(bad), (e) => e.code === 'INVALID_EMAIL', bad);
+  }
+  for (const bad of [123, null, {}]) assert.throws(() => normalizeEmail(bad), (e) => e.code === 'INVALID_INPUT');
+});
+
+test('Create có email: lưu chữ thường dạng rõ, trả về; không email → không có field (AC-HS-19, AC-HS-04)', async () => {
+  const created = await logic.createCustomer({ name: 'Pham Duc', email: '  Duc@Cab.VN ' }, KH3);
+  assert.deepEqual(created, { customer_id: 3, name: 'Pham Duc', email: 'duc@cab.vn' });
+  // Email lưu rõ, họ tên vẫn là bản mã.
+  assert.equal(table.get(3).email, 'duc@cab.vn');
+  assert.ok(Buffer.isBuffer(table.get(3).full_name_enc));
+  assert.deepEqual(await logic.getCustomer({ customer_id: 3 }, KH3), { customer_id: 3, name: 'Pham Duc', email: 'duc@cab.vn' });
+  // Log không chứa email.
+  assert.ok(!JSON.stringify(logs).includes('duc@cab.vn'));
+});
+
+test('Create email sai → INVALID_EMAIL, không tạo hồ sơ (AC-HS-20)', async () => {
+  for (const email of ['abc', '', '<a>@x.vn']) {
+    await rejectsWith(logic.createCustomer({ name: 'X', email }, KH3), 'INVALID_ARGUMENT', 'INVALID_EMAIL');
+  }
+  assert.equal(table.has(3), false);
+});
+
+test('Update email: đặt, trùng email người khác vẫn được, xóa bằng clear_email, sai giữ nguyên (AC-HS-21, 22)', async () => {
+  // KH2 đặt trùng email của KH1: không UNIQUE.
+  table.get(1).email = 'kh1@cab.vn';
+  assert.deepEqual(await logic.updateCustomer({ email: 'KH1@cab.vn', clear_dob: false, clear_email: false }, { accountId: '2', role: 'customer' }),
+    { customer_id: 2, name: 'Trần Thị Bình', dob: '2000-02-02', email: 'kh1@cab.vn' });
+  // Xóa email: họ tên, ngày sinh giữ nguyên bản mã cũ.
+  const nameEncBefore = table.get(1).full_name_enc;
+  assert.deepEqual(await logic.updateCustomer({ clear_dob: false, clear_email: true }, KH1), { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01' });
+  assert.equal(table.get(1).email, null);
+  assert.equal(table.get(1).full_name_enc, nameEncBefore);
+  // Đặt lại; sửa field khác thì email giữ nguyên.
+  await logic.updateCustomer({ email: 'kh1@cab.vn', clear_dob: false, clear_email: false }, KH1);
+  assert.equal((await logic.updateCustomer({ name: 'An', clear_dob: false, clear_email: false }, KH1)).email, 'kh1@cab.vn');
+  // Email sai → 400, hồ sơ không đổi.
+  await rejectsWith(logic.updateCustomer({ email: 'sai', clear_dob: false, clear_email: false }, KH1), 'INVALID_ARGUMENT', 'INVALID_EMAIL');
+  assert.equal(table.get(1).email, 'kh1@cab.vn');
+  // Vừa đặt vừa xóa email → mâu thuẫn.
+  await rejectsWith(logic.updateCustomer({ email: 'a@b.vn', clear_dob: false, clear_email: true }, KH1), 'INVALID_ARGUMENT', 'INVALID_INPUT');
 });

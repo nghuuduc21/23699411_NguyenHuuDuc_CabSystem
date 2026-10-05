@@ -69,7 +69,8 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
     const updated = await drivers.review({ driverId, approvalStatus, reviewedBy: identity.accountId, reason });
     if (!updated) {
       if (!(await drivers.exists(driverId))) throw notFound();
-      // Đã APPROVED / REJECTED: không xét lại, không nộp lại (D5, Q47 đã chốt).
+      // Đã APPROVED / REJECTED: không xét lại (D5). Hồ sơ REJECTED muốn được xét lại thì tài xế nộp lại
+      // bằng A11 (FR43) → về PENDING → admin xét như lần đầu.
       throw new DriverError('FAILED_PRECONDITION', 'APPLICATION_ALREADY_REVIEWED');
     }
     // Chỉ ghi mã và kết quả, KHÔNG ghi lý do hay họ tên (NFR08, NFR10).
@@ -81,6 +82,8 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
   return {
     // A11: driver_id = mã tài khoản trong token (cùng mẫu ADR-013): tài xế không nộp hộ người khác,
     // và auth-service không phải gọi sang đây.
+    // FR43 (2026-10-05): hồ sơ đang REJECTED thì CÙNG request này là "nộp lại" — cùng dữ liệu, cùng kiểm tra,
+    // nên không thêm API mới. Nộp lại không phát event (như lần đầu: admin xem danh sách chờ ở A13).
     async submitApplication(req, identity) {
       const { accountId } = requireRole(identity, ['driver']);
       // Kiểm tra hết TRƯỚC khi ghi: dữ liệu sai thì không có gì được tạo.
@@ -91,9 +94,9 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
       const extra = {};
       for (const key of ['brand', 'model', 'color']) extra[key] = isPresent(req[key]) ? cleanText(req[key], VEHICLE_TEXT_MAX) : null;
 
-      let inserted;
+      let outcome;
       try {
-        inserted = await drivers.insertApplication({
+        outcome = await drivers.saveApplication({
           driverId: accountId, fullName, licenseEnc: cipher.encrypt(license), vehicleType, plate, ...extra,
         });
       } catch (err) {
@@ -101,15 +104,19 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
         if (toError) throw toError();
         throw err;
       }
-      if (!inserted) throw new DriverError('ALREADY_EXISTS', 'DRIVER_ALREADY_EXISTS');
-      // Chỉ ghi mã: không ghi họ tên, số giấy phép (NFR08, NFR10).
-      log.info('driver_applied', { driver_id: accountId });
+      // Đang PENDING / APPROVED: không nộp chồng (D4) — đang chờ thì chờ, đã duyệt thì không cần nộp.
+      if (outcome === 'EXISTS') throw new DriverError('ALREADY_EXISTS', 'DRIVER_ALREADY_EXISTS');
+      const resubmitted = outcome === 'RESUBMITTED';
+      // Chỉ ghi mã và cờ nộp lại: không ghi họ tên, số giấy phép (NFR08, NFR10).
+      log.info('driver_applied', { driver_id: accountId, resubmitted });
       // Chủ hồ sơ → dạng đầy đủ (thấy lại số giấy phép mình vừa nhập, đã chuẩn hóa).
       const out = {
         driver_id: accountId, name: fullName, vehicle: vehicleType, plate, status: 'OFFLINE',
         approval_status: 'PENDING', license,
       };
       for (const key of ['brand', 'model', 'color']) if (extra[key] !== null) out[key] = extra[key];
+      // Cờ chỉ có khi nộp lại; Gateway dùng nó để trả 200 thay vì 201 (TX12). Không có `reason`: đã xóa.
+      if (resubmitted) out.resubmitted = true;
       return out;
     },
 

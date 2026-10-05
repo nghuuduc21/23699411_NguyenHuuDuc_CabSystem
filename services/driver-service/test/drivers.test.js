@@ -30,15 +30,24 @@ function setup({ publishFails = false } = {}) {
   const log = { info: (msg, f) => logs.push({ level: 'info', msg, ...f }), warn() {}, error: (msg, f) => logs.push({ level: 'error', msg, ...f }) };
   const drivers = {
     lastNearby: null,
-    async insertApplication(d) {
-      if (rows.has(d.driverId)) return false;
-      if (![...rows.values()].every((r) => r.license_plate !== d.plate)) throw Object.assign(new Error('dup'), { code: '23505', constraint: 'vehicles_license_plate_key' });
+    async saveApplication(d) {
+      const existing = rows.get(d.driverId);
+      if (existing && existing.approval_status !== 'REJECTED') return 'EXISTS';
+      // UNIQUE biển số: trùng với tài xế KHÁC mới là lỗi (giữ biển số của chính mình khi nộp lại được phép).
+      if ([...rows.values()].some((r) => r.driver_id !== d.driverId && r.license_plate === d.plate)) throw Object.assign(new Error('dup'), { code: '23505', constraint: 'vehicles_license_plate_key' });
       if (!['MOTORBIKE', 'CAR_4', 'CAR_7'].includes(d.vehicleType)) throw Object.assign(new Error('fk'), { code: '23503', constraint: 'vehicles_vehicle_type_fkey' });
+      if (existing) {
+        Object.assign(existing, {
+          full_name: d.fullName, license_number_enc: d.licenseEnc, approval_status: 'PENDING', reject_reason: null, reviewed_by: null,
+          vehicle_type: d.vehicleType, license_plate: d.plate, brand: d.brand, model: d.model, color: d.color,
+        });
+        return 'RESUBMITTED';
+      }
       rows.set(d.driverId, row({
         driver_id: d.driverId, full_name: d.fullName, license_number_enc: d.licenseEnc, approval_status: 'PENDING', availability: 'OFFLINE',
         current_lat: null, current_lng: null, vehicle_type: d.vehicleType, license_plate: d.plate, brand: d.brand, model: d.model, color: d.color,
       }));
-      return true;
+      return 'CREATED';
     },
     async findById(id) { return rows.get(id) ?? null; },
     async exists(id) { return rows.has(id); },
@@ -138,6 +147,42 @@ test('A11: dữ liệu sai → 400; role khác driver → FORBIDDEN; thiếu met
   await rejectsWith(logic.submitApplication(APPLY, AD1), 'PERMISSION_DENIED', 'FORBIDDEN');
   await rejectsWith(logic.submitApplication(APPLY, {}), 'UNAUTHENTICATED', 'IDENTITY_MISSING');
   assert.ok(!rows.has(1000));
+});
+
+// ---------- A11 nộp lại (FR43, spec mục 2.6) ----------
+
+test('A11 nộp lại: REJECTED → PENDING, ghi đè hồ sơ và xe, xóa lý do, resubmitted = true, không phát event (AC-TX-34, 38)', async () => {
+  const { logic, rows, published, logs } = setup();
+  await logic.rejectDriver({ driver_id: 17, reason: 'thieu giay to' }, AD1);
+  published.length = 0;
+  const TX7 = { accountId: '17', role: 'driver' };
+  // Giữ nguyên biển số của chính mình, đổi loại xe, không gửi brand.
+  const res = await logic.submitApplication({ name: 'Tai Xe 7', license: 'GPLX-00007', plate: '59A-00007', vehicle: 'MOTORBIKE' }, TX7);
+  assert.deepEqual(res, { driver_id: 17, name: 'Tai Xe 7', vehicle: 'MOTORBIKE', plate: '59A-00007', status: 'OFFLINE', approval_status: 'PENDING', license: 'GPLX-00007', resubmitted: true });
+  const saved = rows.get(17);
+  assert.equal(saved.reject_reason, null);
+  assert.equal(saved.reviewed_by, null);
+  assert.equal(saved.brand, null);
+  assert.equal(published.length, 0);
+  assert.ok(logs.some((l) => l.msg === 'driver_applied' && l.driver_id === 17 && l.resubmitted === true));
+  // Đã về PENDING: nộp nữa → 409; admin duyệt lại được.
+  await rejectsWith(logic.submitApplication({ name: 'Tai Xe 7', license: 'GPLX-00007', plate: '59A-00007', vehicle: 'CAR_4' }, TX7), 'ALREADY_EXISTS', 'DRIVER_ALREADY_EXISTS');
+  assert.equal((await logic.approveDriver({ driver_id: 17 }, AD1)).approval_status, 'APPROVED');
+  // Lần đầu (không phải nộp lại) không có cờ.
+  assert.equal((await logic.submitApplication(APPLY, NEW)).resubmitted, undefined);
+});
+
+test('A11 nộp lại lỗi: trùng biển số tài xế khác → 409, dữ liệu sai → 400; hồ sơ REJECTED giữ nguyên (AC-TX-37)', async () => {
+  const { logic, rows } = setup();
+  await logic.rejectDriver({ driver_id: 17, reason: 'thieu giay to' }, AD1);
+  const TX7 = { accountId: '17', role: 'driver' };
+  await rejectsWith(logic.submitApplication({ name: 'Tai Xe 7', license: 'GPLX-00007', plate: '59A-00001', vehicle: 'CAR_4' }, TX7), 'ALREADY_EXISTS', 'LICENSE_PLATE_ALREADY_EXISTS');
+  await rejectsWith(logic.submitApplication({ name: 'Tai Xe 7', plate: '59A-00007', vehicle: 'CAR_4' }, TX7), 'INVALID_ARGUMENT', 'INVALID_INPUT');
+  await rejectsWith(logic.submitApplication({ name: '<b>x</b>', license: 'GPLX-00007', plate: '59A-00007', vehicle: 'CAR_4' }, TX7), 'INVALID_ARGUMENT', 'TEXT_CONTAINS_HTML');
+  assert.equal(rows.get(17).approval_status, 'REJECTED');
+  assert.equal(rows.get(17).reject_reason, 'thieu giay to');
+  // APPROVED (TX1) nộp → 409 như cũ (AC-TX-35).
+  await rejectsWith(logic.submitApplication({ ...APPLY, plate: '59A-00001' }, TX1), 'ALREADY_EXISTS', 'DRIVER_ALREADY_EXISTS');
 });
 
 // ---------- A14 ----------

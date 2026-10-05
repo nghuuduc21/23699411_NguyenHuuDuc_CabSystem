@@ -28,15 +28,48 @@ const NEARBY_CTE = `WITH ung_vien AS (
 
 export function createDriversRepo(pool) {
   return {
-    // A11: một giao dịch tạo hồ sơ + xe (D4, D7). Hai lệnh cùng thành công hoặc cùng không.
-    // Trả false nếu tài khoản đã có hồ sơ. Lỗi ràng buộc của xe (trùng biển số, loại xe lạ) ném ra
-    // nguyên vẹn (kèm `constraint`) để logic đổi thành mã lỗi; giao dịch đã ROLLBACK nên không còn
-    // hồ sơ "mồ côi" không có xe.
-    async insertApplication({ driverId, fullName, licenseEnc, vehicleType, plate, brand, model, color }) {
+    // A11: nộp hồ sơ + xe trong MỘT giao dịch (D4, D7; FR43 thêm 2026-10-05). Trả:
+    //   'CREATED'     — chưa có hồ sơ: tạo drivers + vehicles (lần nộp đầu);
+    //   'RESUBMITTED' — hồ sơ đang REJECTED: ghi đè hồ sơ và xe, về PENDING (nộp lại);
+    //   'EXISTS'      — hồ sơ đang PENDING / APPROVED: không đổi gì.
+    // Lỗi ràng buộc của xe (trùng biển số, loại xe lạ) ném ra nguyên vẹn (kèm `constraint`) để logic đổi
+    // thành mã lỗi; giao dịch đã ROLLBACK nên không có hồ sơ "mồ côi" và hồ sơ bị từ chối giữ nguyên.
+    async saveApplication({ driverId, fullName, licenseEnc, vehicleType, plate, brand, model, color }) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        // ON CONFLICT DO NOTHING: đã có hồ sơ thì không ghi đè, không ném lỗi; không có dòng trả về = trùng.
+        // Khóa dòng của chính tài xế (SELECT … FOR UPDATE): hai lần nộp cùng lúc chạy lần lượt, và admin
+        // duyệt (UPDATE … WHERE approval_status = 'PENDING') không chen vào giữa lúc đang ghi đè.
+        const current = await client.query('SELECT approval_status FROM drivers WHERE driver_id = $1 FOR UPDATE', [driverId]);
+        const status = current.rows[0]?.approval_status;
+        if (status === 'PENDING' || status === 'APPROVED') {
+          await client.query('ROLLBACK');
+          return 'EXISTS';
+        }
+        if (status === 'REJECTED') {
+          // Nộp lại = ghi đè toàn bộ (TX13), về PENDING, xóa lý do và người / lúc xét để thỏa hai CHECK
+          // drivers_reviewed_check (PENDING ⇔ reviewed_at NULL) và drivers_reason_check. Không đổi availability
+          // (hồ sơ REJECTED luôn OFFLINE), vị trí, created_at. Điều kiện REJECTED lặp lại cho chắc dù đã khóa dòng.
+          await client.query(
+            `UPDATE drivers
+             SET full_name = $2, license_number_enc = $3, approval_status = 'PENDING',
+                 reject_reason = NULL, reviewed_by = NULL, reviewed_at = NULL, updated_at = now()
+             WHERE driver_id = $1 AND approval_status = 'REJECTED'`,
+            [driverId, fullName, licenseEnc],
+          );
+          // Field xe không gửi → NULL (ghi đè đúng như lần đầu). Giữ nguyên biển số của chính mình không
+          // vi phạm UNIQUE vì vẫn là cùng một dòng vehicles.
+          await client.query(
+            `UPDATE vehicles
+             SET vehicle_type = $2, license_plate = $3, brand = $4, model = $5, color = $6, updated_at = now()
+             WHERE driver_id = $1`,
+            [driverId, vehicleType, plate, brand, model, color],
+          );
+          await client.query('COMMIT');
+          return 'RESUBMITTED';
+        }
+        // Chưa có hồ sơ. ON CONFLICT DO NOTHING vẫn giữ: hai request lần đầu song song thì SELECT … FOR UPDATE
+        // không khóa được dòng chưa tồn tại; request sau không có dòng trả về = trùng.
         const inserted = await client.query(
           `INSERT INTO drivers (driver_id, full_name, license_number_enc)
            VALUES ($1, $2, $3)
@@ -46,7 +79,7 @@ export function createDriversRepo(pool) {
         );
         if (inserted.rowCount === 0) {
           await client.query('ROLLBACK');
-          return false;
+          return 'EXISTS';
         }
         await client.query(
           `INSERT INTO vehicles (driver_id, vehicle_type, license_plate, brand, model, color)
@@ -54,7 +87,7 @@ export function createDriversRepo(pool) {
           [driverId, vehicleType, plate, brand, model, color],
         );
         await client.query('COMMIT');
-        return true;
+        return 'CREATED';
       } catch (err) {
         await client.query('ROLLBACK').catch(() => {});
         throw err;

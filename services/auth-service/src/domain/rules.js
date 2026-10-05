@@ -12,7 +12,6 @@ export class AuthError extends Error {
 }
 
 const PHONE = /^(?:\+84|84|0)([35789][0-9]{8})$/;
-const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
 
@@ -24,13 +23,6 @@ export function normalizePhone(value) {
   const match = PHONE.exec(compact);
   if (!match) throw new AuthError('INVALID_ARGUMENT', 'INVALID_PHONE');
   return `0${match[1]}`;
-}
-
-// Email không phân biệt hoa thường → lưu chữ thường để UNIQUE có nghĩa.
-export function normalizeEmail(value) {
-  const email = String(value).trim().toLowerCase();
-  if (email.length > 254 || !EMAIL.test(email)) throw new AuthError('INVALID_ARGUMENT', 'INVALID_EMAIL');
-  return email;
 }
 
 // Chỉ áp dụng khi ĐĂNG KÝ. Đăng nhập không kiểm tra độ dài để không lộ quy tắc mật khẩu.

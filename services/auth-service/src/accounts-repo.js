@@ -4,10 +4,11 @@
 
 export function createAccountsRepo(pool) {
   return {
-    async insert({ phone, email, passwordHash, role }) {
+    // Tài khoản không còn email (ADR-019, migration 003): chỉ số điện thoại + mật khẩu băm.
+    async insert({ phone, passwordHash, role }) {
       const { rows } = await pool.query(
-        'INSERT INTO accounts (phone, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING account_id, role',
-        [phone, email, passwordHash, role],
+        'INSERT INTO accounts (phone, password_hash, role) VALUES ($1, $2, $3) RETURNING account_id, role',
+        [phone, passwordHash, role],
       );
       return rows[0];
     },
@@ -15,13 +16,6 @@ export function createAccountsRepo(pool) {
       const { rows } = await pool.query(
         'SELECT account_id, password_hash, role, status FROM accounts WHERE phone = $1',
         [phone],
-      );
-      return rows[0] ?? null;
-    },
-    async findByEmail(email) {
-      const { rows } = await pool.query(
-        'SELECT account_id, password_hash, role, status FROM accounts WHERE email = $1',
-        [email],
       );
       return rows[0] ?? null;
     },

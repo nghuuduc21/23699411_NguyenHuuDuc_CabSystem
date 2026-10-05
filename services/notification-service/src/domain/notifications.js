@@ -87,7 +87,9 @@ function rowsFor(topic, d) {
         return [{ recipient_id: d.driver_id, type: 'APPLICATION_APPROVED', title: 'Hồ sơ tài xế đã được duyệt', body: `Hồ sơ tài xế ${d.driver_id}`, data }];
       }
       if (d.result === 'REJECTED') {
-        return [{ recipient_id: d.driver_id, type: 'APPLICATION_REJECTED', title: 'Hồ sơ tài xế bị từ chối', body: `Hồ sơ tài xế ${d.driver_id}`, data }];
+        // Nội dung chỉ dẫn bước tiếp theo (FR43): tài xế xem lý do ở hồ sơ của mình (A14) rồi nộp lại (A11).
+        // Không đưa lý do vào đây vì event K7 cố ý không mang văn bản tự do (02 mục 6.1).
+        return [{ recipient_id: d.driver_id, type: 'APPLICATION_REJECTED', title: 'Hồ sơ tài xế bị từ chối', body: 'Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại.', data }];
       }
       return null;
     }
