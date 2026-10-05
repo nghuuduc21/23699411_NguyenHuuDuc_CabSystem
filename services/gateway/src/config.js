@@ -49,7 +49,7 @@ export function loadConfig(env = process.env) {
     serviceName: required(env, 'SERVICE_NAME'),
     redisUrl: required(env, 'REDIS_URL'),
     jwtSecret: jwtSecret(env, 'JWT_SECRET'),
-    // Rate limit (mục chấm 29) dùng ở spec sau; đọc từ môi trường để chỉnh ngắn khi demo.
+    // Rate limit (mục chấm 29, spec 20-29); đọc từ môi trường để chỉnh khi demo và khi chạy bộ test tự động.
     rateLimitWindowSeconds: positiveInt(env, 'RATE_LIMIT_WINDOW_SECONDS'),
     rateLimitPublicMax: positiveInt(env, 'RATE_LIMIT_PUBLIC_MAX'),
     rateLimitAccountMax: positiveInt(env, 'RATE_LIMIT_ACCOUNT_MAX'),

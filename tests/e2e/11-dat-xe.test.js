@@ -373,10 +373,10 @@ test('AC-DX-20 (mục 16, 409/403/404/400): A24 lại → 409; bằng TX3 → 40
 
 // ---------- gRPC nội bộ ----------
 const driverRpc = (method, request, metadata = { 'x-role': 'system' }) => grpcInternal({
-  target: 'driver-service:50051', proto: 'driver.proto', pkg: 'cab.driver.v1', service: 'DriverService', method, request, metadata,
+  target: 'driver-service:50053', proto: 'driver.proto', pkg: 'cab.driver.v1', service: 'DriverService', method, request, metadata,
 });
 const tripRpc = (request, metadata = { 'x-role': 'system' }) => grpcInternal({
-  target: 'trip-service:50051', proto: 'trip.proto', pkg: 'cab.trip.v1', service: 'TripService', method: 'CreateTrip', request, metadata,
+  target: 'trip-service:50055', proto: 'trip.proto', pkg: 'cab.trip.v1', service: 'TripService', method: 'CreateTrip', request, metadata,
 });
 
 test('AC-DX-23 (mục 16, D8, gRPC nội bộ): ReserveDriver(11, B) ×2 → BUSY; (11, B2) → DRIVER_NOT_AVAILABLE; Release(11, B2) false; Release(11, B) true → ONLINE; thiếu x-role / customer', () => {

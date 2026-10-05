@@ -6,11 +6,15 @@
 //   validateParams: kiểm tra tham số đường dẫn (ví dụ `:id` phải là số nguyên dương).
 //   select:   (chỉ đường dẫn có nhiều mã API — 04 mục 1.10) tra bảng theo body / query, trả
 //             { error } hoặc { roles, handler } của biến thể; message gRPC dựng sẵn ở req.rpcRequest.
+//   rateLimit: bộ đếm của mục chấm 29 (spec 20-29 mục 4.4): 'ip' = 4 route công khai chung một bộ đếm theo IP;
+//             'account' = mặc định của route có token (một bộ đếm theo mã tài khoản); 'none' = không đếm
+//             (health để Docker / người chấm luôn xem được; callback vì cổng thanh toán không phải người dùng).
 // A01–A03 nằm ngoài tiền tố /api/v1 vì không phải tài nguyên nghiệp vụ.
 import { ROLES } from './token.js';
 import {
   parseBookingsQuery, parseCallbackBody, parseCancelBookingBody, parseCreateBooking, parseDriverMeBody, parseDriversQuery,
-  parseNotificationsQuery, parseOfferBody, parseOffersQuery, parsePayRequest, parseReviewBody, parseTripBody,
+  parseCreateRating, parseNotificationsQuery, parseOfferBody, parseOffersQuery, parsePayRequest, parseRatingsQuery,
+  parseReviewBody, parseTripBody,
   validateCreateCustomer, validateIdParam, validateLogin,
   validateRegister, validateRegisterDriver, validateRequestOtp, validateSubmitDriver, validateUpdateCustomer,
 } from './validate.js';
@@ -28,22 +32,22 @@ function selectBy(parse, variants) {
 
 // customers: handler hồ sơ khách (spec 11); drivers: handler tài xế (spec 12-13-21-23);
 // bookings, payments: đặt xe, lời mời, thanh toán (spec 14-15-16-19-30); trips, notifications: chuyến đi, hủy,
-// thông báo (spec 17-18). Test chỉ thử health / auth thì không truyền → không có các route này.
-export function buildRoutes({ health, auth, customers, drivers, bookings, payments, trips, notifications }) {
+// thông báo (spec 17-18); ratings: đánh giá (spec 20-29). Test chỉ thử health / auth thì không truyền → không có các route này.
+export function buildRoutes({ health, auth, customers, drivers, bookings, payments, trips, notifications, ratings }) {
   return [
-    { code: 'A01', method: 'GET', path: '/health', roles: null, rpc: null, handler: health.live },
-    { code: 'A02', method: 'GET', path: '/ready', roles: null, rpc: null, handler: health.ready },
-    { code: 'A03', method: 'GET', path: '/health/services', roles: null, rpc: 'grpc.health.v1.Health/Check', handler: health.services },
+    { code: 'A01', method: 'GET', path: '/health', roles: null, rateLimit: 'none', rpc: null, handler: health.live },
+    { code: 'A02', method: 'GET', path: '/ready', roles: null, rateLimit: 'none', rpc: null, handler: health.ready },
+    { code: 'A03', method: 'GET', path: '/health/services', roles: null, rateLimit: 'none', rpc: 'grpc.health.v1.Health/Check', handler: health.services },
 
     // Spec 09-10. Đăng ký = tạo một tài khoản → POST vào tập `accounts` (không có động từ trong đường dẫn).
-    { code: 'A04', method: 'POST', path: '/api/v1/accounts', roles: null, rpc: 'cab.auth.v1.AuthService/RegisterCustomer', validate: validateRegister, handler: auth.register },
+    { code: 'A04', method: 'POST', path: '/api/v1/accounts', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RegisterCustomer', validate: validateRegister, handler: auth.register },
     // Hai ngoại lệ có chủ đích (04 mục 1.9): đăng nhập, đăng xuất không tạo tài nguyên nào.
-    { code: 'A05', method: 'POST', path: '/api/v1/auth/login', roles: null, rpc: 'cab.auth.v1.AuthService/Login', validate: validateLogin, handler: auth.login },
+    { code: 'A05', method: 'POST', path: '/api/v1/auth/login', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/Login', validate: validateLogin, handler: auth.login },
     { code: 'A06', method: 'POST', path: '/api/v1/auth/logout', roles: ROLES, rpc: null, handler: auth.logout },
     // Spec 12-13-21-23. Mã OTP là một tài nguyên được tạo → POST /otps (04 R7). Đăng ký tài xế tạo một
     // tài khoản tài xế → POST /driver-accounts. Cả hai công khai: người đăng ký chưa có token.
-    { code: 'A07', method: 'POST', path: '/api/v1/otps', roles: null, rpc: 'cab.auth.v1.AuthService/RequestDriverOtp', validate: validateRequestOtp, handler: auth.requestOtp },
-    { code: 'A08', method: 'POST', path: '/api/v1/driver-accounts', roles: null, rpc: 'cab.auth.v1.AuthService/RegisterDriver', validate: validateRegisterDriver, handler: auth.registerDriver },
+    { code: 'A07', method: 'POST', path: '/api/v1/otps', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RequestDriverOtp', validate: validateRequestOtp, handler: auth.requestOtp },
+    { code: 'A08', method: 'POST', path: '/api/v1/driver-accounts', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RegisterDriver', validate: validateRegisterDriver, handler: auth.registerDriver },
 
     // Spec 11. Tạo hồ sơ = POST vào tập `customers`; không có mã trong đường dẫn vì mã = mã trong token.
     // Admin chỉ xem, tài xế không dùng hồ sơ khách (BRULE18) → hai role này bị 403 FORBIDDEN ngay ở Gateway.
@@ -143,7 +147,7 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
       { code: 'A30', method: 'GET', path: '/api/v1/payments/:id', roles: ['customer', 'admin'], rpc: 'cab.payment.v1.PaymentService/GetPayment', validateParams: validateIdParam, handler: payments.byId },
       // A32: KHÔNG token, không role (cổng thanh toán không có tài khoản); xác thực bằng khóa bí mật ở payment-service.
       {
-        code: 'A32', method: 'POST', path: '/api/v1/payment-callbacks', roles: null, rpc: 'cab.payment.v1.PaymentService/HandleProviderCallback',
+        code: 'A32', method: 'POST', path: '/api/v1/payment-callbacks', roles: null, rateLimit: 'none', rpc: 'cab.payment.v1.PaymentService/HandleProviderCallback',
         select: selectBy((req) => parseCallbackBody(req.body), { A32: { handler: payments.callback } }),
       },
     ] : []),
@@ -169,6 +173,25 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
       {
         code: 'A33', method: 'GET', path: '/api/v1/notifications', roles: ROLES, rpc: 'cab.notification.v1.NotificationService/ListNotifications',
         select: selectBy((req) => parseNotificationsQuery(req.query), { A33: { handler: notifications.list } }),
+      },
+    ] : []),
+
+    // Spec 20-29 — đánh giá chuyến (mục 20).
+    ...(ratings ? [
+      // A34: chỉ khách; tài xế, admin bị 403 TRƯỚC khi đọc body (mục chấm 28).
+      {
+        code: 'A34', method: 'POST', path: '/api/v1/ratings', roles: ['customer'], rpc: 'cab.rating.v1.RatingService/CreateRating',
+        select: selectBy((req) => parseCreateRating(req.body), { A34: { handler: ratings.create } }),
+      },
+      // GET /ratings: `trip_id` → A35 (service kiểm khách / tài xế của chuyến, admin xem mọi chuyến);
+      // `driver_id` → A36 (điểm tài xế là thông tin công khai cho mọi role đã đăng nhập).
+      {
+        code: 'A35|A36', method: 'GET', path: '/api/v1/ratings', roles: ROLES,
+        rpc: 'cab.rating.v1.RatingService/GetRatingByTrip|GetDriverRating',
+        select: selectBy((req) => parseRatingsQuery(req.query), {
+          A35: { handler: ratings.byTrip },
+          A36: { handler: ratings.driver },
+        }),
       },
     ] : []),
   ];

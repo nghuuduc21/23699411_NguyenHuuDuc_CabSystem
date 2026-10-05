@@ -413,3 +413,40 @@ export function parseNotificationsQuery(query) {
   if (paging.error) return paging;
   return { variant: 'A33', request: { page: paging.page, limit: paging.limit } };
 }
+
+// ---- Đánh giá chuyến (spec 20-29 mục 4.1, 4.2) ----
+// Gateway chỉ kiểm HÌNH THỨC; "chuyến đã COMPLETED chưa, có phải của khách này không, đã đánh giá chưa" là việc của
+// rating-service (hỏi Trip). Service kiểm lại đúng các quy tắc hình thức dưới đây.
+export const COMMENT_MAX = 500;
+const isPositiveSafeInt = (value) => Number.isSafeInteger(value) && value >= 1;
+
+// A34 POST /api/v1/ratings — `trip_id` (số nguyên JSON ≥ 1), `score` (số nguyên JSON 1–5), `comment` tùy chọn.
+// Chuỗi "4", "5", số lẻ 4.5 → INVALID_INPUT (không tự đổi kiểu). Field lạ (gồm `driver_id`, `customer_id`) → 400:
+// tài xế và khách của đánh giá lấy từ Trip, client không được tự khai.
+export function parseCreateRating(body) {
+  if (!isObject(body) || !onlyKeys(body, ['trip_id', 'score', 'comment'])) return { error: 'INVALID_INPUT' };
+  if (!isPositiveSafeInt(body.trip_id)) return { error: 'INVALID_INPUT' };
+  if (!Number.isInteger(body.score) || body.score < 1 || body.score > 5) return { error: 'INVALID_INPUT' };
+  const request = { trip_id: body.trip_id, score: body.score };
+  if (body.comment !== undefined) {
+    if (typeof body.comment !== 'string') return { error: 'INVALID_INPUT' };
+    const comment = body.comment.trim(); // chỉ khoảng trắng = rỗng → 400 (DG7)
+    if (comment === '' || [...comment].length > COMMENT_MAX) return { error: 'INVALID_INPUT' };
+    if (hasHtml(comment)) return { error: 'TEXT_CONTAINS_HTML' };
+    request.comment = comment;
+  }
+  return { variant: 'A34', request };
+}
+
+// GET /api/v1/ratings — chọn biến thể theo query (04 mục 1.10): `trip_id` → A35 đánh giá của chuyến; `driver_id` → A36
+// điểm tài xế. Thiếu cả hai, có cả hai, tham số lạ (`page`…) → INVALID_INPUT. Mã sai định dạng (`abc`, `4 OR 1=1`) →
+// INVALID_ID như mã trong đường dẫn (DG5, mục chấm 25). Mã gửi dạng chuỗi để số lớn không bị làm tròn trước khi tới service.
+export function parseRatingsQuery(query) {
+  if (Object.values(query).some((value) => typeof value !== 'string')) return { error: 'INVALID_INPUT' };
+  if (!onlyKeys(query, ['trip_id', 'driver_id'])) return { error: 'INVALID_INPUT' };
+  const hasTrip = query.trip_id !== undefined;
+  if (hasTrip === (query.driver_id !== undefined)) return { error: 'INVALID_INPUT' };
+  const id = hasTrip ? query.trip_id : query.driver_id;
+  if (!ID.test(id)) return { error: 'INVALID_ID' };
+  return hasTrip ? { variant: 'A35', request: { trip_id: id } } : { variant: 'A36', request: { driver_id: id } };
+}

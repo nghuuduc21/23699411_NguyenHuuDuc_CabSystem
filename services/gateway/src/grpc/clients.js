@@ -35,7 +35,8 @@ export function loadProto(file) {
   return grpc.loadPackageDefinition(definition);
 }
 
-// addrs: { 'auth-service': 'auth-service:50051', … } — gọi bằng tên service trong Compose.
+// addrs: { 'auth-service': 'auth-service:50051', 'customer-service': 'customer-service:50052', … } — gọi bằng tên
+// service trong Compose; mỗi service một cổng riêng (lỗi L3, xem GRPC_PORT ở server.js của từng service).
 // Tạo client không mở kết nối ngay; kết nối thật mở ở lời gọi đầu, nên service chưa lên
 // không làm Gateway lỗi khi khởi động (Gateway chỉ chờ `service_started`, spec 00 H3).
 export function createHealthClients(addrs) {
@@ -117,4 +118,10 @@ export function callUnary(client, method, request, metadata, deadlineMs = GATEWA
       else resolve(response);
     });
   });
+}
+
+// Client nghiệp vụ của rating-service (A34–A36).
+export function createRatingClient(addr) {
+  const { RatingService } = loadProto('rating.proto').cab.rating.v1;
+  return new RatingService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
 }

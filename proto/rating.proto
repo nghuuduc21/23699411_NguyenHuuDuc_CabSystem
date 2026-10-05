@@ -1,0 +1,56 @@
+// Hợp đồng gRPC của rating-service (spec 20-29 mục 5.1). Mục chấm 20.
+// Bên gọi duy nhất là Gateway, kèm danh tính dựng từ token (`x-account-id`, `x-role`): khách không tự khai mình là ai
+// trong message, và `customer_id`, `driver_id` của đánh giá lấy từ Trip (S7), không lấy từ client.
+// Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi (spec 00 mục 4.1).
+syntax = "proto3";
+
+package cab.rating.v1;
+
+service RatingService {
+  // A34 POST /api/v1/ratings — khách đánh giá chuyến đã COMPLETED của mình; mỗi chuyến một lần (V1–V5).
+  rpc CreateRating (CreateRatingRequest) returns (CreateRatingResponse);
+  // A35 GET /api/v1/ratings?trip_id= — đánh giá của một chuyến: khách / tài xế của chuyến, admin.
+  rpc GetRatingByTrip (GetRatingByTripRequest) returns (Rating);
+  // A36 GET /api/v1/ratings?driver_id= — điểm trung bình của tài xế: mọi role đã đăng nhập.
+  rpc GetDriverRating (GetDriverRatingRequest) returns (DriverRating);
+}
+
+message CreateRatingRequest {
+  int64 trip_id = 1;
+  int32 score = 2;                      // 1–5 (V4)
+  optional string comment = 3;          // văn bản tự do, 1–500 ký tự sau khi cắt khoảng trắng
+}
+
+message CreateRatingResponse {
+  int64 rating_id = 1;
+  int64 trip_id = 2;
+  int64 driver_id = 3;
+  int32 score = 4;
+  optional string comment = 5;
+  double driver_avg = 6;                // điểm trung bình MỚI của tài xế, làm tròn 1 chữ số (DG4)
+  int32 driver_count = 7;               // số đánh giá của tài xế sau lần này
+}
+
+message GetRatingByTripRequest {
+  int64 trip_id = 1;
+}
+
+message Rating {
+  int64 rating_id = 1;
+  int64 trip_id = 2;
+  int64 driver_id = 3;
+  int32 score = 4;
+  optional string comment = 5;
+  string created_at = 6;                // ISO 8601 UTC
+}
+
+message GetDriverRatingRequest {
+  int64 driver_id = 1;
+}
+
+// Chưa ai đánh giá: count = 0 và KHÔNG có avg (không có điểm thì không có trung bình).
+message DriverRating {
+  int64 driver_id = 1;
+  optional double avg = 2;
+  int32 count = 3;
+}

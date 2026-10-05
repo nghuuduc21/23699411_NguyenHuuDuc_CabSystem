@@ -8,9 +8,9 @@ const VALID = {
   DATABASE_URL: 'postgres://cab:x@booking-db:5432/booking',
   OFFER_TIMEOUT_SECONDS: '300',
   KAFKA_BROKERS: 'kafka:9092',
-  DRIVER_GRPC_ADDR: 'driver-service:50051',
-  PAYMENT_GRPC_ADDR: 'payment-service:50051',
-  TRIP_GRPC_ADDR: 'trip-service:50051',
+  DRIVER_GRPC_ADDR: 'driver-service:50053',
+  PAYMENT_GRPC_ADDR: 'payment-service:50056',
+  TRIP_GRPC_ADDR: 'trip-service:50055',
   SIMULATION_MODE: 'true',
 };
 

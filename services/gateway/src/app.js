@@ -1,6 +1,6 @@
 // Ứng dụng HTTP của Gateway: áp quy định chung cho MỌI route (spec 00 mục 4, 04 mục 1).
-// Không chứa logic nghiệp vụ, không nối database: chỉ nhận REST, kiểm tra token/role/(spec sau)
-// rate limit/hình thức, rồi chuyển sang gRPC.
+// Không chứa logic nghiệp vụ, không nối database: chỉ nhận REST, kiểm tra token/role/rate limit/hình thức,
+// rồi chuyển sang gRPC.
 import { randomUUID } from 'node:crypto';
 import express from 'express';
 
@@ -59,23 +59,51 @@ export function parseBody(req) {
   }
 }
 
-// Bọc hàm xử lý của route theo đúng thứ tự kiểm tra (spec 09-10 mục 4.1; 04 mục 1):
-//   0. khớp route (Express làm) → 404 nếu không có
+// Loại bộ đếm rate limit của route (spec 20-29 mục 4.4): khai báo ở cột `rateLimit` của bảng route.
+// Không khai báo: route có token → 'account'; route công khai → 'none' (health, callback cổng thanh toán).
+export const rateLimitScope = (route) => route.rateLimit ?? (route.roles ? 'account' : 'none');
+
+// Đếm một request; trả true nếu đã trả 429 (bên gọi dừng). Header RateLimit-* gắn vào res nên có ở MỌI response sau đó
+// của route (200, 4xx, 429, 503). Redis lỗi → cho qua, không header (rate-limit.js đã ghi log).
+async function limited(rateLimiter, scope, id, req, res, log) {
+  const result = await rateLimiter.hit(scope, id, req);
+  if (result.skipped) return false;
+  res.set(result.headers);
+  if (!result.limited) return false;
+  // Không ghi IP vào log (GH4: không log dữ liệu cá nhân); mã tài khoản thì được (là mã nội bộ).
+  const fields = { scope, path: req.path, request_id: req.requestId };
+  if (scope === 'account') fields.account_id = id;
+  log.info('rate_limited', fields);
+  res.status(429).json({ error: 'RATE_LIMITED' });
+  return true;
+}
+
+// Bọc hàm xử lý của route theo đúng thứ tự kiểm tra (spec 09-10 mục 4.1; 04 mục 1; spec 20-29 mục 4.5):
+//   0. khớp route (Express làm) → 404 nếu không có (không đếm)
+//   1. route công khai có đếm: rate limit theo IP → 429
 //   2–5. route cần token: đọc, kiểm tra chữ ký, hạn, claim, danh sách thu hồi → 401
+//   5a. route cần token: rate limit theo mã tài khoản → 429. Đếm SAU khi xác thực (GH2): mã tài khoản chỉ đáng tin
+//       khi chữ ký đúng; đọc `sub` từ token chưa kiểm thì kẻ xấu ghi `sub` của người khác để làm người đó bị chặn.
+//       Hệ quả: trên route có token, 401 đứng trước 429.
 //   6. role của token có trong danh sách của route không → 403
 //   7. đọc body là JSON → 400 INVALID_JSON
 //   8. kiểm tra hình thức body → 400; rồi tham số đường dẫn (ví dụ mã `{id}` phải là số) → 400
 //   9. gọi handler (gọi gRPC)
 // Lỗi rẻ nhất trả trước; vì vậy sai role bị 403 dù body rỗng hay hỏng (mục chấm 28).
 // Đọc body SAU khi khớp route để đường dẫn không tồn tại luôn trả 404, dù body hỏng.
-function wrap(route, authenticate) {
+// IP = địa chỉ kết nối TCP; KHÔNG đọc X-Forwarded-For: không có proxy nào trước Gateway, tin header đó thì ai cũng
+// tự đổi IP để né giới hạn.
+function wrap(route, { authenticate, rateLimiter, log }) {
+  const scope = rateLimitScope(route);
   return async (req, res) => {
+    if (rateLimiter && scope === 'ip' && await limited(rateLimiter, 'ip', req.socket.remoteAddress, req, res, log)) return;
     if (route.roles) {
       const result = await authenticate(req);
       if (!result.ok) {
         res.status(result.status).json({ error: result.error });
         return;
       }
+      if (rateLimiter && scope === 'account' && await limited(rateLimiter, 'account', result.identity.accountId, req, res, log)) return;
       if (!route.roles.includes(result.identity.role)) {
         res.status(403).json({ error: 'FORBIDDEN' });
         return;
@@ -108,7 +136,8 @@ function wrap(route, authenticate) {
   };
 }
 
-export function createApp({ routes, log, authenticate }) {
+// rateLimiter: không truyền (test không cần Redis) → không giới hạn tần suất.
+export function createApp({ routes, log, authenticate, rateLimiter }) {
   const app = express();
   app.disable('x-powered-by'); // không lộ tên framework
   app.disable('etag');
@@ -121,7 +150,8 @@ export function createApp({ routes, log, authenticate }) {
   for (const route of routes) {
     // Route cần token mà không có bộ kiểm tra token là lỗi lắp ghép: dừng ngay khi khởi động.
     if (route.roles && !authenticate) throw new Error(`route ${route.path} cần token nhưng thiếu authenticate`);
-    app[route.method.toLowerCase()](route.path, wrap(route, authenticate));
+    if (!['ip', 'account', 'none'].includes(rateLimitScope(route))) throw new Error(`route ${route.path}: rateLimit sai`);
+    app[route.method.toLowerCase()](route.path, wrap(route, { authenticate, rateLimiter, log }));
   }
 
   // Route không tồn tại (gồm đường dẫn nghiệp vụ thiếu /api/v1, hoặc /api/health).

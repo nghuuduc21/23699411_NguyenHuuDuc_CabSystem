@@ -77,7 +77,7 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | Container | Vai trò | Cổng trong mạng | Cổng ra máy |
 |---|---|---|---|
 | `gateway` | Cổng vào duy nhất cho nghiệp vụ | 3000 | **3000** |
-| `auth-service` … `rating-service` (8) | Service nghiệp vụ, gRPC | 50051 | — |
+| `auth-service` … `rating-service` (8) | Service nghiệp vụ, gRPC. Mỗi service một cổng riêng (lỗi L3: Docker cấp lại IP khi container khởi động lại, cùng cổng thì kênh gRPC cũ có thể nối nhầm sang service khác) | auth 50051, customer 50052, driver 50053, booking 50054, trip 50055, payment 50056, notification 50057, rating 50058 | — |
 | `auth-db`, `customer-db`, `driver-db`, `booking-db`, `trip-db`, `payment-db`, `rating-db` | PostgreSQL 16, mỗi service một database (database `auth`, `customer`, …; user `cab`) | 5432 | — |
 | `notification-db` | MongoDB 7 của notification-service | 27017 | — |
 | `redis` | Chỉ Gateway dùng: bộ đếm rate limit, token đã thu hồi | 6379 | — |
@@ -107,6 +107,9 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | `PATCH /api/v1/trips/5` `{"status":"CANCELED","reason":"ban viec"}` (token KH1) | 200 `CANCELED` (A29, mục 18); ≈ 1 s sau Payment 5 `REFUNDED`, TX6 `ONLINE`, thông báo `PAYMENT_REFUNDED`, `TRIP_CANCELED` |
 | `PATCH /api/v1/bookings/{id}` `{"status":"CANCELED","reason":"doi y"}` (token khách) | 200 (A22); chỉ khi chưa có tài xế, đã có → 409 `BOOKING_ALREADY_ASSIGNED` |
 | `GET /api/v1/trips/{id}` | Chuyến + lịch sử (A27): khách / tài xế của chuyến, admin |
+| `POST /api/v1/ratings` `{"trip_id":4,"score":5}` (token KH1) | 201 kèm `driver_avg`, `driver_count` (A34, mục 20); gửi lại → 409 `RATING_ALREADY_EXISTS`; chuyến chưa xong → 409 `TRIP_NOT_COMPLETED` |
+| `GET /api/v1/ratings?trip_id=4` / `?driver_id=11` (token bất kỳ) | Đánh giá của chuyến (A35) / điểm tài xế `{"driver_id":11,"avg":5,"count":1}` (A36) |
+| Gửi liên tục `POST /api/v1/auth/login` | Lần 6 trong 10 giây → 429 `RATE_LIMITED` + `Retry-After` (mục 29). Route công khai đếm theo IP (5), route có token theo tài khoản (30); chạy bộ test tự động thì đặt `RATE_LIMIT_PUBLIC_MAX=1000 RATE_LIMIT_ACCOUNT_MAX=1000 docker compose up -d gateway` |
 | Đường dẫn khác | 404 `{"error":"ROUTE_NOT_FOUND"}` |
 
 API nghiệp vụ nằm dưới `/api/v1/…` (`docs/design/04-api.md`) và được thêm theo từng đặc tả.

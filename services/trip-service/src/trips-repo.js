@@ -122,6 +122,12 @@ export function createTripsRepo(pool) {
       }
     },
 
+    // S7: đọc theo khóa chính, không khóa dòng — COMPLETED là trạng thái cuối nên kết quả không đổi sau khi đọc.
+    async findForRating(tripId) {
+      const { rows } = await pool.query('SELECT trip_id, status, customer_id, driver_id FROM trips WHERE trip_id = $1', [tripId]);
+      return rows[0] ?? null;
+    },
+
     async findByBooking(bookingId) {
       const { rows } = await pool.query(`SELECT ${TRIP_COLUMNS} FROM trips WHERE booking_id = $1`, [bookingId]);
       return rows[0] ?? null;

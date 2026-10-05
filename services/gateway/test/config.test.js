@@ -10,13 +10,13 @@ const VALID = {
   RATE_LIMIT_WINDOW_SECONDS: '10',
   RATE_LIMIT_PUBLIC_MAX: '5',
   RATE_LIMIT_ACCOUNT_MAX: '30',
-  ...Object.fromEntries(BACKEND_SERVICES.map(([name, variable]) => [variable, `${name}:50051`])),
+  ...Object.fromEntries(BACKEND_SERVICES.map(([name, variable]) => [variable, `${name}:50058`])),
 };
 
 test('đủ biến thì có địa chỉ của 8 service', () => {
   const config = loadConfig(VALID);
   assert.equal(Object.keys(config.grpcAddrs).length, 8);
-  assert.equal(config.grpcAddrs['rating-service'], 'rating-service:50051');
+  assert.equal(config.grpcAddrs['rating-service'], 'rating-service:50058');
 });
 
 for (const name of Object.keys(VALID)) {

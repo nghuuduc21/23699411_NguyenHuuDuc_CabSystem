@@ -9,6 +9,9 @@ import { runMigrations } from './migrate.js';
 import { runSeed } from './seed.js';
 import { createHealth } from './health.js';
 import { createGrpcServer, startGrpcServer } from './grpc/server.js';
+import { createRatingsRepo } from './ratings-repo.js';
+import { createRatingLogic } from './domain/ratings.js';
+import { createTripClient } from './clients.js';
 
 const log = createLogger(process.env.SERVICE_NAME || 'rating-service');
 const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
@@ -27,7 +30,10 @@ if (config.simulationMode) log.warn('đang chạy chế độ giả lập');
 
 const pool = createPool(config.databaseUrl, log);
 const health = createHealth({ ping: () => pingDatabase(pool) });
-const server = createGrpcServer({ health });
+// Client S7 không mở kết nối ngay: Trip chưa lên cũng không chặn Rating khởi động (chỉ lời gọi đánh giá bị 503).
+const tripClient = createTripClient(config.tripGrpcAddr);
+const ratings = createRatingLogic({ ratings: createRatingsRepo(pool), trips: tripClient, log });
+const server = createGrpcServer({ health, ratings, log });
 
 try {
   await waitForDatabase(pool, log);
@@ -47,6 +53,7 @@ try {
 const shutdown = () => {
   log.info('đang dừng');
   server.forceShutdown();
+  tripClient.close();
   pool.end().finally(() => process.exit(0));
 };
 process.on('SIGTERM', shutdown);

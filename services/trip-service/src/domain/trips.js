@@ -87,6 +87,17 @@ export function createTripLogic({ trips, events, log }) {
       return { trip_id: existing.trip_id, status: existing.status, created: false };
     },
 
+    // S7 GetTripForRating (spec 20-29 mục 5.2): rating-service hỏi trước khi nhận đánh giá; chỉ nhận `x-role: system`.
+    // Trip CHỈ BÁO SỰ THẬT (trạng thái, khách, tài xế); không kiểm chủ, không quyết định "được đánh giá không" —
+    // quy tắc V1 (đã COMPLETED), V2 (đúng khách) thuộc Rating (01 mục 6.8). Chỉ đọc, không phát event.
+    async getTripForRating({ trip_id: tripId }, identity) {
+      requireSystem(identity);
+      if (!Number.isSafeInteger(tripId) || tripId < 1) throw invalid();
+      const trip = await trips.findForRating(tripId);
+      if (!trip) throw tripNotFound();
+      return { trip_id: trip.trip_id, status: trip.status, customer_id: trip.customer_id, driver_id: trip.driver_id };
+    },
+
     // A27 — xem chuyến (UC10). Khách / tài xế CỦA CHUYẾN, hoặc admin (T7). Chỉ đọc.
     async getTrip({ trip_id: tripId }, identity) {
       const who = requireRole(identity, ['customer', 'driver', 'admin']);

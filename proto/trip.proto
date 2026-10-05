@@ -3,7 +3,8 @@
 //   - booking-service (S5 CreateTrip) với metadata `x-role: system` — không có tài khoản nào đứng sau.
 //   - Gateway (A27 GetTrip, A28 UpdateTripStatus, A29 CancelTrip) với danh tính dựng từ token
 //     (`x-account-id`, `x-role`): tài xế / khách không tự khai mình là ai trong message.
-// ListTrips, GetTripForRating thêm ở spec sau.
+//   - rating-service (S7 GetTripForRating, spec 20-29) với metadata `x-role: system`.
+// ListTrips thêm ở spec sau.
 // Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi.
 syntax = "proto3";
 
@@ -18,6 +19,9 @@ service TripService {
   rpc UpdateTripStatus (UpdateTripStatusRequest) returns (UpdateTripStatusResponse);
   // A29 PATCH /api/v1/trips/{id} {"status":"CANCELED","reason":"…"} — khách / tài xế hủy trước khi đón khách (mục 18).
   rpc CancelTrip (CancelTripRequest) returns (CancelTripResponse);
+  // S7 (spec 20-29 mục 5.2): rating-service hỏi trạng thái, khách, tài xế của chuyến trước khi nhận đánh giá.
+  // Trip chỉ báo sự thật; "được đánh giá không" (V1, V2) là quy tắc của Rating.
+  rpc GetTripForRating (TripIdRequest) returns (TripForRating);
 }
 
 // Bản chụp booking: tài xế biết đón / trả ở đâu, thu tiền mặt hay không, bao nhiêu (03 mục 11.2).
@@ -96,4 +100,11 @@ message CancelTripResponse {
   string status = 2;                    // CANCELED
   string canceled_by = 3;               // customer | driver — lấy từ role trong token, không do client khai
   string reason = 4;
+}
+
+message TripForRating {
+  int64 trip_id = 1;
+  string status = 2;                    // giá trị nguyên của cột trips.status
+  int64 customer_id = 3;
+  int64 driver_id = 4;
 }

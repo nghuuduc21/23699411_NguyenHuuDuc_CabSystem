@@ -1,12 +1,16 @@
-// Tầng gRPC của service. Spec 00 chỉ có grpc.health.v1.Health/Check;
-// các spec sau thêm service nghiệp vụ (auth.proto) vào cùng server này.
+// Tầng gRPC của rating-service: grpc.health.v1.Health/Check (spec 00) và cab.rating.v1.RatingService (spec 20-29:
+// CreateRating, GetRatingByTrip, GetDriverRating). Tầng này chỉ đọc danh tính trong metadata, đổi request gRPC → lời gọi
+// logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status. Quy tắc nghiệp vụ nằm ở src/domain/.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
 import protoLoader from '@grpc/proto-loader';
 
-// Mọi service nghe cùng cổng nội bộ 50051, phân biệt bằng tên host trong mạng Compose (spec 00 H1).
-export const GRPC_PORT = 50051;
+// Mỗi service MỘT cổng gRPC riêng (auth 50051 … rating 50058; lỗi L3). Vì sao không dùng chung 50051: Docker cấp lại
+// IP khi container khởi động lại; kênh gRPC cũ của bên gọi có thể còn giữ IP cũ, mà IP đó nay thuộc service KHÁC.
+// Cùng cổng thì kết nối thành công nhầm (Gateway gọi notification mà tới payment). Khác cổng thì kết nối nhầm
+// bị từ chối ngay, kênh tự hỏi lại DNS và nối đúng service.
+export const GRPC_PORT = 50058;
 
 // Trong Docker, Dockerfile đặt PROTO_DIR=/app/proto. Chạy ngoài Docker (test) thì lấy thư mục proto/ ở gốc repo.
 export function protoDir() {
@@ -25,7 +29,38 @@ export function loadProto(file) {
   return grpc.loadPackageDefinition(definition);
 }
 
-export function createGrpcServer({ health }) {
+// Đổi lỗi nghiệp vụ (RatingError) sang gRPC status, `details` = mã lỗi.
+// Lỗi khác (database dừng…) → INTERNAL, không lộ thông điệp bên trong.
+function toGrpcError(err, log) {
+  if (err?.kind && grpc.status[err.kind] !== undefined) return { code: grpc.status[err.kind], details: err.code };
+  log.error('lỗi không lường trước', { name: err?.name, code: err?.code });
+  return { code: grpc.status.INTERNAL, details: 'INTERNAL' };
+}
+
+// Danh tính do Gateway dựng từ token (04 mục 1.7) và mã request để lần theo log.
+export function readIdentity(metadata) {
+  const first = (key) => {
+    const value = metadata.get(key)[0];
+    return typeof value === 'string' ? value : undefined;
+  };
+  return { accountId: first('x-account-id'), role: first('x-role'), requestId: first('x-request-id') };
+}
+
+function unary(fn, log) {
+  return (call, callback) => {
+    Promise.resolve()
+      .then(() => {
+        const { requestId, ...identity } = readIdentity(call.metadata);
+        return fn(call.request, identity, requestId);
+      })
+      .then(
+        (result) => callback(null, result),
+        (err) => callback(toGrpcError(err, log)),
+      );
+  };
+}
+
+export function createGrpcServer({ health, ratings, log }) {
   const server = new grpc.Server();
   const healthProto = loadProto('health.proto');
 
@@ -40,6 +75,15 @@ export function createGrpcServer({ health }) {
       health.check().then((status) => callback(null, { status }));
     },
   });
+  // ratings = logic nghiệp vụ (src/domain/ratings.js). Test chỉ kiểm tra health thì không truyền.
+  if (ratings) {
+    const ratingProto = loadProto('rating.proto');
+    server.addService(ratingProto.cab.rating.v1.RatingService.service, {
+      CreateRating: unary((req, identity, requestId) => ratings.createRating(req, identity, requestId), log),
+      GetRatingByTrip: unary((req, identity) => ratings.getRatingByTrip(req, identity), log),
+      GetDriverRating: unary((req, identity) => ratings.getDriverRating(req, identity), log),
+    });
+  }
   return server;
 }
 

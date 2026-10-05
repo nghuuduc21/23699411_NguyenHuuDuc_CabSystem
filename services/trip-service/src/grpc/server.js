@@ -1,14 +1,17 @@
 // Tầng gRPC của trip-service: grpc.health.v1.Health/Check (spec 00) và cab.trip.v1.TripService
-// (spec 14-15-16-19-30: CreateTrip; spec 17-18: GetTrip, UpdateTripStatus, CancelTrip). Tầng này chỉ đọc danh tính
-// trong metadata, đổi request gRPC → lời gọi logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status.
+// (spec 14-15-16-19-30: CreateTrip; spec 17-18: GetTrip, UpdateTripStatus, CancelTrip; spec 20-29: GetTripForRating).
+// Tầng này chỉ đọc danh tính trong metadata, đổi request gRPC → lời gọi logic nghiệp vụ, và lỗi nghiệp vụ → gRPC status.
 // Quy tắc nghiệp vụ nằm ở src/domain/.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
 import protoLoader from '@grpc/proto-loader';
 
-// Mọi service nghe cùng cổng nội bộ 50051, phân biệt bằng tên host trong mạng Compose (spec 00 H1).
-export const GRPC_PORT = 50051;
+// Mỗi service MỘT cổng gRPC riêng (auth 50051 … rating 50058; lỗi L3). Vì sao không dùng chung 50051: Docker cấp lại
+// IP khi container khởi động lại; kênh gRPC cũ của bên gọi có thể còn giữ IP cũ, mà IP đó nay thuộc service KHÁC.
+// Cùng cổng thì kết nối thành công nhầm (Gateway gọi notification mà tới payment). Khác cổng thì kết nối nhầm
+// bị từ chối ngay, kênh tự hỏi lại DNS và nối đúng service.
+export const GRPC_PORT = 50055;
 
 // Trong Docker, Dockerfile đặt PROTO_DIR=/app/proto. Chạy ngoài Docker (test) thì lấy thư mục proto/ ở gốc repo.
 export function protoDir() {
@@ -79,6 +82,8 @@ export function createGrpcServer({ health, trips, log }) {
       GetTrip: unary((req, identity) => trips.getTrip(req, identity), log),
       UpdateTripStatus: unary((req, identity) => trips.updateTripStatus(req, identity), log),
       CancelTrip: unary((req, identity) => trips.cancelTrip(req, identity), log),
+      // S7 (spec 20-29): rating-service, `x-role: system`.
+      GetTripForRating: unary((req, identity) => trips.getTripForRating(req, identity), log),
     });
   }
   return server;

@@ -28,7 +28,7 @@ export function loadConfig(env = process.env) {
   return Object.freeze({
     serviceName: required(env, 'SERVICE_NAME'),
     databaseUrl: required(env, 'DATABASE_URL'),
-    // Chỉ có địa chỉ của service mà service này được phép gọi (02 mục 4.3); spec sau dùng.
+    // Chỉ có địa chỉ của service mà service này được phép gọi (02 mục 4.3): S7 trip GetTripForRating (spec 20-29).
     tripGrpcAddr: required(env, 'TRIP_GRPC_ADDR'),
     simulationMode: bool(env, 'SIMULATION_MODE'),
   });

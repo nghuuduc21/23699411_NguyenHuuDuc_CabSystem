@@ -52,7 +52,7 @@ export async function pingRedis(redis, timeoutMs = REDIS_PING_TIMEOUT_MS) {
 // Mỗi lệnh có hạn 500 ms như PING: Redis treo cũng không làm request treo theo.
 export const REDIS_COMMAND_TIMEOUT_MS = 500;
 
-function withTimeout(promise, timeoutMs) {
+export function withTimeout(promise, timeoutMs) {
   let timer;
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error('REDIS_TIMEOUT')), timeoutMs);

@@ -6,8 +6,10 @@ import { BACKEND_SERVICES, ConfigError, loadConfig } from './config.js';
 import { createRedis, createRevocationStore, pingRedis } from './redis.js';
 import {
   createAuthClient, createBookingClient, createCustomerClient, createDriverClient, createHealthClients, createNotificationClient,
-  createPaymentClient, createTripClient,
+  createPaymentClient, createRatingClient, createTripClient,
 } from './grpc/clients.js';
+import { createRatingHandlers } from './handlers/ratings.js';
+import { createRateLimiter } from './rate-limit.js';
 import { createAuthHandlers } from './handlers/auth.js';
 import { createCustomerHandlers } from './handlers/customers.js';
 import { createDriverHandlers } from './handlers/drivers.js';
@@ -43,7 +45,16 @@ const bookingClient = createBookingClient(config.grpcAddrs['booking-service']);
 const paymentClient = createPaymentClient(config.grpcAddrs['payment-service']);
 const tripClient = createTripClient(config.grpcAddrs['trip-service']);
 const notificationClient = createNotificationClient(config.grpcAddrs['notification-service']);
+const ratingClient = createRatingClient(config.grpcAddrs['rating-service']);
 const revocations = createRevocationStore(redis);
+// Rate limit (mục chấm 29): ngưỡng và cửa sổ đọc từ môi trường để chỉnh khi demo / khi chạy bộ test tự động.
+const rateLimiter = createRateLimiter({
+  redis,
+  windowSeconds: config.rateLimitWindowSeconds,
+  publicMax: config.rateLimitPublicMax,
+  accountMax: config.rateLimitAccountMax,
+  log,
+});
 
 const health = createHealthHandlers({
   redisPing: () => pingRedis(redis),
@@ -57,8 +68,14 @@ const bookings = createBookingHandlers({ bookingClient });
 const payments = createPaymentHandlers({ paymentClient });
 const trips = createTripHandlers({ tripClient });
 const notifications = createNotificationHandlers({ notificationClient });
+const ratings = createRatingHandlers({ ratingClient });
 const authenticate = createAuthenticator({ secret: config.jwtSecret, isRevoked: revocations.isRevoked, log });
-const app = createApp({ routes: buildRoutes({ health, auth, customers, drivers, bookings, payments, trips, notifications }), log, authenticate });
+const app = createApp({
+  routes: buildRoutes({ health, auth, customers, drivers, bookings, payments, trips, notifications, ratings }),
+  log,
+  authenticate,
+  rateLimiter,
+});
 
 const server = app.listen(HTTP_PORT, '0.0.0.0', () => log.info('HTTP đang nghe', { port: HTTP_PORT }));
 
@@ -74,6 +91,7 @@ const shutdown = () => {
   paymentClient.close();
   tripClient.close();
   notificationClient.close();
+  ratingClient.close();
   redis.disconnect();
   process.exit(0);
 };

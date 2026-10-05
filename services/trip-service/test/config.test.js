@@ -7,7 +7,7 @@ const VALID = {
   SERVICE_NAME: 'trip-service',
   DATABASE_URL: 'postgres://cab:x@trip-db:5432/trip',
   KAFKA_BROKERS: 'kafka:9092',
-  DRIVER_GRPC_ADDR: 'driver-service:50051',
+  DRIVER_GRPC_ADDR: 'driver-service:50053',
   SIMULATION_MODE: 'true',
 };
 

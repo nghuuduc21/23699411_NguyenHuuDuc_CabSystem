@@ -6,7 +6,7 @@ import { ConfigError, loadConfig } from '../src/config.js';
 const VALID = {
   SERVICE_NAME: 'rating-service',
   DATABASE_URL: 'postgres://cab:x@rating-db:5432/rating',
-  TRIP_GRPC_ADDR: 'trip-service:50051',
+  TRIP_GRPC_ADDR: 'trip-service:50055',
   SIMULATION_MODE: 'true',
 };
 

@@ -6,8 +6,11 @@ import { fileURLToPath } from 'node:url';
 import grpc from '@grpc/grpc-js';
 import protoLoader from '@grpc/proto-loader';
 
-// Mọi service nghe cùng cổng nội bộ 50051, phân biệt bằng tên host trong mạng Compose (spec 00 H1).
-export const GRPC_PORT = 50051;
+// Mỗi service MỘT cổng gRPC riêng (auth 50051 … rating 50058; lỗi L3). Vì sao không dùng chung 50051: Docker cấp lại
+// IP khi container khởi động lại; kênh gRPC cũ của bên gọi có thể còn giữ IP cũ, mà IP đó nay thuộc service KHÁC.
+// Cùng cổng thì kết nối thành công nhầm (Gateway gọi notification mà tới payment). Khác cổng thì kết nối nhầm
+// bị từ chối ngay, kênh tự hỏi lại DNS và nối đúng service.
+export const GRPC_PORT = 50052;
 
 // Trong Docker, Dockerfile đặt PROTO_DIR=/app/proto. Chạy ngoài Docker (test) thì lấy thư mục proto/ ở gốc repo.
 export function protoDir() {
