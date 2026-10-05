@@ -55,7 +55,7 @@ const contexts = [
     rel: '<code>accounts</code> là tài khoản chung cho ba vai trò. OTP gắn theo số điện thoại (đăng ký tài xế).',
     tables: [
       { t: 'accounts', hd: '#f9c5c5', cols: [
-        ['PK', 'account_id', 'bigint'], ['UK', 'phone', 'text'], ['UK', 'email', 'text'], ['', 'password_hash', 'text'],
+        ['PK', 'account_id', 'bigint'], ['UK', 'phone', 'text'], ['', 'password_hash', 'text'],
         ['', 'role', 'text'], ['', 'status', 'text']] },
       { t: 'otp_verifications', hd: '#d9c5f9', cols: [
         ['PK', 'otp_id', 'bigint'], ['', 'phone', 'text'], ['', 'otp_hash', 'text'], ['', 'purpose', 'text'],
@@ -65,7 +65,7 @@ const contexts = [
     rel: '<code>customer_id</code> = <code>account_id</code> lấy từ token. Hồ sơ do khách tự tạo sau khi đăng nhập; auth và customer không gọi nhau.',
     tables: [
       { t: 'customer_profiles', hd: '#f9c5c5', cols: [
-        ['PK', 'customer_id', 'bigint', 'auth'], ['', 'full_name_enc', 'bytea'], ['', 'date_of_birth_enc', 'bytea']] },
+        ['PK', 'customer_id', 'bigint', 'auth'], ['', 'full_name_enc', 'bytea'], ['', 'date_of_birth_enc', 'bytea'], ['', 'email', 'text']] },
     ] },
   { n: 3, name: 'Driver & Vehicle', ic: '🚗', svc: 'driver-service', db: 'PostgreSQL · driver-db', span: 6, bg: '#fff6e0', bd: '#e0a100',
     rel: '<code>drivers</code> 1 — 1 <code>vehicles</code> · <code>vehicle_types</code> 1 — n <code>vehicles</code> · <code>driver_id</code> = <code>account_id</code>. Tìm tài xế trong 1 km: tính khoảng cách trên <code>current_lat</code>, <code>current_lng</code>.',
@@ -149,7 +149,7 @@ const contexts = [
     rel: 'Key tự hết hạn. Redis không lưu dữ liệu nghiệp vụ.',
     tables: [
       { t: 'Redis keys', hd: '#f9c5c5', cols: [
-        ['', 'rl:ip:{ip}:{cửa sổ}', 'bộ đếm rate limit'], ['', 'rl:acc:{account_id}:{cửa sổ}', 'bộ đếm rate limit'],
+        ['', 'rl:ip:{ip}', 'bộ đếm rate limit'], ['', 'rl:acc:{account_id}', 'bộ đếm rate limit'],
         ['', 'revoked:{jti}', 'token đã đăng xuất']] },
     ] },
 ];

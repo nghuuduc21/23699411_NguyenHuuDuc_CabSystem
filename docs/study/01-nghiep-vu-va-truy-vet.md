@@ -131,6 +131,15 @@ Phần này làm ở buổi rà API.
 
 Bảng 3.5 dòng "Bảo vệ dữ liệu, lưu vết": mục chấm 29 nay truy vết thẳng về **NFR17**.
 
+**Bổ sung 2026-10-05 (lần 2)** (sinh viên chốt: email, nộp lại hồ sơ):
+
+| Thêm / đổi | Nội dung | Lý do |
+|---|---|---|
+| **Email thuộc hồ sơ khách** (ADR-019) | Tài khoản (auth) chỉ còn số điện thoại + mật khẩu, đăng nhập bằng số điện thoại. Hồ sơ khách có `email` tùy chọn, lưu rõ, không UNIQUE | Mỗi dữ liệu một nơi: số điện thoại ở tài khoản, email ở hồ sơ, nên không lệch (cùng tinh thần Q58) |
+| **FR43** Nộp lại hồ sơ tài xế bị từ chối | Tài xế gửi lại chính `POST /api/v1/drivers`; hồ sơ `REJECTED` về `PENDING`, trả 200 kèm `resubmitted: true`; admin duyệt lại như mục 22 | Giống thực tế: bị từ chối vì thiếu giấy tờ thì bổ sung rồi gửi lại, không phải đăng ký số điện thoại mới. Đổi quyết định TX-Q2 ngày 2026-10-04 |
+| **AC30**, **RTM30** | BG02 / BR08 / FR43 / BRULE12 / UC29, UC30 / AC30 | Truy vết FR43 |
+| Xem dữ liệu của mình | Không thêm API `/me` mới; khách và tài xế xem theo mã của mình (`account_id` trả khi đăng nhập), mã người khác → 403. Tài xế xem lý do từ chối ở `GET /api/v1/drivers/{mã}` | Ít API phải nhớ; cùng cách với mục chấm 11, 12 |
+
 ### 4.3 Câu hỏi bạn cần tự quyết (giảng viên có thể hỏi)
 
 1. ~~Hai danh sách BG~~ **Đã chốt:** danh sách 6 mục tiêu là chính thức, danh sách 12 mục bỏ mã; BG05 thêm "bảo mật". Gốc vấn đề: `srs.md` có danh sách 12 mục tiêu rồi một danh sách "quan trọng nhất" 6 mục tiêu, **đánh lại số từ BG01**. BG03 ở danh sách đầu là "Giảm thời gian tìm tài xế", ở danh sách sau là "Nâng cao trải nghiệm khách hàng". RTM dùng danh sách sau. Nên giữ một danh sách.

@@ -104,7 +104,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 | **SW1** | Ứng dụng client (khách, tài xế, admin). Khi chấm: **Postman** | H1, H2, H3 | Gửi request REST/JSON kèm token đến Gateway |
 | **SW2** | **API Gateway** (Node.js) | H4 | Kiểm tra JWT, kiểm tra role, rate limit, đăng xuất, đổi REST → gRPC, health check |
 | **SW3** | `auth-service` | H4 | Tài khoản, mật khẩu băm, đăng nhập, cấp JWT, OTP |
-| **SW4** | `customer-service` | H4 | Hồ sơ khách hàng do khách tạo sau khi đăng nhập (mã hóa họ tên, ngày sinh). Không gọi và không bị service nào gọi |
+| **SW4** | `customer-service` | H4 | Hồ sơ khách hàng do khách tạo sau khi đăng nhập (mã hóa họ tên, ngày sinh; email tùy chọn lưu rõ — ADR-019). Không gọi và không bị service nào gọi |
 | **SW5** | `driver-service` | H4 | Hồ sơ tài xế, xe, duyệt hồ sơ, Online/Offline, vị trí, tìm tài xế trong 1 km, giữ chỗ tài xế |
 | **SW6** | `booking-service` | H4 | Booking, tính quãng đường ước tính, ghép tài xế, lời mời, phân công |
 | **SW7** | `trip-service` | H4 | Chuyến đi, trình tự trạng thái, hủy chuyến, lịch sử trạng thái |
@@ -121,7 +121,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 
 | Mã | Dữ liệu | Thuộc service | Lưu ở | Dữ liệu chính |
 |---|---|---|---|---|
-| **D1** | `accounts` | auth | H5 (auth-db) | Mã tài khoản (số nguyên), số điện thoại và email (lưu rõ, không trùng — ADR-012), mật khẩu băm scrypt, role, trạng thái |
+| **D1** | `accounts` | auth | H5 (auth-db) | Mã tài khoản (số nguyên), số điện thoại (lưu rõ, không trùng — ADR-012), mật khẩu băm scrypt, role, trạng thái. Không có email (2026-10-05 — ADR-019) |
 | **D2** | `otp_verifications` | auth | H5 (auth-db) | OTP băm, hạn, số lần thử |
 | **D3** | `customer_profiles` | customer | H5 (customer-db) | Họ tên (bắt buộc), ngày sinh (tùy chọn), đều mã hóa. Có thể chưa có dòng cho một tài khoản |
 | **D4** | `drivers`, `vehicles`, `vehicle_types` | driver | H5 (driver-db) | Hồ sơ, số giấy phép (mã hóa), trạng thái duyệt, Online/Offline, vị trí hiện tại; xe, biển số, loại xe |
@@ -158,7 +158,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách nhập số điện thoại, email (tùy chọn), mật khẩu. <br> 2. Hệ thống kiểm tra dữ liệu; số điện thoại hoặc email đã có → từ chối (409). <br> 3. Auth băm mật khẩu, tạo tài khoản role `customer`. Đăng ký công khai **không** tạo được role khác. <br> 4. Trả về tài khoản (không có mật khẩu). **Chưa có hồ sơ**: khách tạo hồ sơ sau khi đăng nhập (QT04). Auth không gọi service nào (ADR-013). |
+| **Procedures** | 1. Khách nhập số điện thoại, mật khẩu (không có email — ADR-019). <br> 2. Hệ thống kiểm tra dữ liệu; số điện thoại đã có → từ chối (409). <br> 3. Auth băm mật khẩu, tạo tài khoản role `customer`. Đăng ký công khai **không** tạo được role khác. <br> 4. Trả về tài khoản (không có mật khẩu). **Chưa có hồ sơ**: khách tạo hồ sơ sau khi đăng nhập (QT04). Auth không gọi service nào (ADR-013). |
 | **People** | P1 Khách hàng |
 | **Hardware** | H1 gửi request · H4 xử lý · H5 lưu tài khoản (auth-db) |
 | **Software** | SW1 → SW2 `POST /api/v1/accounts` (A04) → SW3 `RegisterCustomer` → SW11 |
@@ -168,10 +168,10 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Người dùng nhập số điện thoại (hoặc email) và mật khẩu. <br> 2. Auth tìm tài khoản theo số điện thoại (hoặc email) lưu rõ, có ràng buộc không trùng; so mật khẩu với bản băm. <br> 3. Sai thông tin → 401; tài khoản bị khóa → từ chối (Exception UC02). <br> 4. Đúng → cấp JWT chứa mã tài khoản, role, mã token, hạn. <br> 5. Chuỗi SQL injection như `' OR 1=1 --` không đăng nhập được vì truy vấn dùng tham số (mục 25). |
+| **Procedures** | 1. Người dùng nhập số điện thoại và mật khẩu. <br> 2. Auth tìm tài khoản theo số điện thoại lưu rõ, có ràng buộc không trùng; so mật khẩu với bản băm. <br> 3. Sai thông tin → 401; tài khoản bị khóa → từ chối (Exception UC02). <br> 4. Đúng → cấp JWT chứa mã tài khoản, role, mã token, hạn. <br> 5. Chuỗi SQL injection như `' OR 1=1 --` không đăng nhập được vì truy vấn dùng tham số (mục 25). |
 | **People** | P1, P2, P3 |
 | **Hardware** | H1/H2/H3 nhận và **lưu token** · H4 · H5 đọc auth-db |
-| **Software** | SW1 → SW2 `POST /api/v1/auth/login` (A05, body `phone` hoặc `email` + `password`) → SW3 `Login` → SW11 |
+| **Software** | SW1 → SW2 `POST /api/v1/auth/login` (A05, body `phone` + `password`) → SW3 `Login` → SW11 |
 | **Data** | Đọc D1 · Tạo D14 (token, không lưu ở server) |
 
 ### QT03 — Đăng xuất
@@ -198,7 +198,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Tài xế nhập số điện thoại, xin OTP. <br> 2. Auth tạo OTP, lưu bản băm kèm hạn; kênh gửi giả lập **ghi log** mã OTP, và khi `SIMULATION_MODE=true` thì **trả luôn mã trong response** để Postman dùng tiếp (ADR-014). <br> 3. Tài xế nhập OTP và thông tin tài khoản; OTP đúng và còn hạn → Auth tạo tài khoản role `driver` và **trả luôn token** (không cần đăng nhập riêng). <br> 4. Tài xế dùng token đó nộp hồ sơ cá nhân và xe. <br> 5. Hồ sơ ở trạng thái **chờ duyệt** (`PENDING`). |
+| **Procedures** | 1. Tài xế nhập số điện thoại, xin OTP. <br> 2. Auth tạo OTP, lưu bản băm kèm hạn; kênh gửi giả lập **ghi log** mã OTP, và khi `SIMULATION_MODE=true` thì **trả luôn mã trong response** để Postman dùng tiếp (ADR-014). <br> 3. Tài xế nhập OTP và thông tin tài khoản; OTP đúng và còn hạn → Auth tạo tài khoản role `driver` và **trả luôn token** (không cần đăng nhập riêng). <br> 4. Tài xế dùng token đó nộp hồ sơ cá nhân và xe. <br> 5. Hồ sơ ở trạng thái **chờ duyệt** (`PENDING`). <br> 6. Bị admin từ chối → tài xế xem lý do ở hồ sơ của mình rồi **nộp lại bằng cùng thao tác nộp hồ sơ** → hồ sơ về `PENDING` (FR43, thêm 2026-10-05). |
 | **People** | P2 Tài xế |
 | **Hardware** | H2 · H4 · H5 auth-db (tài khoản, OTP), driver-db (hồ sơ, xe) |
 | **Software** | SW2 A07 `POST /api/v1/otps`, A08 `POST /api/v1/driver-accounts`, A11 `POST /api/v1/drivers` → SW3 `RequestDriverOtp`, `RegisterDriver` → SW5 `SubmitApplication` · SW14 kênh OTP giả lập (log) |

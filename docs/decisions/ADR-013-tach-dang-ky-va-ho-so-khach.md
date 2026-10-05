@@ -31,8 +31,8 @@ Chọn **D**.
 
 | Điểm | Thiết kế |
 |---|---|
-| Đăng ký (A04 `POST /api/v1/accounts` — đường dẫn theo ADR-018) | Số điện thoại, email (tùy chọn), mật khẩu → tạo Account role `customer`. Không có họ tên. Không gọi service nào (A8) |
-| Tạo hồ sơ (A37 `POST /api/v1/customers`) | Sau khi đăng nhập. Họ tên bắt buộc, ngày sinh tùy chọn. `customer_id` = `x-account-id` do Gateway chuyển từ token; client không gửi mã. Đã có → 409 (C1, BRULE18) |
+| Đăng ký (A04 `POST /api/v1/accounts` — đường dẫn theo ADR-018) | Số điện thoại, mật khẩu → tạo Account role `customer` (sửa 2026-10-05: không còn email — ADR-019). Không có họ tên. Không gọi service nào (A8) |
+| Tạo hồ sơ (A37 `POST /api/v1/customers`) | Sau khi đăng nhập. Họ tên bắt buộc; ngày sinh, email tùy chọn (email thêm 2026-10-05 — ADR-019). `customer_id` = `x-account-id` do Gateway chuyển từ token; client không gửi mã. Đã có → 409 (C1, BRULE18) |
 | Xem / sửa (A38, A09, A10) | Chưa có hồ sơ → 404 (C5). Sửa chỉ qua `PATCH /api/v1/customers/me` |
 | Vì sao Customer tin `account_id` mà không hỏi Auth | Gateway đã kiểm tra chữ ký JWT do Auth cấp; chỉ Gateway vào được mạng nội bộ (mục chấm 8). Token là bằng chứng tài khoản tồn tại và có role `customer` |
 | Số điện thoại trong hồ sơ | **Bỏ**: số điện thoại là định danh đăng nhập, chỉ nằm ở Auth (file 03 mục 4.1, Q58) |

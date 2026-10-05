@@ -4,6 +4,7 @@
 > Sửa 2026-10-03: hồ sơ khách tạo sau khi đăng nhập, bỏ `customer_profiles.phone_enc` (mục 4.1, ADR-013); seed thêm KH3 chưa có hồ sơ (mục 14); bỏ `notifications.status`; thêm biến `SIMULATION_MODE`, `PAYMENT_CALLBACK_SECRET` (mục 13) — ADR-014. Cùng ngày: Q58 đóng (hồ sơ không lưu số điện thoại); `simulate_result: "MANUAL"` (Q57) giữ giao dịch `PENDING` chờ callback — không đổi schema (mục 8.4).
 > **Sửa 2026-10-03 lần 3 (luật thi: gõ tay mọi request, không mở tài liệu):** khóa chính và mọi cột tham chiếu đổi từ `uuid` sang **`bigint` identity** (mục 2, ADR-015); mã do API tạo bắt đầu từ **1000**, mã seed là số nhỏ theo quy luật (mục 14). **Bỏ chỉ mục mù**: số điện thoại, email lưu rõ, UNIQUE trực tiếp; chỉ mã hóa họ tên, ngày sinh khách và số giấy phép (mục 11.4, ADR-012 sửa). **Bỏ 4 bảng `outbox`** (mục 11.3, ADR-017). OTP băm bằng scrypt thay HMAC (bỏ một khóa). `idempotency_keys` đổi khóa chính thành (`payment_id`, `idempotency_key`) để khóa ngắn `k1` dùng lại được cho từng thanh toán (mục 8.6). Biến môi trường rút còn 14 (mục 13). Seed theo quy luật dễ nhớ (mục 14).
 > Rà soát cùng ngày: tạo ADR-015 (khóa chính), ADR-016 (HS256), ADR-017 (không outbox); tổng bảng sửa thành 17; `trips` cho địa chỉ NULL như `bookings`; mã giao dịch hoàn `SIM-R-<payment_id>`; mục 1.2 / 1.3 đúng thứ tự.
+> **Sửa 2026-10-05 (sinh viên chốt):** bỏ `accounts.email` bằng migration mới ở auth, thêm `customer_profiles.email` (tùy chọn, không UNIQUE, không mã hóa — mục 3.1, 4.1, ADR-019); seed email KH1, KH2 (mục 14); `drivers` cho nộp lại khi `REJECTED` (mục 5.2, FR43); ghi rõ chống lặp event không cần bảng riêng (mục 11.3); cổng gRPC riêng từng service (mục 13, ADR-020). **Ảnh `docs/architecture/bounded-context-db.png` cần vẽ lại** (hai bảng `accounts`, `customer_profiles`).
 > File này trả lời: **mỗi service lưu gì, ở đâu, kiểu gì, vì sao**. Đường dẫn REST và rpc: file 04.
 > Ký hiệu: **[ĐC]** = đã chốt trong `CLAUDE.md` / `srs.md`. **[BA]** = BA tự chọn, chưa ai xác nhận (gom ở mục 16). Tên trạng thái viết HOA vẫn là đề xuất như ở file 01, trừ tên đã có trong SRS.
 
@@ -73,12 +74,12 @@ Mọi bảng có `created_at timestamptz NOT NULL DEFAULT now()`; bảng có s�
 |---|---|---|---|
 | `account_id` | `bigint` identity | PK | Chính là `customer_id` / `driver_id` ở các service khác (mục 4.1) |
 | `phone` | `text` | NOT NULL, **UNIQUE**, CHECK `phone ~ '^0[0-9]{9}$'` | Lưu rõ, đã chuẩn hóa; dùng để đăng nhập và chặn trùng (A2). Không mã hóa (ADR-012 sửa 2026-10-03) |
-| `email` | `text` | NULL, **UNIQUE** | Tùy chọn [BA] — UC02 cho đăng nhập bằng "số điện thoại/email". Lưu chữ thường. PostgreSQL cho nhiều dòng NULL trong cột UNIQUE |
+| ~~`email`~~ | — | **Bỏ 2026-10-05** bằng migration mới `ALTER TABLE accounts DROP COLUMN email` (không sửa migration cũ) | Email chuyển sang hồ sơ khách (mục 4.1, ADR-019). Đăng nhập chỉ bằng số điện thoại |
 | `password_hash` | `text` | NOT NULL, CHECK `LIKE 'scrypt$%'` | Mục 2 |
 | `role` | `text` | NOT NULL, CHECK IN (`customer`, `driver`, `admin`) | Một cột, không có bảng ROLE / PERMISSION [ĐC] |
 | `status` | `text` | NOT NULL DEFAULT `ACTIVE`, CHECK IN (`ACTIVE`, `LOCKED`) | A3: tài khoản khóa bị từ chối đăng nhập |
 
-Index: hai UNIQUE ở trên là đủ (đăng nhập tra theo `phone` hoặc `email`).
+Index: UNIQUE `phone` là đủ (đăng nhập chỉ tra theo `phone`). Bỏ cột kéo theo bỏ ràng buộc `accounts_email_key`.
 
 ### 3.2 `otp_verifications` (FR39; A6; mục 21)
 
@@ -101,7 +102,6 @@ erDiagram
   accounts {
     bigint account_id PK
     text phone UK
-    text email UK
     text password_hash
     text role
     text status
@@ -130,8 +130,9 @@ Từ 2026-10-03 (ADR-013): một dòng **chỉ xuất hiện khi khách tự t�
 | `customer_id` | `bigint` | PK, **không identity, không DEFAULT** | **Bằng `account_id`** trong token, lấy từ metadata `x-account-id` do Gateway chuyển (C4) [BA, Q21]. Không có cột `account_id` riêng. PK đảm bảo "mỗi tài khoản nhiều nhất một hồ sơ": tạo lần hai vi phạm PK → 409 (C1, BRULE18) |
 | `full_name_enc` | `bytea` | NOT NULL | Họ tên, mã hóa. **Bắt buộc khi tạo** (C6). Giới hạn 100 ký tự kiểm tra ở ứng dụng trước khi mã hóa |
 | `date_of_birth_enc` | `bytea` | NULL | Ngày sinh (`YYYY-MM-DD`), mã hóa. **Tùy chọn** (C6) |
+| `email` | `text` | NULL, CHECK `char_length(email) <= 254`, **không UNIQUE** | **Thêm 2026-10-05** bằng migration mới (ADR-019). Tùy chọn (C7). Lưu chữ thường, đã cắt khoảng trắng; định dạng kiểm ở ứng dụng. **Lưu rõ, không mã hóa** (theo quyết định "không mã hóa email" — mục 11.4). Không UNIQUE vì không phải định danh đăng nhập; hai khách dùng chung email gia đình vẫn hợp lệ. 254 = độ dài tối đa của địa chỉ email theo RFC 5321 |
 
-Cột bắt buộc: `customer_id`, `full_name_enc` (cùng `created_at`, `updated_at`). Ngày sinh để NULL được vì UC03 không bắt buộc và không quy tắc nào dùng tới.
+Cột bắt buộc: `customer_id`, `full_name_enc` (cùng `created_at`, `updated_at`). Ngày sinh, email để NULL được vì UC03 không bắt buộc và không quy tắc nào dùng tới.
 
 **Bỏ `phone_enc`** (bản trước giữ bản chụp số điện thoại nhận qua S1):
 
@@ -149,6 +150,7 @@ erDiagram
     bigint customer_id PK "bằng account_id trong token, không có khóa ngoại"
     bytea full_name_enc "bắt buộc"
     bytea date_of_birth_enc "tùy chọn"
+    text email "tùy chọn, lưu rõ, không UNIQUE"
   }
 ```
 
@@ -168,7 +170,7 @@ Ba dòng này tạo bằng **migration** (dữ liệu danh mục), không phải
 
 | Field | Kiểu | Ràng buộc | Ghi chú / vì sao |
 |---|---|---|---|
-| `driver_id` | `bigint` | PK, không identity, không DEFAULT | Bằng `account_id` (như Customer). Nộp hồ sơ lần hai với cùng tài khoản → trùng PK → 409 |
+| `driver_id` | `bigint` | PK, không identity, không DEFAULT | Bằng `account_id` (như Customer). Nộp hồ sơ lần hai khi hồ sơ đang `PENDING` / `APPROVED` → 409. Đang `REJECTED` → **nộp lại** = `UPDATE` cùng dòng (FR43, D10, sửa 2026-10-05): ghi đè `full_name`, `license_number_enc`, xe; `approval_status = 'PENDING'`; `reject_reason`, `reviewed_by`, `reviewed_at` = NULL. Không cần cột mới |
 | `full_name` | `text` | NOT NULL, CHECK độ dài ≤ 100 | **Không mã hóa**: họ tên tài xế được hiển thị cho khách (FR14) |
 | `license_number_enc` | `bytea` | NOT NULL | Số giấy phép lái xe, mã hóa (mục chấm 24). **Không UNIQUE** (bỏ chỉ mục mù 2026-10-03): hai hồ sơ trùng số giấy phép do admin phát hiện lúc duyệt (FR39) |
 | `approval_status` | `text` | NOT NULL DEFAULT `PENDING`, CHECK IN (`PENDING`, `APPROVED`, `REJECTED`) | D4, D5 |
@@ -752,7 +754,7 @@ Bản chụp số điện thoại từ Auth sang hồ sơ khách **đã bỏ** 2
 | `idempotency_keys` | payment | Mục 8.6 | Mục chấm 30 | M5 |
 | `schema_migrations` | 7 service dùng PostgreSQL | `version text` PK (tên file, ví dụ `001_init.sql`); `applied_at timestamptz` | Biết migration nào đã chạy; "không sửa migration đã chạy" (`CLAUDE.md`) | Quy ước code |
 
-**Không có bảng "event đã xử lý"** ở consumer. Lý do: mỗi consumer chống lặp bằng chính trạng thái nghiệp vụ, rẻ hơn và không thể lệch với dữ liệu thật:
+**Không có bảng "event đã xử lý"** ở consumer (giữ nguyên, sinh viên xác nhận 2026-10-05). Payment, Driver, Booking **không lưu `event_id`**; chỉ Notification dùng `event_id` vì thông báo là bản ghi thêm mới, không có trạng thái để so. Lý do: chống lặp bằng chính trạng thái nghiệp vụ rẻ hơn và không thể lệch với dữ liệu thật. Đánh đổi: mỗi handler phải viết bước chuyển có điều kiện cẩn thận; không có nơi tra "event này đã xử lý chưa" (file 02 mục 6.4):
 
 | Consumer | Event | Chống lặp bằng |
 |---|---|---|
@@ -769,9 +771,9 @@ Ràng buộc 30 giây: event được gửi ngay trong request vừa commit, nê
 |---|---|---|---|
 | **Băm** | `accounts.password_hash`, `otp_verifications.otp_hash` | scrypt, salt ngẫu nhiên từng giá trị | Không |
 | **Mã hóa** | `customer_profiles.full_name_enc`, `date_of_birth_enc`; `drivers.license_number_enc` | AES-256-GCM, IV 12 byte ngẫu nhiên cho **từng giá trị** | Có, khi có khóa |
-| **Lưu rõ** (sửa 2026-10-03) | `accounts.phone`, `accounts.email`, `otp_verifications.phone` | — | — |
+| **Lưu rõ** (sửa 2026-10-03; 2026-10-05 email chuyển sang hồ sơ khách) | `accounts.phone`, `otp_verifications.phone`, `customer_profiles.email` | — | — |
 
-Phạm vi hẹp có chủ ý (ADR-012 sửa): **chỉ mã hóa trường cá nhân không dùng để tìm kiếm**. Số điện thoại, email là định danh đăng nhập và phải UNIQUE; mã hóa có IV ngẫu nhiên thì không tra và không UNIQUE được, phải thêm chỉ mục mù — thêm một khái niệm, một khóa, một cột. Bỏ đi để mọi thứ còn lại tự giải thích được khi thi.
+Phạm vi hẹp có chủ ý (ADR-012 sửa): **chỉ mã hóa trường cá nhân không dùng để tìm kiếm**. Số điện thoại là định danh đăng nhập và phải UNIQUE; mã hóa có IV ngẫu nhiên thì không tra và không UNIQUE được, phải thêm chỉ mục mù — thêm một khái niệm, một khóa, một cột. Bỏ đi để mọi thứ còn lại tự giải thích được khi thi.
 
 Định dạng một giá trị đã mã hóa (`bytea`): `IV (12 byte) ‖ dữ liệu mã hóa ‖ thẻ xác thực (16 byte)`. GCM vừa giữ bí mật vừa phát hiện dữ liệu bị sửa. Bỏ byte phiên bản khóa của bản trước (xoay khóa để "có thể làm sau").
 
@@ -791,7 +793,8 @@ Field **không** mã hóa và lý do:
 
 | Field | Vì sao |
 |---|---|
-| Số điện thoại, email (auth) | Định danh đăng nhập, cần UNIQUE và tra cứu; bảo vệ bằng mạng nội bộ (database không mở cổng) và quyền ở API (không API nào trả số điện thoại của người khác) |
+| Số điện thoại (auth) | Định danh đăng nhập, cần UNIQUE và tra cứu; bảo vệ bằng mạng nội bộ (database không mở cổng) và quyền ở API (không API nào trả số điện thoại của người khác) |
+| Email (hồ sơ khách, từ 2026-10-05) | Theo quyết định đã chốt "không mã hóa số điện thoại, email" (`CLAUDE.md`). Thông tin liên hệ, không phải định danh; giữ phạm vi mục 24 hẹp (chỉ họ tên, ngày sinh, số giấy phép). Bảo vệ bằng quyền ở API (chỉ chủ hồ sơ và admin xem — C2) và mạng nội bộ. Đánh đổi: email đọc được trong `customer-db` (ADR-019) |
 | Tọa độ tài xế, điểm đón, điểm đến | Phải tính khoảng cách trong SQL (mục chấm 13); bảo vệ bằng quyền truy cập ở API và mạng nội bộ (NFR08) |
 | Họ tên tài xế, biển số | Hiển thị cho khách (FR14) |
 | Dữ liệu giao dịch | Không lưu số thẻ / tài khoản (BRULE09); `provider_transaction_id` không phải bí mật |
@@ -852,6 +855,7 @@ Hằng số trong code (không phải biến môi trường):
 | Hệ số quãng đường | 1,3 | FR16 [ĐC] |
 | Số lần nhập sai OTP | 5 | A6 [BA] |
 | Deadline Gateway → service / service → service / health | 3 000 / 1 000 / 1 000 ms | Q25 [BA] |
+| Cổng gRPC của từng service (sửa 2026-10-05) | auth 50051, customer 50052, driver 50053, booking 50054, trip 50055, payment 50056, notification 50057, rating 50058; biến `*_GRPC_ADDR` ở bên gọi mang đúng cổng | ADR-020; file 02 mục 2.3 |
 | Thử lại gửi Kafka | tối đa 3 lần, tổng ≤ 1 giây | ADR-017 [BA] |
 
 Đánh đổi: đổi một hằng số phải build lại image; chấp nhận vì đó là quy tắc nghiệp vụ đã chốt, không phải thứ chỉnh khi demo.
@@ -874,14 +878,14 @@ Yêu cầu chung:
 
 | Mã | `account_id` | Số điện thoại | Role | Trạng thái | Hồ sơ khách | Dùng cho mục |
 |---|---|---|---|---|---|---|
-| KH1 | **1** | `0900000001` | customer | ACTIVE | Nguyễn Văn An, 2000-01-01 | 11, 14–20, 24, 26, 27, 28, 30 |
-| KH2 | **2** | `0900000002` | customer | ACTIVE | Trần Thị Bình, 2000-02-02 | 11 (xem hồ sơ người khác → 403) |
+| KH1 | **1** | `0900000001` | customer | ACTIVE | Nguyễn Văn An, 2000-01-01, `kh1@cab.vn` | 11, 14–20, 24, 26, 27, 28, 30 |
+| KH2 | **2** | `0900000002` | customer | ACTIVE | Trần Thị Bình, 2000-02-02, `kh2@cab.vn` | 11 (xem hồ sơ người khác → 403) |
 | KH3 | **3** | `0900000003` | customer | ACTIVE | **Chưa có** | 11 (phụ: xem → 404, tạo → 201) |
 | KH9 | **9** | `0900000009` | customer | **LOCKED** | Lê Văn Chín | 10 (tài khoản khóa → 403) |
 | TX1–TX8 | **11–18** | `0910000001` … `0910000008` | driver | ACTIVE | — | Bảng dưới |
 | AD1 | **99** | `0999999999` | admin | ACTIVE | — | 22, 27 |
 
-Quy luật: **khách** `090000000n` ↔ mã `n`; **tài xế** `091000000n` ↔ mã `10 + n`; **admin** toàn số 9 ↔ mã `99`. Không seed email. Seed của `customer-service` chỉ cần các mã 1, 2, 9 — không gọi `auth-service`.
+Quy luật: **khách** `090000000n` ↔ mã `n`; **tài xế** `091000000n` ↔ mã `10 + n`; **admin** toàn số 9 ↔ mã `99`. Tài khoản không có email (ADR-019); email seed nằm ở hồ sơ khách theo quy luật `khn@cab.vn` (KH1, KH2; KH9 không có email). Seed của `customer-service` chỉ cần các mã 1, 2, 9 — không gọi `auth-service`.
 
 **Tài xế (driver) — mục 13 cần ≥ 5 tài xế ở các trạng thái khác nhau:**
 
@@ -928,11 +932,12 @@ Mỗi Trip seed có đủ dòng `trip_status_history`; Offer và phân công c�
 | `ROLE`, `PERMISSION`, `ROLE_PERMISSION` | 3 bảng | Cột `accounts.role` | [ĐC] Ba role cố định |
 | `REFRESH_TOKEN` | Có | **Không** | Không FR nào yêu cầu làm mới token; đăng xuất dùng danh sách thu hồi trong Redis (FR42) |
 | `OTP_VERIFICATION.user_id` | FK tới user | Không có | Tài khoản tài xế tạo sau khi OTP đúng (A6) |
-| Số điện thoại, email | `VARCHAR` rõ | `text` rõ, UNIQUE — **giống** tham chiếu (2026-10-03 bỏ mã hóa + chỉ mục mù) | ADR-012 sửa: mã hóa phạm vi hẹp |
+| Số điện thoại | `VARCHAR` rõ | `text` rõ, UNIQUE — **giống** tham chiếu (2026-10-03 bỏ mã hóa + chỉ mục mù) | ADR-012 sửa: mã hóa phạm vi hẹp |
+| Email | `USER.email` (định danh tài khoản) | `customer_profiles.email` rõ, tùy chọn, **không** UNIQUE; tài khoản không có email (2026-10-05) | ADR-019: email là thông tin liên hệ của khách, chỉ lưu một nơi; đăng nhập bằng số điện thoại là đủ |
 | Họ tên, ngày sinh khách; số giấy phép | `VARCHAR` / `DATE` rõ | `bytea` mã hóa AES-256-GCM | Mục chấm 24 |
 | `CUSTOMER_PROFILE.user_id`, `DRIVER.user_id` | Mã riêng + `user_id` | PK **bằng** `account_id` | Không phát sinh lời gọi đổi mã (GĐ-9) |
 | `CUSTOMER_PROFILE.address` | Có | Không | SRS không có thuộc tính này |
-| `DRIVER` + `DRIVER_PROFILE` + `DRIVER_LOCATION` + `DRIVER_APPLICATION` | 4 bảng | 1 bảng `drivers` | BRULE01–03 cần trạng thái duyệt, trạng thái nhận chuyến và vị trí trong **một** truy vấn; hồ sơ chỉ nộp một lần nên trạng thái duyệt là cột của `drivers` |
+| `DRIVER` + `DRIVER_PROFILE` + `DRIVER_LOCATION` + `DRIVER_APPLICATION` | 4 bảng | 1 bảng `drivers` | BRULE01–03 cần trạng thái duyệt, trạng thái nhận chuyến và vị trí trong **một** truy vấn; nộp lại (FR43) ghi đè cùng dòng, không giữ lịch sử các lần nộp, nên trạng thái duyệt là cột của `drivers` |
 | `VEHICLE_TYPE.vehicle_type_id INT` | Số | Mã chữ `code` | Mã đi qua event và service khác vẫn đọc được |
 | `DRIVER_OFFER.price_offer`, `vehicle_id` | Có | Không | Cước cố định cho cả booking (BRULE08); khách chỉ chọn loại xe |
 | `BOOKING` | Không có phương thức thanh toán, cước | Có `payment_method`, `estimated_distance_m`, `fare_amount`, `payment_id` | Trả trước, cước cố định khi đặt (ADR-009) |
@@ -959,12 +964,12 @@ Mỗi Trip seed có đủ dòng `trip_status_history`; Offer và phân công c�
 | D4 | MongoDB cho Notification (giữ theo tham chiếu) | Đổi sang PostgreSQL: một bảng + UNIQUE tương đương |
 | D5 | Quãng đường lưu và truyền bằng **mét** (số nguyên); `CLAUDE.md` viết "số km" | S4 đổi kiểu field; công thức phải làm tròn số thực |
 | D6 | Mã loại xe `MOTORBIKE`, `CAR_4`, `CAR_7`; phương thức `CASH`, `ONLINE` | Tên hằng số |
-| D7 | Email là định danh đăng nhập tùy chọn; số điện thoại bắt buộc | Bỏ cột `email` |
+| ~~D7~~ | **Đã đổi 2026-10-05 (ADR-019):** email không còn là định danh đăng nhập; chuyển sang `customer_profiles.email` | Thêm lại cột `accounts.email` UNIQUE và nhánh đăng nhập bằng email |
 | D8 | Hồ sơ khách **không** giữ số điện thoại (sửa 2026-10-03, mục 4.1 — sinh viên đã chốt, Q58 đóng); mã hóa cả họ tên, ngày sinh | Thêm cột số điện thoại do client gửi khi tạo hồ sơ |
-| D9 | Mỗi tài xế một xe; hồ sơ nộp một lần. Số giấy phép **không** còn UNIQUE (mã hóa, không chỉ mục mù — 2026-10-03) | Muốn UNIQUE thì phải thêm lại chỉ mục mù hoặc bỏ mã hóa số giấy phép |
+| D9 | Mỗi tài xế một xe; hồ sơ nộp lại được khi bị từ chối (FR43, ghi đè cùng dòng — đổi 2026-10-05). Số giấy phép **không** còn UNIQUE (mã hóa, không chỉ mục mù — 2026-10-03) | Muốn UNIQUE thì phải thêm lại chỉ mục mù hoặc bỏ mã hóa số giấy phép |
 | D10 | Chỉ lưu vị trí hiện tại của tài xế (Q11) | Thêm bảng lịch sử vị trí |
 | D11 | Payment giữ hạn 10 phút và đếm lượt; Booking biết qua K6 `CANCELED` (mục 8.5) | Chuyển `expires_at` sang Booking; K6, K4 đổi vai |
-| D12 | Không có bảng "event đã xử lý" | Thêm bảng ở 3 consumer |
+| D12 | Không có bảng "event đã xử lý"; Payment, Driver, Booking chống lặp bằng trạng thái, Notification bằng UNIQUE (`event_id`, `recipient_id`) — **sinh viên xác nhận 2026-10-05** | Thêm bảng ở 3 consumer |
 | D13 | Thang điểm 1–5; `scrypt`; AES-256-GCM; cửa sổ rate limit cố định | Cục bộ từng service |
 | ~~D14~~ | Đã đóng 2026-10-03: **không** outbox (ADR-017) | Thêm lại 4 bảng `outbox` và tiến trình gửi nếu cần bảo đảm không mất event (ADR-005) |
 | D15 | Mã seed theo quy luật (khách `n`, tài xế `10 + n`, admin 99; booking = payment = trip = 1…7); mã qua API từ 1000 (`START WITH 1000`, ADR-015) | Mục 14; kịch bản thi |
@@ -977,7 +982,7 @@ Mỗi Trip seed có đủ dòng `trip_status_history`; Offer và phân công c�
 | # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
 |---|---|---|---|---|
 | Q46 | Bảng Entity trong `srs.md` còn khác thiết kế: `password_hash` ở Customer / Driver / Operator; bảng Role; `DriverLocation` là lịch sử; `Fare.distance_km`; `VehicleType` ghi "Sedan, SUV". SRS đã có dòng dẫn sang file này. Có sửa bảng đó không? | (a) Giữ là mô hình khái niệm; (b) sửa cho khớp | (a) | SV |
-| Q47 | Hồ sơ tài xế bị từ chối có được nộp lại không? SRS không nói | (a) Không, trong phạm vi này; (b) được, hồ sơ về `PENDING` | (a) | SV |
+| ~~Q47~~ | Hồ sơ tài xế bị từ chối có được nộp lại không? | **Đóng 2026-10-05 theo (b)** — đổi quyết định "không" của 2026-10-04: nộp lại bằng A11, hồ sơ về `PENDING` (FR43) | — | — |
 | Q48 | Địa chỉ đón / trả, lý do hủy, nhận xét có cần mã hóa không (NFR08 nhắc "dữ liệu vị trí")? | (a) Không; (b) mã hóa địa chỉ | (a) — mục 24 chứng minh trên dữ liệu định danh | SV / GV |
 | Q49 | Dùng MongoDB cho Notification có đáng thêm một công nghệ không? | (a) Giữ; (b) PostgreSQL cho đồng nhất | (a) — có lý do theo nhu cầu, khớp tham chiếu | SV |
 

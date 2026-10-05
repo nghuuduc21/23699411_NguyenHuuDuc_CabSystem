@@ -4,6 +4,7 @@
 > **Sửa 2026-10-03 lần 4 theo 04 lần 4 (ADR-018):** mọi đường dẫn dưới `/api/v1/`; đổi trạng thái là `PATCH` + `status`; được **dùng lại tab**; 30 giây **gồm cả giải thích**, nên mỗi mục chỉ giữ request chính, phần còn lại ghi `(tùy chọn)`.
 > Luật thi: Postman **không lưu sẵn** gì; **được copy** giá trị từ response; **được dùng lại tab và mở tab mới**; lệnh terminal **gõ đầy đủ**; **không mở ghi chú**. Mỗi mục khoảng **30 giây, vừa làm vừa nói**.
 > **Sửa 2026-10-05** (sinh viên chốt spec 17-18, 20-29): mục 16 thêm xem thông báo là request chính; mục 18 gõ ở tab GET đang mang token KH1; mục 29 bấm Send ở tab **đăng nhập** KH1; `driver_avg` in `5`.
+> **Sửa 2026-10-05 lần 2** (sinh viên chốt): tài khoản chỉ có số điện thoại + mật khẩu, email nằm ở hồ sơ khách (mục 9, 11 — ADR-019); bị từ chối thì nộp lại bằng chính request nộp hồ sơ (mục 21, 22 — FR43); cổng gRPC riêng 50051–50058 (mục 8, mục 4 — ADR-020). Không thêm request vào chuỗi chính.
 > Cách dùng: học thuộc mục 4 ("những thứ phải nhớ") trước, rồi tập từng mục ở mục 2 theo thứ tự ở mục 3.
 
 ## 1. Sáu thao tác Postman dùng ở mọi mục
@@ -114,9 +115,9 @@ Nói gì: topic **tạo sẵn** bởi `kafka-init`, broker tắt tự tạo topi
 | # | Gõ | Kết quả |
 |---|---|---|
 | 1 | Terminal: `docker compose ps` | Cột PORTS: chỉ `gateway` `3000` và `kafka-ui` `8080` |
-| 2 | Postman `GET localhost:50051` | `Error: connect ECONNREFUSED` |
+| 2 | Postman `GET localhost:50051` (cổng của auth; 50052–50058 cũng vậy) | `Error: connect ECONNREFUSED` |
 
-Nói gì: service chỉ nghe trong mạng Compose; database, Redis, Kafka không có `ports`. Mọi request từ ngoài buộc qua Gateway, nơi có JWT, role, rate limit. Nếu gọi thẳng `27017` (hay `5432`) mà có trả lời: đó là MongoDB / PostgreSQL **cài trên Windows**, không phải container của project (đã gặp thật) — chứng minh bằng `docker compose ps -a`: cột cổng của `notification-db` không có `->`. Tốt nhất tắt dịch vụ MongoDB của Windows trước buổi thi.
+Nói gì: service chỉ nghe trong mạng Compose, mỗi service một cổng gRPC riêng **50051–50058** (auth 1 … rating 8, theo thứ tự 8 service); thử cổng nào cũng `ECONNREFUSED`. Database, Redis, Kafka không có `ports`. Mọi request từ ngoài buộc qua Gateway, nơi có JWT, role, rate limit. Nếu gọi thẳng `27017` (hay `5432`) mà có trả lời: đó là MongoDB / PostgreSQL **cài trên Windows**, không phải container của project (đã gặp thật) — chứng minh bằng `docker compose ps -a`: cột cổng của `notification-db` không có `->`. Tốt nhất tắt dịch vụ MongoDB của Windows trước buổi thi.
 
 ### Mục 9 — Đăng ký khách hàng → đăng nhập được
 
@@ -128,7 +129,7 @@ Nói gì: service chỉ nghe trong mạng Compose; database, Redis, Kafka không
 
 Chạy lại lần hai thì đổi số thành `0901234568`.
 
-Nói gì: đăng ký = **tạo một tài khoản** nên là `POST /api/v1/accounts` (danh từ, không phải `/register`); chỉ tạo `customer` ở `auth-service`, mật khẩu băm scrypt, không gọi service nào; hồ sơ khách tạo sau khi đăng nhập. `auth/login` là ngoại lệ có chủ đích: quy ước phổ biến, đăng nhập không tạo bản ghi nào.
+Nói gì: đăng ký = **tạo một tài khoản** nên là `POST /api/v1/accounts` (danh từ, không phải `/register`); body **chỉ có số điện thoại và mật khẩu** — tài khoản không có email, đăng nhập bằng số điện thoại (gửi thêm `email` → 400 vì là field lạ); chỉ tạo `customer` ở `auth-service`, mật khẩu băm scrypt, không gọi service nào; hồ sơ khách (họ tên, ngày sinh, email) tạo sau khi đăng nhập. `auth/login` là ngoại lệ có chủ đích: quy ước phổ biến, đăng nhập không tạo bản ghi nào.
 
 ### Mục 10 — Đăng nhập → cấp token
 
@@ -145,11 +146,11 @@ Nói gì: một API đăng nhập cho cả ba role; JWT ký **HS256** bằng `JW
 
 | # | Gõ | Kết quả |
 |---|---|---|
-| 1 | `GET localhost:3000/api/v1/customers/1`, `[KH1]` — tab này = **tab GET** | 200 `{"customer_id":1,"name":"Nguyễn Văn An","dob":"2000-01-01"}` |
+| 1 | `GET localhost:3000/api/v1/customers/1`, `[KH1]` — tab này = **tab GET** | 200 `{"customer_id":1,"name":"Nguyễn Văn An","dob":"2000-01-01","email":"kh1@cab.vn"}` |
 | 2 | Sửa tab: `/customers/2` | 403 `NOT_OWNER` |
-| (3) | (tùy chọn, tạo hồ sơ) `POST localhost:3000/api/v1/customers`, `[token mục 9]`, body `{"name":"Pham Duc"}` | 201 `customer_id` 1000 |
+| (3) | (tùy chọn, tạo hồ sơ) `POST localhost:3000/api/v1/customers`, `[token mục 9]`, body `{"name":"Pham Duc"}` (muốn thì thêm `"email":"duc@cab.vn"`) | 201 `customer_id` 1000 |
 
-Nói gì: đúng mẫu `/api/v1/customers/{mã}`. Mã là **số nguyên** để gõ tay được; vì dễ đoán nên mọi API theo mã đều kiểm tra chủ → khách 1 xem khách 2 bị 403. Tạo hồ sơ là `POST /api/v1/customers`, không gửi mã: `customer_id` lấy từ token.
+Nói gì: đúng mẫu `/api/v1/customers/{mã}`; mã của mình là `account_id` trong response đăng nhập. Email là thông tin liên hệ nên nằm ở **hồ sơ**, không ở tài khoản: mỗi thông tin chỉ lưu một nơi (số điện thoại ở auth, email ở hồ sơ). Email lưu rõ, không UNIQUE; chỉ họ tên, ngày sinh mã hóa. Mã là **số nguyên** để gõ tay được; vì dễ đoán nên mọi API theo mã đều kiểm tra chủ → khách 1 xem khách 2 bị 403. Tạo hồ sơ là `POST /api/v1/customers`, không gửi mã: `customer_id` lấy từ token.
 
 ### Mục 12 — Xem tài xế theo mã (có token)
 
@@ -279,6 +280,8 @@ Lưu ý: **luôn copy `driver_id` từ response bước 3**, không đoán số.
 
 Nói gì (nói trong lúc gõ, mục này dài): xin OTP = **tạo một mã OTP** (`POST /api/v1/otps`), lưu dạng băm, hạn 5 phút; giả lập nên trả mã trong response. Tài khoản tài xế là tập riêng `/api/v1/driver-accounts` vì phải có OTP. Nộp hồ sơ = `POST /api/v1/drivers`, số giấy phép mã hóa, mới nộp là `PENDING`.
 
+Nếu bị hỏi "hồ sơ bị từ chối thì sao?": **bị từ chối thì nộp lại bằng chính request nộp hồ sơ** (bước 3, cùng body) → 200, hồ sơ về `PENDING`, lý do cũ bị xóa, admin duyệt lại như mục 22 (FR43). Đang chờ duyệt hoặc đã duyệt mà nộp lại → 409.
+
 ### Mục 22 — Admin duyệt / từ chối hồ sơ
 
 Chuẩn bị: mục 21 (có D); token AD1 (mục 10). Chưa chạy 21 thì duyệt TX7 (17).
@@ -289,6 +292,8 @@ Chuẩn bị: mục 21 (có D); token AD1 (mục 10). Chưa chạy 21 thì duy�
 | (2) | (tùy chọn) Sửa tab: `drivers/17`, body `{"approval_status":"REJECTED","reason":"thieu giay to"}` | 200 `REJECTED` |
 
 Nói gì: duyệt = đổi **trạng thái duyệt** → `PATCH` + `approval_status` (tách khỏi `status` Online / Offline). Chỉ admin (403 với role khác). Đã xét thì không xét lại (409). Lưu `reviewed_by`, `reviewed_at`; Driver phát `driver.application-reviewed`.
+
+Nếu bị hỏi "từ chối rồi tài xế làm gì?": tài xế nhận thông báo "Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại.", xem lý do ở `GET drivers/{mã của mình}`, rồi **nộp lại bằng chính request nộp hồ sơ** (`POST drivers`, mục 21 bước 3) → 200 `PENDING`; admin duyệt lại bằng request 1 ở trên. Không phải API mới: cùng một thao tác "nộp hồ sơ", khác ở chỗ ghi đè hồ sơ cũ (200) thay vì tạo mới (201).
 
 ### Mục 23 — Tài xế bật / tắt nhận chuyến
 
@@ -406,9 +411,11 @@ Giảng viên gọi lệch thứ tự: mục chỉ đọc (6, 11–14, 24–26, 
 | **Tìm, lọc, trang** | Query: `?lat=10.82&lng=106.68&limit=2&page=2` | |
 | **"Hành động" thành tài nguyên** (đều sau `/api/v1`) | Đăng ký `POST /api/v1/accounts`; OTP `POST /api/v1/otps`; tài xế đăng ký `POST /api/v1/driver-accounts`; thanh toán `POST /api/v1/payments/{mã}/transactions`; callback `POST /api/v1/payment-callbacks`; đánh giá `POST /api/v1/ratings` | Mỗi lần làm tạo ra một bản ghi |
 | **Ngoại lệ** | `POST /api/v1/auth/login`, `POST /api/v1/auth/logout` (quy ước phổ biến, không tạo bản ghi); `/health`, `/ready`, `/health/services` không có `/api/v1` | |
-| `me` | `/api/v1/customers/me`, `/api/v1/drivers/me` = của người trong token | |
+| `me` | `/api/v1/customers/me`, `/api/v1/drivers/me` = của người trong token (chỉ các route đã có; không thêm mới). Xem hồ sơ của mình: `/customers/{account_id}`, `/drivers/{account_id}` | `account_id` có trong response đăng nhập |
+| Tài khoản và hồ sơ | Tài khoản = số điện thoại + mật khẩu (đăng nhập bằng số). Hồ sơ khách = họ tên, ngày sinh, **email** (tùy chọn) | Số ở auth, email ở hồ sơ — mỗi thứ một nơi |
+| Hồ sơ tài xế bị từ chối | Nộp lại bằng chính `POST /api/v1/drivers` (cùng body) → 200 `PENDING` | "Từ chối thì nộp lại" |
 | Mật khẩu mọi tài khoản seed | `12345678` | Một mật khẩu |
-| Khách | KH1 `0900000001` (mã **1**, hồ sơ "Nguyễn Văn An", 2000-01-01); KH2 `0900000002` (**2**); KH3 `0900000003` (**3**, chưa có hồ sơ); KH9 `0900000009` (**9**, **bị khóa**) | `090000000n` ↔ mã `n` |
+| Khách | KH1 `0900000001` (mã **1**, hồ sơ "Nguyễn Văn An", 2000-01-01, `kh1@cab.vn`); KH2 `0900000002` (**2**); KH3 `0900000003` (**3**, chưa có hồ sơ); KH9 `0900000009` (**9**, **bị khóa**) | `090000000n` ↔ mã `n` |
 | Tài xế | TX1–TX8: `0910000001`…`0910000008` ↔ mã **11–18** | `091000000n` ↔ mã `10 + n` |
 | Vai trò tài xế seed | TX1 `CAR_4` rảnh (15–17, 23); TX2 xe máy; TX3 `CAR_4` (chuyến 4); TX4 `CAR_7` (B7); TX5 `OFFLINE`; TX6 bận chuyến 5 (18); TX7 chờ duyệt (22); TX8 xa 2,2 km | TXn đứng ở `10.82n, 106.68`, cách P0 n × 111 m |
 | Admin | AD1 `0999999999` ↔ mã **99** | Toàn số 9 |
@@ -423,7 +430,7 @@ Giảng viên gọi lệch thứ tự: mục chỉ đọc (6, 11–14, 24–26, 
 | Mã giao dịch | `SIM-<payment_id>-<lần thử>` → `SIM-7-1` | |
 | Giả lập thanh toán | `simulate_result`: không gửi = thành công ngay; `FAILED`; `MANUAL` = chờ callback | |
 | Số mới khi demo | Khách `0901234567` (lần hai `…68`); tài xế `0911111111` (lần hai `…12`) | |
-| Địa chỉ | Gateway `localhost:3000`; Kafka UI `localhost:8080`; service bên trong `:50051` (không mở) | |
+| Địa chỉ | Gateway `localhost:3000`; Kafka UI `localhost:8080`; service bên trong `:50051`–`:50058` (không mở) | auth 1, customer 2, driver 3, booking 4, trip 5, payment 6, notification 7, rating 8 |
 | Container database | `<context>-db`: `auth-db`, `customer-db`, … (PostgreSQL), `notification-db` (MongoDB) | |
 | Database, user | Database = tên context; user **`cab`**; mật khẩu `cab123` | |
 | Lệnh xem bảng | `docker exec customer-db psql -U cab -d customer -c "table customer_profiles"` | `table <bảng>` = `select *` |

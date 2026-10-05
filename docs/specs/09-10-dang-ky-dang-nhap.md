@@ -2,6 +2,7 @@
 
 > Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi**: mã số nguyên (ADR-015), JWT HS256 với `JWT_SECRET` (ADR-016), số điện thoại / email lưu rõ, bỏ chỉ mục mù và `AUTH_DATA_KEY` (ADR-012 sửa), seed theo 03 mục 14, đăng nhập bằng field `phone` hoặc `email`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3 (2026-10-03):** response đăng nhập dùng field `token`; định danh sai định dạng → `INVALID_PHONE` / `INVALID_EMAIL`; Gateway đọc body là JSON bất kể `Content-Type`; chuỗi mục 27 theo 04 mục 5.3. **Đồng bộ với 04 lần 4 (ADR-018):** A04 = `POST /api/v1/accounts`, A05 = `POST /api/v1/auth/login`, A06 = `POST /api/v1/auth/logout` (hai ngoại lệ có chủ đích); chuỗi mục 9, 10 theo 04 mục 5.1 (mục 10 đăng nhập ba role, tạo ba tab token). Lần 3 từng bỏ tiền tố `/api/v1`; lần 4 **đưa trở lại** theo giảng viên (ADR-018) — mọi đường dẫn nghiệp vụ trong spec này nằm dưới `/api/v1/`.
 > **Sửa 2026-10-04 theo phản hồi dev-agent sau khi code:** Gateway bắt buộc claim `exp` (mục 4.1 bước 4); ghi nhận thư viện `jsonwebtoken` 9.0.3, chữ `Bearer` không phân biệt hoa thường, lệnh Redis có hạn 500 ms, lỗi không lường trước ở `auth-service` → 503 (mục 4.1, 5); DN-Q1, DN-Q2, DN-Q4 chốt theo đề xuất (a). Tham chiếu "spec 21" đổi thành spec `12-13-21-23-tai-xe`.
+> **Sửa 2026-10-05 (sinh viên chốt) — ADR-019:** tài khoản **chỉ còn số điện thoại + mật khẩu**; đăng nhập **chỉ bằng số điện thoại**. A04 không nhận `email` (gửi lên → 400 `INVALID_INPUT` như field lạ); A05 chỉ nhận `phone`; proto bỏ field `email` (`reserved 2`); migration mới `003_bo-email-accounts.sql` bỏ cột `accounts.email` (không sửa `001`); bỏ mã `EMAIL_ALREADY_EXISTS`, auth không còn trả `INVALID_EMAIL`. Email chuyển sang hồ sơ khách (spec 11). AC mới: AC-DN-21, AC-DN-22, AC-DN-23; AC đổi: AC-DN-05. DN1, DN2 đổi.
 > Mục chấm **9, 10, 25, 27**; bổ trợ **24** (mật khẩu băm). FR26, FR42.
 > Đầu vào: `CLAUDE.md`; `srs.md` (FR26, FR42, UC01, UC02, UC33, AC27, RTM26, RTM27); `docs/design/01` quy tắc A1–A5, A8; `docs/design/02` G1, G10; `docs/design/03` mục 2, 3.1, 11.4, 12, 13, 14; `docs/design/04` A04–A06, mục 1, 1.1, 1.7, 3; ADR-010, ADR-012, ADR-013, ADR-015, ADR-016.
 > Phụ thuộc: **spec 00**. Ngoài phạm vi: rate limit (mục 29), OTP và đăng ký tài xế (mục 21 — spec `12-13-21-23-tai-xe`), toàn bộ ma trận role (mục 28 — spec này chỉ dựng cơ chế).
@@ -24,9 +25,9 @@
 | | Nội dung |
 |---|---|
 | Tác nhân | Khách hàng (chưa đăng nhập) |
-| Tiền điều kiện | Số điện thoại / email chưa thuộc tài khoản nào |
-| Luồng chính | 1. Gửi `phone`, `email` (tùy chọn), `password`. 2. Gateway kiểm tra hình thức. 3. `auth-service` chuẩn hóa số về `0` + 9 chữ số, email về chữ thường, kiểm tra định dạng. 4. Băm mật khẩu (scrypt), `INSERT` Account `role = customer`, `status = ACTIVE`; UNIQUE chặn trùng. 5. Trả 201 `account_id`, `role` |
-| Ngoại lệ | Thiếu / sai kiểu / field lạ → 400. Sai định dạng số, email, mật khẩu < 8 ký tự → 400. Số hoặc email đã có → 409. `auth-service` dừng → 503 |
+| Tiền điều kiện | Số điện thoại chưa thuộc tài khoản nào |
+| Luồng chính | 1. Gửi `phone`, `password` (không có field nào khác). 2. Gateway kiểm tra hình thức. 3. `auth-service` chuẩn hóa số về `0` + 9 chữ số, kiểm tra định dạng. 4. Băm mật khẩu (scrypt), `INSERT` Account `role = customer`, `status = ACTIVE`; UNIQUE chặn trùng. 5. Trả 201 `account_id`, `role` |
+| Ngoại lệ | Thiếu / sai kiểu / field lạ (gồm `email`, `role`) → 400 `INVALID_INPUT`. Sai định dạng số, mật khẩu < 8 ký tự → 400. Số đã có → 409. `auth-service` dừng → 503 |
 | Hậu điều kiện | Một Account `customer`; **chưa có hồ sơ** (A8, ADR-013); không gọi service nào |
 
 ### 2.2 UC02 — Đăng nhập (A05)
@@ -35,8 +36,8 @@
 |---|---|
 | Tác nhân | Khách hàng, tài xế, admin |
 | Tiền điều kiện | Đã có tài khoản |
-| Luồng chính | 1. Gửi `phone` (hoặc `email`) và `password`. 2. `auth-service` chuẩn hóa → `SELECT … WHERE phone = $1`. 3. So mật khẩu scrypt (`timingSafeEqual`). 4. Kiểm tra `status = ACTIVE`. 5. Ký JWT **HS256** bằng `JWT_SECRET`, trả token |
-| Ngoại lệ | Định danh sai định dạng → 400 `INVALID_PHONE` / `INVALID_EMAIL`. Không có tài khoản **hoặc** sai mật khẩu → cùng 401 `INVALID_CREDENTIALS`. Mật khẩu đúng nhưng `LOCKED` → 403 |
+| Luồng chính | 1. Gửi `phone` và `password`. 2. `auth-service` chuẩn hóa → `SELECT … WHERE phone = $1`. 3. So mật khẩu scrypt (`timingSafeEqual`). 4. Kiểm tra `status = ACTIVE`. 5. Ký JWT **HS256** bằng `JWT_SECRET`, trả token kèm `account_id` (mã này dùng để xem hồ sơ của chính mình: `/customers/{id}`, `/drivers/{id}`) |
+| Ngoại lệ | Số sai định dạng → 400 `INVALID_PHONE`. Gửi `email` → 400 `INVALID_INPUT` (field lạ). Không có tài khoản **hoặc** sai mật khẩu → cùng 401 `INVALID_CREDENTIALS`. Mật khẩu đúng nhưng `LOCKED` → 403 |
 | Hậu điều kiện | Client có token mang `sub`, `role`, `jti`, `iat`, `exp`. Auth không lưu phiên |
 
 ### 2.3 Gateway kiểm tra token (mọi route có token)
@@ -90,22 +91,21 @@ Quy tắc chung cho body (mọi route) [BA]: body phải là object JSON; field 
 | Vì sao đường dẫn này | Đăng ký = tạo một tài khoản → `POST` vào tập `accounts` (không dùng động từ `register`). Chỉ tạo `customer`; tài xế dùng `/api/v1/driver-accounts` (spec `12-13-21-23-tai-xe`) |
 | Token / role | Không / — |
 | Service — rpc | `auth-service` — `RegisterCustomer` |
-| Request | `{ "phone": "0901234567", "password": "12345678" }` — thêm `"email"` nếu muốn. Cùng body với A05 nên mục 9 chỉ sửa URL |
+| Request | `{ "phone": "0901234567", "password": "12345678" }` — **chỉ hai field** (sửa 2026-10-05). Cùng body với A05 nên mục 9 chỉ sửa URL |
 
 | Field | Bắt buộc | Gateway (hình thức) | `auth-service` |
 |---|---|---|---|
 | `phone` | Có | Chuỗi, 1–20 ký tự | Bỏ khoảng trắng, `.`, `-`; khớp `^(?:\+84\|84\|0)([35789][0-9]{8})$`; lưu dạng `0` + 9 chữ số. Sai → `INVALID_PHONE` |
-| `email` | Không | Chuỗi, 1–254 ký tự | Cắt khoảng trắng, chữ thường; khớp `^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`. Sai → `INVALID_EMAIL` |
 | `password` | Có | Chuỗi, 1–128 ký tự | 8–128 ký tự. Sai → `INVALID_PASSWORD` |
+| ~~`email`~~ | — | **Bỏ 2026-10-05**: không có trong danh sách field của route → 400 `INVALID_INPUT` | — (email thuộc hồ sơ khách, spec 11) |
 
 | Kết quả | HTTP | Body |
 |---|---|---|
 | Thành công | **201** | `{ "account_id": 1000, "role": "customer" }` (mã qua API ≥ 1000) |
-| Thiếu field, sai kiểu, field lạ | 400 | `INVALID_INPUT` |
+| Thiếu field, sai kiểu, field lạ (gồm `email`) | 400 | `INVALID_INPUT` |
 | Body không phân tích được thành JSON | 400 | `INVALID_JSON` |
-| Số / email / mật khẩu sai định dạng | 400 | `INVALID_PHONE` / `INVALID_EMAIL` / `INVALID_PASSWORD` |
+| Số / mật khẩu sai định dạng | 400 | `INVALID_PHONE` / `INVALID_PASSWORD` |
 | Số đã có (kiểm tra trước) | 409 | `PHONE_ALREADY_EXISTS` |
-| Email đã có | 409 | `EMAIL_ALREADY_EXISTS` |
 | `auth-service` dừng | 503 | `SERVICE_UNAVAILABLE` |
 
 "Chưa đăng nhập", "sai quyền", "không tìm thấy" không áp dụng: route công khai, tạo mới.
@@ -117,18 +117,18 @@ Quy tắc chung cho body (mọi route) [BA]: body phải là object JSON; field 
 | Vì sao đường dẫn này | Ngoại lệ có chủ đích (04 mục 1.9): quy ước phổ biến; đăng nhập không tạo bản ghi nào (JWT không lưu phiên) |
 | Token / role | Không / — |
 | Service — rpc | `auth-service` — `Login` |
-| Request | `{ "phone": "0900000001", "password": "12345678" }` hoặc `{ "email": "…", "password": "…" }` — **đúng một** trong `phone`, `email` [BA DN1, 04 mục 1.8] |
+| Request | `{ "phone": "0900000001", "password": "12345678" }` — chỉ đăng nhập bằng số điện thoại [DN1 sửa 2026-10-05, 04 mục 1.8] |
 
 | Field | Gateway | `auth-service` |
 |---|---|---|
-| `phone` / `email` | Chuỗi, 1–254 ký tự; có đúng một trong hai | Chuẩn hóa như A04; số không khớp định dạng → `INVALID_PHONE`; email không khớp → `INVALID_EMAIL` |
+| `phone` | Chuỗi, 1–20 ký tự, bắt buộc | Chuẩn hóa như A04; không khớp định dạng → `INVALID_PHONE` |
 | `password` | Chuỗi, 1–128 ký tự | Không kiểm tra độ dài tối thiểu |
 
 | Kết quả | HTTP | Body |
 |---|---|---|
-| Thành công | **200** | `{ "token": "<JWT>", "account_id": 1, "role": "customer", "expires_in": 3600 }` (04 A05) |
-| Thiếu field, sai kiểu, field lạ, có cả hai hoặc không có định danh | 400 | `INVALID_INPUT` |
-| Số / email sai định dạng (gồm `' OR 1=1 --`) | 400 | `INVALID_PHONE` / `INVALID_EMAIL` |
+| Thành công | **200** | `{ "token": "<JWT>", "account_id": 1, "role": "customer", "expires_in": 3600 }` (04 A05). `account_id` là mã để xem hồ sơ của chính mình (không có API `/me` mới — 04 R6) |
+| Thiếu field, sai kiểu, field lạ (gồm `email`) | 400 | `INVALID_INPUT` |
+| Số sai định dạng (gồm `' OR 1=1 --`) | 400 | `INVALID_PHONE` |
 | Không có tài khoản, hoặc sai mật khẩu (gồm `' OR '1'='1`) | 401 | `INVALID_CREDENTIALS` |
 | Mật khẩu đúng, tài khoản `LOCKED` | 403 | `ACCOUNT_LOCKED` |
 | `auth-service` dừng | 503 | `SERVICE_UNAVAILABLE` |
@@ -169,8 +169,8 @@ JWT [ĐC ADR-016]:
 
 | rpc | Vào | Ra | Lỗi (status → `details`) |
 |---|---|---|---|
-| `RegisterCustomer` | `{ string phone = 1; optional string email = 2; string password = 3; }` | `{ int64 account_id = 1; string role = 2; }` | `INVALID_ARGUMENT` → `INVALID_INPUT` / `INVALID_PHONE` / `INVALID_EMAIL` / `INVALID_PASSWORD`; `ALREADY_EXISTS` → `PHONE_ALREADY_EXISTS` / `EMAIL_ALREADY_EXISTS`; `INTERNAL` khi lỗi database |
-| `Login` | `{ optional string phone = 1; optional string email = 2; string password = 3; }` | `{ string token = 1; int64 account_id = 2; string role = 3; int32 expires_in = 4; }` | `INVALID_ARGUMENT` → `INVALID_INPUT` / `INVALID_PHONE` / `INVALID_EMAIL`; `UNAUTHENTICATED` → `INVALID_CREDENTIALS`; `PERMISSION_DENIED` → `ACCOUNT_LOCKED`; `INTERNAL` |
+| `RegisterCustomer` | `{ string phone = 1; reserved 2; reserved "email"; string password = 3; }` (sửa 2026-10-05: bỏ `email`, giữ số 3 cho `password` để không đổi số field) | `{ int64 account_id = 1; string role = 2; }` | `INVALID_ARGUMENT` → `INVALID_INPUT` / `INVALID_PHONE` / `INVALID_PASSWORD`; `ALREADY_EXISTS` → `PHONE_ALREADY_EXISTS`; `INTERNAL` khi lỗi database |
+| `Login` | `{ string phone = 1; reserved 2; reserved "email"; string password = 3; }` (sửa 2026-10-05) | `{ string token = 1; int64 account_id = 2; string role = 3; int32 expires_in = 4; }` | `INVALID_ARGUMENT` → `INVALID_INPUT` / `INVALID_PHONE`; `UNAUTHENTICATED` → `INVALID_CREDENTIALS`; `PERMISSION_DENIED` → `ACCOUNT_LOCKED`; `INTERNAL` |
 
 Cả hai rpc công khai: không đọc `x-account-id` / `x-role`. Service **tự kiểm tra lại** mọi điều Gateway đã kiểm tra.
 
@@ -179,7 +179,7 @@ Cài đặt trong `auth-service`:
 | Việc | Cách làm | Truy vết |
 |---|---|---|
 | Băm mật khẩu | `scrypt` (N = 16384, r = 8, p = 1), salt 16 byte ngẫu nhiên, khóa ra 64 byte; lưu `scrypt$<salt hex>$<hash hex>`; so bằng `timingSafeEqual` | 03 mục 2; A4; mục 24 |
-| Kiểm tra trùng | `INSERT` thẳng; bắt lỗi `23505` theo tên ràng buộc (`accounts_phone_key` → `PHONE_ALREADY_EXISTS`, `accounts_email_key` → `EMAIL_ALREADY_EXISTS`) | A2 |
+| Kiểm tra trùng | `INSERT` thẳng; bắt lỗi `23505` theo tên ràng buộc `accounts_phone_key` → `PHONE_ALREADY_EXISTS` (sửa 2026-10-05: không còn `accounts_email_key`) | A2 |
 | SQL | Chỉ câu lệnh có tham số (`$1`); không ghép chuỗi | Mục 25 |
 | Log | `register_ok` / `login_ok` kèm `account_id`; `login_failed` kèm mã lỗi. **Không** ghi số điện thoại, email, mật khẩu, token | NFR08, NFR10 |
 | Khởi động | `JWT_SECRET` thiếu hoặc < 32 ký tự → thoát 1 | Spec 00 |
@@ -202,13 +202,21 @@ Cài đặt trong `auth-service`:
 |---|---|---|
 | `account_id` | `bigint` | `GENERATED ALWAYS AS IDENTITY (START WITH 1000) PRIMARY KEY` |
 | `phone` | `text` | `NOT NULL`, `CONSTRAINT accounts_phone_key UNIQUE`, `CHECK (phone ~ '^0[0-9]{9}$')` |
-| `email` | `text` | NULL, `CONSTRAINT accounts_email_key UNIQUE` (nhiều NULL được phép) |
+| `email` | `text` | NULL, `CONSTRAINT accounts_email_key UNIQUE` (nhiều NULL được phép) — **bị bỏ ở migration `003`** (mục 7.1a) |
 | `password_hash` | `text` | `NOT NULL`, `CHECK (password_hash LIKE 'scrypt$%')` |
 | `role` | `text` | `NOT NULL`, `CHECK (role IN ('customer','driver','admin'))` |
 | `status` | `text` | `NOT NULL DEFAULT 'ACTIVE'`, `CHECK (status IN ('ACTIVE','LOCKED'))` |
 | `created_at`, `updated_at` | `timestamptz` | `NOT NULL DEFAULT now()` |
 
-Không thêm index: hai UNIQUE là index cho đăng nhập. Số điện thoại, email **lưu rõ** [ĐC ADR-012 sửa]: cần tra cứu và UNIQUE; bảo vệ bằng mạng nội bộ và quyền ở API. Bảng `otp_verifications` thuộc spec `12-13-21-23-tai-xe` (migration `002`).
+Không thêm index: UNIQUE `phone` là index cho đăng nhập. Số điện thoại **lưu rõ** [ĐC ADR-012 sửa]: cần tra cứu và UNIQUE; bảo vệ bằng mạng nội bộ và quyền ở API. Bảng `otp_verifications` thuộc spec `12-13-21-23-tai-xe` (migration `002`).
+
+### 7.1a Migration mới `services/auth-service/migrations/003_bo-email-accounts.sql` (2026-10-05, ADR-019)
+
+| Lệnh | Ghi chú |
+|---|---|
+| `ALTER TABLE accounts DROP COLUMN IF EXISTS email;` | Bỏ cột kéo theo ràng buộc `accounts_email_key`. **Không sửa `001`** (quy ước: không sửa migration đã chạy). Số `003` vì `002` là `otp_verifications`; nếu thư mục đã có số lớn hơn thì dev-agent lấy số kế tiếp |
+
+Không chuyển dữ liệu email sang `customer-service`: hai database tách rời, seed không có email ở auth, tài khoản tạo qua API trước đó chỉ là dữ liệu demo (đặt lại bằng `down -v`). Database đang có email thật thì **mất** email đó — chấp nhận ở phạm vi đồ án.
 
 ### 7.2 Redis (Gateway)
 
@@ -218,7 +226,7 @@ Không thêm index: hai UNIQUE là index cho đăng nhập. Số điện thoại
 
 ### 7.3 Seed `auth-service` (03 mục 14) [ĐC]
 
-Mật khẩu mọi tài khoản = `SEED_PASSWORD` (`12345678`), băm bằng cùng module với A04. Ghi bằng `OVERRIDING SYSTEM VALUE`, `ON CONFLICT DO NOTHING`. Không seed email.
+Mật khẩu mọi tài khoản = `SEED_PASSWORD` (`12345678`), băm bằng cùng module với A04. Ghi bằng `OVERRIDING SYSTEM VALUE`, `ON CONFLICT DO NOTHING`. Tài khoản không có email (email seed `kh1@cab.vn`, `kh2@cab.vn` nằm ở hồ sơ khách — spec 11).
 
 | Mã | `account_id` | Số điện thoại | Role | Status | Dùng cho mục |
 |---|---|---|---|---|---|
@@ -241,7 +249,7 @@ Tiền điều kiện: spec 00 đạt; seed đã chạy. Mỗi mục chấm ≤ 
 | AC-DN-02 | 9 | Sau AC-DN-01 | A05 cùng body | 200 có `token`, `role = customer`, cùng `account_id` — "đăng ký xong đăng nhập được" (AC27) |
 | AC-DN-03 | 9 (409) | Sau AC-DN-01 | A04 lại cùng số | 409 `PHONE_ALREADY_EXISTS`; không tạo dòng mới |
 | AC-DN-04 | 9 (400) | — | A04 thiếu `password`; A04 có thêm `"role": "admin"` | 400 `INVALID_INPUT` cả hai — không tạo được admin qua đăng ký (A1) |
-| AC-DN-05 | 9 (400) | — | A04 `phone: "12345"`; `email: "abc"`; `password: "123"` | 400 `INVALID_PHONE`; `INVALID_EMAIL`; `INVALID_PASSWORD` |
+| AC-DN-05 (**đổi 2026-10-05**) | 9 (400) | — | A04 `phone: "12345"`; `password: "123"` | 400 `INVALID_PHONE`; `INVALID_PASSWORD` (bỏ trường hợp `email: "abc"` — xem AC-DN-21) |
 | AC-DN-06 | 9 (503) | `docker compose stop auth-service` | A04 hợp lệ | 503 `SERVICE_UNAVAILABLE` |
 | AC-DN-07 | 10 | Seed KH1 | A05 `{ "phone": "0900000001", "password": "12345678" }` | 200; có `token`; `account_id = 1`; `expires_in = 3600`; giải base64 phần giữa của token (test-agent làm) thấy `sub: "1"`, `role: "customer"`, `jti`, `exp`; **không** có số điện thoại |
 | AC-DN-08 | 10 (401) | Seed KH1 | A05 sai mật khẩu; A05 số chưa đăng ký `0988888888` | 401 `INVALID_CREDENTIALS` cả hai, body giống hệt |
@@ -258,6 +266,9 @@ Tiền điều kiện: spec 00 đạt; seed đã chạy. Mỗi mục chấm ≤ 
 | AC-DN-19 | 24 | Seed | `docker exec auth-db psql -U cab -d auth -c "table accounts"` | `password_hash` bắt đầu `scrypt$`, không thấy `12345678`; `phone` hiện rõ (đúng thiết kế, nói được lý do) |
 
 | AC-DN-20 | 404 | — | `POST /auth/login` (thiếu `/api/v1`) | 404 `ROUTE_NOT_FOUND` |
+| AC-DN-21 (mới 2026-10-05) | 9 (400) | Số `0901234569` chưa có | A04 `{ "phone": "0901234569", "password": "12345678", "email": "a@b.vn" }` | 400 `INVALID_INPUT`; **không** tạo tài khoản (A04 lại không có `email` → 201) |
+| AC-DN-22 (mới 2026-10-05) | 10 (400) | Seed KH1 | A05 `{ "email": "kh1@cab.vn", "password": "12345678" }`; A05 `{ "phone": "0900000001", "email": "kh1@cab.vn", "password": "12345678" }` | 400 `INVALID_INPUT` cả hai — không đăng nhập bằng email được |
+| AC-DN-23 (mới 2026-10-05) | 24, migration | Database auth đã chạy `001`, `002` (có cột `email`) | Khởi động `auth-service` bản mới; `docker exec auth-db psql -U cab -d auth -c "table schema_migrations"`; `… -c "table accounts"` | Có dòng `003_bo-email-accounts.sql`; bảng `accounts` **không** còn cột `email`; seed và AC-DN-01, AC-DN-07 vẫn đạt; khởi động lại lần hai không lỗi (migration không chạy lại) |
 
 Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab, 30 giây gồm cả giải thích; `(…)` = tùy chọn):
 
@@ -277,7 +288,7 @@ Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab, 30 giây gồm cả
 | Token ký đúng `JWT_SECRET` nhưng thiếu `exp` → 401 `TOKEN_INVALID`; header `bearer <token>` (chữ thường) → 200 | Unit test Gateway; không chấm |
 | Hai lần đăng nhập ra `jti` khác nhau; đăng xuất một token không ảnh hưởng token khác | Hành vi đúng nhưng không chấm |
 | Header client `x-account-id`, `x-role` bị bỏ qua | Quy tắc vẫn bắt buộc (mục 4.1); test tự động khi có thời gian |
-| Chuẩn hóa `+84 9xx…` trùng với `09xx…`; email viết hoa đăng nhập được | Không chấm |
+| Chuẩn hóa `+84 9xx…` trùng với `09xx…` | Không chấm |
 | Hai request đăng ký đồng thời cùng số | UNIQUE đã bảo đảm |
 | Đăng ký vẫn 201 khi `customer-service` dừng | Hiển nhiên vì không có đường gọi (mục 6) |
 | Thời gian phản hồi giống nhau giữa "không có tài khoản" và "sai mật khẩu" (băm giả) | Chống dò số; ngoài phiếu chấm |
@@ -288,8 +299,8 @@ Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab, 30 giây gồm cả
 
 | # | Quyết định | Lý do | Nếu đổi thì sửa |
 |---|---|---|---|
-| DN1 | Đăng nhập dùng field `phone` **hoặc** `email` (đúng một), cùng tên field với A04 | Một tên field phải nhớ cho cả đăng ký và đăng nhập; UC02 cho cả hai | Request A05, `Login` |
-| DN2 | Thêm mã `INVALID_EMAIL`, `INVALID_PASSWORD`, `EMAIL_ALREADY_EXISTS` | UC01: "số điện thoại **hoặc email** đã có → từ chối" | Mục 4.2, 5 |
+| DN1 (**đổi 2026-10-05, sinh viên chốt**) | Đăng nhập **chỉ** bằng field `phone`, cùng tên field với A04 (trước: `phone` hoặc `email`) | Tài khoản không còn email (ADR-019); một định danh, một cách đăng nhập; UC02 đã sửa | Request A05, `Login` |
+| DN2 (**đổi 2026-10-05**) | Auth chỉ còn `INVALID_PASSWORD`; bỏ `INVALID_EMAIL`, `EMAIL_ALREADY_EXISTS` ở auth (`INVALID_EMAIL` chuyển sang customer — spec 11) | UC01 sửa: chỉ "số điện thoại đã có → từ chối" | Mục 4.2, 5 |
 | DN3 | Mật khẩu 8–128 ký tự | SRS không quy định; độ dài là yếu tố chính. Seed `12345678` vừa đủ 8 | Mục 4.2 |
 | DN4 | Field lạ trong body → 400 | Chặn gán thừa `role`, `account_id` | Mục 4.1 |
 | DN5 | Không tồn tại / sai mật khẩu cùng 401; `ACCOUNT_LOCKED` chỉ khi mật khẩu đúng | Không lộ số đã đăng ký | Mục 4.3 |
@@ -301,5 +312,6 @@ Chuỗi gõ tay khi thi (khớp 04 mục 5; dùng lại tab, 30 giây gồm cả
 |---|---|---|---|---|
 | ~~DN-Q1~~ | Đã chốt 2026-10-04 theo đề xuất (a), code đã làm: đăng xuất khi Redis dừng → 503 (trả 200 là báo sai) | — | — | — |
 | ~~DN-Q2~~ | Đã chốt 2026-10-04 theo đề xuất (a), code đã làm: tài khoản bị khóa sau khi có token thì token cũ dùng đến hết hạn (không có API khóa tài khoản) | — | — | — |
-| ~~DN-Q3~~ | Đã đóng 2026-10-03: 04 mục 1.8 ghi `phone` hoặc `email` (DN1) | — | — | — |
+| ~~DN-Q3~~ | Đã đóng 2026-10-03: 04 mục 1.8 ghi `phone` hoặc `email` (DN1). **Thay 2026-10-05:** chỉ `phone` (ADR-019) | — | — | — |
+| DN-Q5 | Gateway đã có lớp kiểm tra định dạng `email` cho A04 / A05 (code cũ). Bỏ hẳn hay giữ cho A37 / A10? | (a) Bỏ khỏi route A04, A05; dời hàm kiểm tra sang danh sách field của A37, A10; (b) giữ nguyên ở A04 / A05 | (a) — field lạ ở A04 / A05 phải ra `INVALID_INPUT`, không phải `INVALID_EMAIL` | Dev |
 | ~~DN-Q4~~ | Đã chốt 2026-10-04 theo đề xuất (a), code đã làm: `account_id` ở response là số, `sub` trong JWT là chuỗi (DN6) | — | — | — |

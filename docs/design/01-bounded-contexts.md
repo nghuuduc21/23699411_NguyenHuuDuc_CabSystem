@@ -4,7 +4,8 @@
 > Đồng bộ 2026-10-02 lần 4 (cùng lúc viết file 03, 04): công thức cước và ai tính quãng đường; hạn thanh toán 10 phút / 3 lần (BRULE17); đăng xuất (FR42, UC33); đóng Q10 (một phần), Q11, Q16, Q21, Q37. Chỉ sửa các dòng bị ảnh hưởng.
 > Sửa 2026-10-03 theo góp ý giảng viên: **tách đăng ký khỏi hồ sơ khách hàng** — Auth và Customer không còn quan hệ (R1 không nối, bỏ đường S1; quy tắc A8, C1, C4–C6; BRULE18) — ADR-013; hệ thống ngoài giả lập đơn giản — ADR-014. Cùng ngày: đóng Q56 (đặt xe không cần hồ sơ — B1), Q57 (`simulate_result: "MANUAL"` — mục 6.6), Q58 (hồ sơ không lưu số điện thoại).
 > Sửa 2026-10-03 lần 3 theo luật thi (gõ tay mọi request, không mở tài liệu): khóa chính số nguyên (Q31 — ADR-015); mục chấm 24 chỉ băm mật khẩu và mã hóa họ tên, ngày sinh khách, số giấy phép — số điện thoại, email lưu rõ (ADR-012 sửa); không outbox (ADR-017). Không đổi context, aggregate hay quy tắc nào.
-> Nguồn sự thật: `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
+> Sửa 2026-10-05 (sinh viên chốt): **email chuyển từ Account sang hồ sơ khách** — Account chỉ còn số điện thoại + mật khẩu, đăng nhập chỉ bằng số điện thoại (A2, A8, C6, C7 — ADR-019); **tài xế nộp lại hồ sơ bị từ chối** (FR43, D4, D5, D10 — đóng Q47 theo hướng mới). Không đổi context hay aggregate.
+> Nguồn sự thật: `srs.md` (FR01–FR43, BRULE01–18, UC01–UC33, AC01–AC30) và `CLAUDE.md`. Mốc so sánh: `docs/reference/thiet-ke-da-duyet.md`.
 > File này trả lời: **chia hệ thống thành những phần nào, mỗi phần sở hữu gì, vì sao**. gRPC hay Kafka cho từng quan hệ: file 02. Loại database, schema: file 03.
 > Tên trạng thái viết HOA là **đề xuất**, trừ các tên đã có trong SRS và `CLAUDE.md` (`NO_DRIVER_FOUND`, `CANCELED`, `FAILED`, `COMPLETED`, Online/Offline, "chờ duyệt"). Tên chính thức chốt ở spec.
 
@@ -189,13 +190,13 @@ Cặp **không có quan hệ**: Customer với **mọi** context; Auth với **m
 | # | Quy tắc | Nguồn |
 |---|---|---|
 | A1 | Đăng ký công khai chỉ tạo role `customer` | `CLAUDE.md` — đã chốt |
-| A2 | Định danh đăng nhập (số điện thoại / email) là duy nhất | UC02; mục 9 (đường lỗi "trùng") |
+| A2 | Định danh đăng nhập là **số điện thoại**, duy nhất. Account không có email (sửa 2026-10-05, ADR-019) | UC01, UC02; mục 9 (đường lỗi "trùng") |
 | A3 | Tài khoản bị khóa thì từ chối đăng nhập | Exception của UC02, NFR06 |
 | A4 | Không lưu mật khẩu dạng rõ; không trả mật khẩu / băm ra ngoài | NFR08, mục 24 |
 | A5 | Token mang role; mọi thao tác quản trị dựa vào role này | BRULE12, NFR07, FR32 |
 | A6 | OTP có hạn dùng và chỉ dùng một lần; tài khoản `driver` chỉ được tạo sau khi OTP đúng | FR39, mục 21 |
 | A7 | Tài khoản `admin` không tạo qua API công khai (tạo sẵn bằng seed) | BRULE12 — **suy đoán**, Q8 |
-| A8 | Đăng ký khách **chỉ tạo Account** (số điện thoại, email tùy chọn, mật khẩu); không tạo hồ sơ, không gọi service nào. Thành công khi Account đã lưu | FR26, UC01, AC27; mục 9; ADR-013 (thay bản cũ theo ADR-004) |
+| A8 | Đăng ký khách **chỉ tạo Account** (số điện thoại, mật khẩu); không tạo hồ sơ, không gọi service nào. Thành công khi Account đã lưu | FR26, UC01, AC27; mục 9; ADR-013 (thay bản cũ theo ADR-004) |
 
 ### 6.2 Customer
 
@@ -203,7 +204,7 @@ Cặp **không có quan hệ**: Customer với **mọi** context; Auth với **m
 |---|---|
 | Trách nhiệm | Cho khách **đã đăng nhập** tạo hồ sơ một lần, rồi xem / sửa hồ sơ của mình; cho tra cứu khách hàng theo mã (chính chủ, `admin`) |
 | **Không** làm | Không giữ mật khẩu, không đăng nhập, không giữ số điện thoại đăng nhập (thuộc Auth). Không biết tài khoản nào vừa đăng ký: chỉ tin `account_id` trong metadata do Gateway chuyển. Không giữ booking của khách. **Không gọi và không bị service nào gọi** |
-| Ngôn ngữ chung | **CustomerProfile**: thông tin cá nhân của một khách (họ tên, ngày sinh). **Mã khách hàng** = `account_id` của tài khoản đang đăng nhập. **Chưa có hồ sơ**: tài khoản đã đăng ký nhưng chưa tạo hồ sơ |
+| Ngôn ngữ chung | **CustomerProfile**: thông tin cá nhân và liên hệ của một khách (họ tên, ngày sinh, email). **Mã khách hàng** = `account_id` của tài khoản đang đăng nhập. **Chưa có hồ sơ**: tài khoản đã đăng ký nhưng chưa tạo hồ sơ |
 | Aggregate gốc | **CustomerProfile** |
 | FR / UC | FR27, BRULE18 / UC03, UC19 |
 | Mục chấm | 11; 24; 26 (họ tên là text do người dùng nhập) |
@@ -216,6 +217,7 @@ Cặp **không có quan hệ**: Customer với **mọi** context; Auth với **m
 | C4 | `customer_id` của hồ sơ **là** `account_id` trong token; khi tạo / sửa không nhận mã khách từ client | BRULE18, NFR07; ADR-013 |
 | C5 | Chưa tạo hồ sơ thì xem và sửa đều trả 404 | FR27, UC03, AC28 |
 | C6 | Họ tên bắt buộc khi tạo; ngày sinh tùy chọn, định dạng `YYYY-MM-DD`, không ở tương lai | FR27, UC03 |
+| C7 | Email tùy chọn, đúng định dạng, tối đa 254 ký tự, lưu chữ thường; **không** bắt buộc duy nhất (không phải định danh đăng nhập). Email chỉ nằm ở hồ sơ khách, không nằm ở Auth (thêm 2026-10-05) | FR27, UC03; ADR-019 |
 
 ### 6.3 Driver & Vehicle
 
@@ -225,7 +227,7 @@ Cặp **không có quan hệ**: Customer với **mọi** context; Auth với **m
 | **Không** làm | Không quyết định hỏi tài xế nào trước, không gửi lời mời, không đếm giờ (thuộc Booking). Không giữ mật khẩu |
 | Ngôn ngữ chung | **Hồ sơ tài xế**. **Trạng thái duyệt**: chờ duyệt / đã duyệt / bị từ chối. **Trạng thái nhận chuyến**: Offline, Online (= Available/Ready của BRULE01), bận. **Vehicle**, **VehicleType**. **Vị trí hiện tại**. **Giữ chỗ**: chuyển Online → bận cho đúng một `booking_id` |
 | Aggregate gốc | **Driver** (gồm Vehicle, trạng thái duyệt, trạng thái nhận chuyến, vị trí hiện tại); **VehicleType** (danh mục) |
-| FR / UC | FR28, FR29, FR38, FR39; FR02, FR03, FR04 (thực hiện truy vấn); FR13 / UC12, UC20, UC21, UC28, UC29, UC30 |
+| FR / UC | FR28, FR29, FR38, FR39, FR43; FR02, FR03, FR04 (thực hiện truy vấn); FR13 / UC12, UC20, UC21, UC28, UC29, UC30 |
 | Mục chấm | 12, 13, 21, 22, 23; 24 (số giấy phép; số điện thoại của tài xế chỉ nằm ở Auth — file 03) |
 
 | # | Quy tắc | Nguồn |
@@ -233,12 +235,22 @@ Cặp **không có quan hệ**: Customer với **mọi** context; Auth với **m
 | D1 | Chỉ tài xế đang Online **và không bận** mới xuất hiện trong kết quả tìm | BRULE01, FR38, AC03 |
 | D2 | Kết quả tìm chỉ gồm tài xế có xe đúng loại yêu cầu | BRULE02, FR03, AC04 |
 | D3 | Kết quả tìm nằm trong bán kính (mặc định 1 km), kèm khoảng cách, sắp từ gần đến xa, có limit và paging | FR02, FR04, mục 13 |
-| D4 | Hồ sơ mới tạo luôn ở trạng thái chờ duyệt | FR39, AC19 |
-| D5 | Chỉ `admin` được duyệt / từ chối; chỉ hồ sơ đang chờ duyệt mới duyệt / từ chối được | BRULE12, FR39, AC20 |
+| D4 | Hồ sơ mới tạo **hoặc nộp lại** luôn ở trạng thái chờ duyệt | FR39, FR43, AC19, AC30 |
+| D5 | Chỉ `admin` được duyệt / từ chối; chỉ hồ sơ đang chờ duyệt mới duyệt / từ chối được (kể cả hồ sơ nộp lại) | BRULE12, FR39, FR43, AC20 |
 | D6 | Chỉ tài xế đã được duyệt mới bật Online được | **Suy ra** từ FR39 + BRULE01 — Q10 |
 | D7 | Biển số xe không trùng | FR29 — **suy đoán**; file 03 đặt UNIQUE trên `vehicles.license_plate` |
 | D8 | **Một tài xế tại một thời điểm chỉ bị giữ cho nhiều nhất một booking.** Giữ chỗ chỉ thành công khi tài xế đang Online và không bận; giữ lặp cho cùng `booking_id` trả kết quả như lần đầu | BRULE01, NFR14 |
 | D9 | Tài xế chỉ rảnh lại khi chuyến của **đúng** booking đang giữ hoàn thành hoặc bị hủy (kể cả do chính tài xế hủy), hoặc khi Booking nhả chỗ vì không tạo được chuyến | BRULE01, FR41 |
+| D10 | Chỉ hồ sơ **bị từ chối** mới nộp lại được: ghi đè thông tin cá nhân và xe, về chờ duyệt, xóa lý do và người / thời điểm từ chối. Hồ sơ đang chờ duyệt hoặc đã duyệt thì không nộp lại. Không giới hạn số lần (thêm 2026-10-05, đóng Q47 theo hướng mới) | FR43, AC30 |
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> PENDING: nộp hồ sơ (FR39)
+  PENDING --> APPROVED: admin duyệt
+  PENDING --> REJECTED: admin từ chối (kèm lý do)
+  REJECTED --> PENDING: tài xế nộp lại (FR43)
+```
 
 Vì sao Driver và Vehicle chung một context (giảng viên cho gộp): BRULE01 và BRULE02 cần **cùng lúc** trạng thái, loại xe và vị trí trong một truy vấn (mục chấm 13). Khách chỉ chọn **loại xe**, không chọn xe cụ thể. Chỉ tách khi khách được tự chọn xe.
 
@@ -483,7 +495,7 @@ Giảng viên đã bỏ `report-service` và `audit-service`. **Phiếu chấm k
 
 ## 8. Kiểm tra độ phủ
 
-### 8.1 FR01–FR42
+### 8.1 FR01–FR43
 
 | FR | Context chính | Tham gia | Ghi chú |
 |---|---|---|---|
@@ -512,8 +524,8 @@ Giảng viên đã bỏ `report-service` và `audit-service`. **Phiếu chấm k
 | FR23 Thông báo trạng thái chuyến | Notification | Trip | |
 | FR24 Thông báo thanh toán | Notification | Payment | |
 | FR25 Đánh giá tài xế | Rating | Trip (kiểm tra BRULE11) | |
-| FR26 Đăng ký tài khoản và đăng nhập | Auth | — | Đăng ký chỉ tạo tài khoản (A8) |
-| FR27 Hồ sơ khách hàng | Customer | — | Khách tạo hồ sơ sau khi đăng nhập (BRULE18, C1–C6) |
+| FR26 Đăng ký tài khoản và đăng nhập | Auth | — | Đăng ký chỉ tạo tài khoản (A8); đăng nhập bằng số điện thoại (A2) |
+| FR27 Hồ sơ khách hàng | Customer | — | Khách tạo hồ sơ sau khi đăng nhập (BRULE18, C1–C7); email nằm ở đây (ADR-019) |
 | FR28 Hồ sơ tài xế | Driver | — | |
 | FR29 Phương tiện | Driver | — | |
 | FR30 Giám sát chuyến | Trip | — | Role `admin`; ngoài phiếu chấm |
@@ -529,8 +541,9 @@ Giảng viên đã bỏ `report-service` và `audit-service`. **Phiếu chấm k
 | FR40 Hoàn tiền | Payment | Booking, Trip (báo sự việc), Notification | |
 | FR41 Tài xế hủy chuyến đã nhận | Trip | Driver (rảnh lại), Payment (hoàn tiền), Notification | |
 | FR42 Đăng xuất | **Gateway** (không phải context) | Redis; Auth cấp token có mã định danh để thu hồi | `CLAUDE.md` — đã chốt; file 04 API A06 |
+| FR43 Nộp lại hồ sơ tài xế bị từ chối | Driver | Notification (báo lại kết quả duyệt qua K7) | D10; dùng lại A11 (file 04); mục 21, 22 (vấn đáp) |
 
-Kết quả: 39/42 FR có context chính; FR42 do Gateway xử lý. **FR33 không gán; FR34 gán một phần.** Cả hai ngoài 30 mục chấm.
+Kết quả: 40/43 FR có context chính; FR42 do Gateway xử lý. **FR33 không gán; FR34 gán một phần.** Cả hai ngoài 30 mục chấm.
 
 ### 8.2 30 mục chấm
 
@@ -559,7 +572,7 @@ Kết quả: 39/42 FR có context chính; FR42 do Gateway xử lý. **FR33 khôn
 | 21 | Đăng ký tài xế (OTP) → chờ duyệt | Auth, Driver | |
 | 22 | Admin duyệt / từ chối | Driver; Notification | |
 | 23 | Tài xế bật / tắt nhận chuyến | Driver | |
-| 24 | Mã hóa dữ liệu nhạy cảm + quản lý khóa | Cắt ngang: Auth (băm mật khẩu, OTP), Customer (mã hóa họ tên, ngày sinh), Driver (mã hóa số giấy phép) | NFR08, NFR16; phạm vi hẹp, số điện thoại / email lưu rõ: file 03 mục 11.4, ADR-012 |
+| 24 | Mã hóa dữ liệu nhạy cảm + quản lý khóa | Cắt ngang: Auth (băm mật khẩu, OTP), Customer (mã hóa họ tên, ngày sinh), Driver (mã hóa số giấy phép) | NFR08, NFR16; phạm vi hẹp, số điện thoại (auth) và email (hồ sơ khách — ADR-019) lưu rõ: file 03 mục 11.4, ADR-012 |
 | 25 | SQL injection | Cắt ngang; demo tại Auth (đăng nhập) | Quy ước code trong `CLAUDE.md` |
 | 26 | XSS | Cắt ngang: Customer, Driver, Booking, Trip, Rating | Xử lý ở đâu: file 02 / 04 |
 | 27 | JWT bị sửa → 401 | Gateway (Auth cấp token) | |
@@ -586,7 +599,9 @@ Kết quả: **30/30 mục có nơi nhận.** Mỗi service trong 8 service gán
 
 | Hồ sơ khách tạo sau đăng nhập (2026-10-03) | **BRULE18, AC27–AC29, RTM27, RTM28** (đã thêm vào `srs.md`); FR26, FR27, UC01, UC03 viết lại | Đủ |
 
-Các dòng còn thiếu ở trên vẫn chờ Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE19, NFR18, FR43, UC34, AC30, RTM30** (BRULE18, NFR17, FR42, UC33, AC29, RTM29 đã được dùng).
+| Nộp lại hồ sơ tài xế bị từ chối — D10 (2026-10-05) | **FR43, AC30, RTM30** (đã thêm vào `srs.md`) | Đủ |
+
+Các dòng còn thiếu ở trên vẫn chờ Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE19, NFR18, FR44, UC34, AC31, RTM31** (BRULE18, NFR17, FR43, UC33, AC30, RTM30 đã được dùng).
 
 ## 9. Câu hỏi còn mở
 
@@ -612,6 +627,8 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q56 (đóng 2026-10-03) | Khách **chưa tạo hồ sơ** có được đặt xe không? | **Được.** Đủ điều kiện khi có tài khoản `customer` đã đăng ký (số điện thoại ở Auth) và đủ dữ liệu yêu cầu đặt xe. Booking chỉ dùng `customer_id` trong token, **không gọi Customer**; Customer vẫn không nối với service nào | `CLAUDE.md` dòng "Điều kiện đặt xe" |
 | Q57 (đóng 2026-10-03) | Callback từ ngoài có làm đổi trạng thái ở mục 19 không? | **Có**, bằng `simulate_result: "MANUAL"` (chỉ khi `SIMULATION_MODE=true`): giao dịch và Payment đứng `PENDING`, callback A32 từ Postman là callback đầu tiên → `COMPLETED`. Không gửi tham số thì vẫn tự callback thành công; `FAILED` như cũ | `CLAUDE.md` dòng "Hệ thống ngoài"; ADR-014 |
 | Q58 (đóng 2026-10-03) | Hồ sơ khách có lưu số điện thoại không? | **Không.** Hồ sơ chỉ họ tên (bắt buộc), ngày sinh (tùy chọn); số điện thoại chỉ ở tài khoản trong Auth | `CLAUDE.md` dòng "Hồ sơ khách hàng"; file 03 mục 4.1 |
+| Q59 (đóng 2026-10-05) | Email nằm ở tài khoản hay hồ sơ khách? | **Hồ sơ khách** (tùy chọn, không UNIQUE, không mã hóa). Tài khoản chỉ số điện thoại + mật khẩu; đăng nhập chỉ bằng số điện thoại. Mỗi thông tin chỉ lưu một nơi, như Q58 theo chiều ngược lại | ADR-019 |
+| Q47 (đóng 2026-10-05, **đổi quyết định** 2026-10-04) | Hồ sơ tài xế bị từ chối có nộp lại được không? | **Được** (trước đó chốt "không"). Nộp lại bằng chính A11, hồ sơ về `PENDING` (D10, FR43) | Sinh viên 2026-10-05; spec 12-13-21-23 |
 
 ### 9.2 Còn mở
 

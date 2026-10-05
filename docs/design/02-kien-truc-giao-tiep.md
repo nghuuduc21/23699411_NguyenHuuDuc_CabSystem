@@ -8,6 +8,7 @@
 > **Sửa 2026-10-03 lần 2 (luật thi: gõ tay mọi request, không mở tài liệu):** đóng Q19 (HS256 — ADR-016) và Q20 (bỏ outbox — ADR-017, ADR-005 bị thay thế); đóng GĐ-6, GĐ-8. **Không đổi đường giao tiếp nào** (S2–S7, K1–K7 giữ nguyên).
 > **Sửa 2026-10-03** theo góp ý giảng viên: **bỏ đường S1** (`auth-service` → `customer-service` `CreateProfile`) — ADR-013 thay ADR-004. **Giữ nguyên mã S2–S7**, không đánh số lại, để không phải đổi mã ở file 03, 04, 05 và ADR; mã S1 bỏ trống, không dùng lại. Hệ thống ngoài giả lập đơn giản: callback xác thực bằng khóa bí mật trong header, bỏ chữ ký HMAC — ADR-014. Đóng Q43, Q50. Cùng ngày đóng Q56 (Booking không gọi Customer — mục 9), Q57 (`simulate_result: "MANUAL"` — mục 4.5, 8.2), Q58.
 > **Sửa 2026-10-03 lần 3 (ADR-018):** chỉ đổi **nhãn đường dẫn REST** trong mục 7 và sơ đồ trình tự mục 8 theo file 04 lần 4 (`/api/v1/…`, đổi trạng thái bằng `PATCH` + `status`). **Không đổi đường giao tiếp, rpc hay topic nào.**
+> **Sửa 2026-10-05:** mỗi service một **cổng gRPC riêng** 50051–50058 (mục 2.3, ADR-020 — sửa lỗi L3); ghi rõ cách chống lặp event ở từng consumer (mục 6.4 — không có bảng event đã xử lý); A04 không còn email (ADR-019); A11 dùng cả cho nộp lại hồ sơ bị từ chối (FR43). **Không đổi đường giao tiếp, rpc hay topic nào.**
 > **Chưa chốt:** chỗ ghi **[GĐ-n]** là *giả định tạm*, liệt kê ở mục 11.
 > **Đồng bộ 2026-10-02 lần 4** (cùng lúc viết file 03, 04): Booking tính quãng đường, Payment tính cước (đóng Q38, GĐ-13); hạn thanh toán BRULE17 → K6 có thêm `CANCELED`; Redis dừng thì cho qua (đóng Q39); đăng xuất ở Gateway theo FR42 (đóng Q40); tìm tài xế bằng Haversine (ADR-011). Chỉ sửa các dòng bị ảnh hưởng.
 
@@ -61,9 +62,9 @@ Trả lời nhận xét "không phải service nào cũng giao tiếp cả đồ
 |---|---|---|---|
 | `gateway` | Xem 2.2 | Mục chấm 3, 6, 8, 27, 28, 29 | **Có — 3000** |
 | `redis` | Bộ đếm rate limit; danh sách token đã thu hồi. **Chỉ Gateway dùng**; không chứa dữ liệu nghiệp vụ | Mục chấm 29; NFR06; `CLAUDE.md` | Không |
-| `auth-service` | Tài khoản, đăng nhập, cấp JWT, OTP, role. Đăng ký khách chỉ tạo tài khoản | FR26, FR32, FR39 | Không |
-| `customer-service` | Hồ sơ khách hàng: khách tạo sau khi đăng nhập, xem, sửa | FR27, BRULE18 | Không |
-| `driver-service` | Hồ sơ tài xế, xe, duyệt hồ sơ, Online/Offline, vị trí, tìm tài xế quanh tọa độ, giữ chỗ tài xế | FR02–FR04, FR13, FR28, FR29, FR38, FR39 | Không |
+| `auth-service` | Tài khoản (số điện thoại + mật khẩu, không email — ADR-019), đăng nhập bằng số điện thoại, cấp JWT, OTP, role. Đăng ký khách chỉ tạo tài khoản | FR26, FR32, FR39 | Không |
+| `customer-service` | Hồ sơ khách hàng (họ tên, ngày sinh, email): khách tạo sau khi đăng nhập, xem, sửa | FR27, BRULE18 | Không |
+| `driver-service` | Hồ sơ tài xế, xe, duyệt hồ sơ, nộp lại hồ sơ bị từ chối, Online/Offline, vị trí, tìm tài xế quanh tọa độ, giữ chỗ tài xế | FR02–FR04, FR13, FR28, FR29, FR38, FR39, FR43 | Không |
 | `booking-service` | Booking kèm cước, chờ thanh toán, danh sách booking, ghép tài xế (Offer, đếm giờ, phân công), hủy khi chưa có tài xế | FR01, FR05–FR11, FR35–FR37 | Không |
 | `trip-service` | Trip, trình tự trạng thái, lịch sử, hủy chuyến (khách, tài xế), theo dõi, giám sát | FR11, FR12, FR14, FR15, FR30, FR36, FR41 | Không |
 | `payment-service` | Cước cố định, thanh toán trả trước, callback, ghi nhận tiền mặt, hoàn tiền, chống lặp | FR16–FR20, FR40 | Không |
@@ -77,6 +78,27 @@ Trả lời nhận xét "không phải service nào cũng giao tiếp cả đồ
 **Chỉ hai thành phần mở cổng ra máy chủ:** Gateway tại `http://localhost:3000` và Kafka UI tại `http://localhost:8080` (hai số cổng cố định, ghi thẳng trong `compose.yaml`; không còn biến `GATEWAY_PORT`, `KAFKA_UI_PORT` — file 03 mục 13). Kafka UI là công cụ xem, không phải đường vào nghiệp vụ.
 
 **Không đặt Nginx** trước Gateway: Gateway tự làm reverse proxy (`CLAUDE.md`).
+
+### 2.3 Cổng gRPC nội bộ (sửa 2026-10-05, ADR-020)
+
+Mỗi service nghe gRPC ở **một cổng riêng**, chỉ trong mạng Compose (không có `ports`, không mở ra máy chủ). Địa chỉ gọi = `<tên service>:<cổng>`.
+
+| Service | Cổng gRPC | Biến địa chỉ ở bên gọi |
+|---|---|---|
+| `auth-service` | **50051** | `AUTH_GRPC_ADDR=auth-service:50051` |
+| `customer-service` | **50052** | `CUSTOMER_GRPC_ADDR=customer-service:50052` |
+| `driver-service` | **50053** | `DRIVER_GRPC_ADDR=driver-service:50053` |
+| `booking-service` | **50054** | `BOOKING_GRPC_ADDR=booking-service:50054` |
+| `trip-service` | **50055** | `TRIP_GRPC_ADDR=trip-service:50055` |
+| `payment-service` | **50056** | `PAYMENT_GRPC_ADDR=payment-service:50056` |
+| `notification-service` | **50057** | `NOTIFICATION_GRPC_ADDR=notification-service:50057` |
+| `rating-service` | **50058** | `RATING_GRPC_ADDR=rating-service:50058` |
+
+| Điểm | Nội dung |
+|---|---|
+| Vì sao đổi | Lỗi L3 khi kiểm thử: restart một container thì Docker có thể cấp lại IP cũ của nó cho container khác; vì mọi service cùng nghe 50051 nên kênh gRPC đang mở (đã phân giải tên thành IP) nối vào **nhầm service** mà không báo lỗi kết nối. Cổng khác nhau thì nối nhầm IP sẽ bị từ chối kết nối, kênh tự phân giải lại tên |
+| Quy luật dễ nhớ | Thứ tự 1–8 giống bảng 8 service trong `CLAUDE.md`: auth 1, customer 2, driver 3, booking 4, trip 5, payment 6, notification 7, rating 8 |
+| Đánh đổi | Thêm một con số phải nhớ cho mỗi service; mục chấm 8 vẫn thử bằng `localhost:50051` (bất kỳ cổng nào trong dải đều phải báo `ECONNREFUSED`) |
 
 ### 2.2 Nhiệm vụ Gateway (mục chấm 3)
 
@@ -169,7 +191,7 @@ Tên rpc là gợi ý ở mức nhóm; spec chốt từng rpc.
 |---|---|---|---|---|
 | G1 | `auth-service` | Đăng ký tài khoản khách (chỉ tài khoản), đăng nhập, xin OTP, xác nhận OTP và tạo tài khoản tài xế | FR26, FR39 | 9, 10, 21, 25 |
 | G2 | `customer-service` | **Tạo** hồ sơ của mình (sau khi đăng nhập); xem / sửa hồ sơ của mình; xem khách hàng theo mã | FR27, BRULE18 | 11, 24, 26 |
-| G3 | `driver-service` | Nộp hồ sơ tài xế và xe; xem tài xế theo mã; tài xế quanh tọa độ; bật / tắt nhận chuyến; gửi vị trí; admin duyệt / từ chối | FR02–FR04, FR13, FR28, FR29, FR38, FR39 | 12, 13, 21, 22, 23 |
+| G3 | `driver-service` | Nộp hồ sơ tài xế và xe (và nộp lại khi bị từ chối — cùng rpc); xem tài xế theo mã; tài xế quanh tọa độ; bật / tắt nhận chuyến; gửi vị trí; admin duyệt / từ chối | FR02–FR04, FR13, FR28, FR29, FR38, FR39, FR43 | 12, 13, 21, 22, 23 |
 | G4 | `booking-service` | Tạo booking (trả về cước, mã thanh toán, trạng thái); danh sách booking; xem booking; hủy booking chưa có tài xế; tài xế xem Offer đang chờ **[GĐ-2]**, nhận (trả về mã chuyến), từ chối | FR06–FR08, FR35–FR37 | 14, 15, 16, 18 |
 | G5 | `trip-service` | Xem chuyến; cập nhật trạng thái; khách hủy chuyến; tài xế hủy chuyến; admin xem danh sách | FR12, FR14, FR30, FR36, FR41 | 17, 18 |
 | G6 | `payment-service` | Xem thanh toán của một booking; nhận callback; thanh toán lại (kèm khóa chống lặp); tra cứu giao dịch | FR18–FR20, UC24 | 19, 30 |
@@ -275,7 +297,7 @@ Cặp Booking — Payment có **cả gRPC lẫn Kafka**, nhưng là ba việc kh
 | Điểm | Quy ước | Lý do |
 |---|---|---|
 | Tên topic | `<context>.<sự-kiện>`, chữ thường, gạch nối | Nhìn tên biết ai phát |
-| Phong bì chung | `event_id` (chuỗi UUID do bên phát sinh bằng `crypto.randomUUID()` lúc gửi), `event_type`, `occurred_at`, `data` | `event_id` để nhận ra message lặp. Event không có bảng riêng nên không có số tự tăng; không ai phải gõ mã này nên không vướng luật thi (ADR-015). Các ID trong `data` là số nguyên |
+| Phong bì chung | `event_id` (chuỗi UUID do bên phát sinh bằng `crypto.randomUUID()` lúc gửi), `event_type`, `occurred_at`, `data` | `event_id` giúp **Notification** nhận ra message lặp (UNIQUE `event_id`, `recipient_id`) và giúp người đọc log, Kafka UI phân biệt hai lần gửi. Payment, Driver, Booking **không lưu** `event_id`: chống lặp bằng trạng thái (mục 6.4). Event không có bảng riêng nên không có số tự tăng; không ai phải gõ mã này nên không vướng luật thi (ADR-015). Các ID trong `data` là số nguyên |
 | Khóa message (key) | ID của đối tượng chính | Kafka giữ thứ tự theo key: các event của cùng một chuyến, cùng một booking đến đúng thứ tự |
 | Consumer group | Tên service | Mỗi service nhận mỗi event một lần, dù chạy nhiều bản |
 | Nội dung | **Chỉ ID, trạng thái, số tiền.** Không họ tên, số điện thoại, địa chỉ, tọa độ, lý do hủy, nhận xét | NFR08, NFR16: event xem được trên Kafka UI |
@@ -293,8 +315,7 @@ Kafka giao message **ít nhất một lần**, nên mọi consumer phải chịu
 | K4 | `booking.canceled` | `booking-service` | **Payment**: hoàn tiền nếu đã thu, hủy bỏ nếu chưa. **Notification**: báo khách; báo tài xế đang giữ Offer chờ | **L2**: hủy phải thành công dù Payment lỗi (NFR05). **L3** | FR36, FR40, BRULE14, BRULE17, AC16, AC22, AC25; mục 18 | `booking_id` | `booking_id`, `customer_id`, `canceled_by` (`customer` / `system`), `previous_status`, `pending_offer_driver_id` (có thể rỗng) | Payment: như K3. Khi Booking bị hủy do BRULE17, Payment đã `CANCELED` từ trước nên bỏ qua |
 | K5 | `trip.status-changed` | `trip-service` | **Driver**: `COMPLETED` / `CANCELED` → tài xế rảnh lại. **Payment**: `COMPLETED` → ghi nhận tiền mặt; `CANCELED` → hoàn tiền hoặc hủy bỏ. **Notification**: báo khách và tài xế, gồm cả trạng thái đầu "tài xế đã nhận chuyến" | **L2**: kết thúc hay hủy chuyến không được lỗi theo Payment, Driver, Notification (NFR05). **L3**: ba bên cần | FR12, FR17, FR22, FR23, FR36, FR40, FR41, BRULE01, BRULE14, BRULE15, AC16, AC24; mục 16, 17, 18 | `trip_id` | `trip_id`, `booking_id`, `customer_id`, `driver_id`, `status`, `previous_status`; khi hủy thêm `canceled_by` | Driver: chỉ nhả nếu `booking_id` khớp booking đang giữ (D9). Payment: xét theo trạng thái Payment |
 | K6 | `payment.status-changed` | `payment-service` | **Booking**: `COMPLETED` và Booking đang chờ thanh toán → chuyển sang tìm tài xế; `CANCELED` (quá hạn / hết lượt) và Booking đang chờ thanh toán → Booking `CANCELED`, phát K4. **Notification**: báo khách thành công / thất bại / đã hoàn tiền | **L1**: kết quả đến từ Provider, hoặc do tiến trình nền hết hạn kết luận, lúc không biết trước. **L2**: tiền đã thu thì phải ghi xong dù Booking lỗi. **L3** | FR18, FR19, FR24, FR40, BRULE10, BRULE13, BRULE17, AC12, AC13, AC21, AC22, AC25; mục 19 | `booking_id` | `payment_id`, `booking_id`, `customer_id`, `method`, `amount`, `status` (`COMPLETED` / `FAILED` / `REFUNDED` / `CANCELED`), `previous_status`, `reason` (khi `CANCELED`: `PAYMENT_EXPIRED` / `ATTEMPTS_EXHAUSTED`) | Booking: chỉ đổi khi đang `PENDING_PAYMENT`, còn lại bỏ qua |
-| K7 | `driver.application-reviewed` | `driver-service` | **Notification**: báo tài xế kết quả duyệt | **L2**: duyệt hồ sơ không được lỗi theo Notification | FR39, AC20; mục 22 | `driver_id` | `driver_id`, `result` (duyệt / từ chối) | Mục 6.4 |
-
+| K7 | `driver.application-reviewed` | `driver-service` | **Notification**: báo tài xế kết quả duyệt | **L2**: duyệt hồ sơ không được lỗi theo Notification | FR39, FR43, AC20; mục 22. Nộp lại (FR43) **không** phát event: không ai cần biết ngay; admin thấy hồ sơ ở danh sách `PENDING` | `driver_id` | `driver_id`, `result` (duyệt / từ chối) | Mục 6.4. Mỗi lần duyệt là một `event_id` mới, nên hồ sơ bị từ chối hai lần (sau nộp lại) có hai thông báo `APPLICATION_REJECTED` |
 Năm điều cần giải thích được:
 
 | Điều | Lý do |
@@ -327,9 +348,24 @@ Vấn đề: service ghi database xong rồi mới gửi Kafka. Nếu chết gi�
 | Vẫn giữ | Mọi consumer chịu được event lặp (mục 6.4, file 03 mục 11.3): producer thử lại có thể gửi hai lần |
 | Truy vết | NFR14, NFR15 — đáp ứng ở mức "consumer lặp an toàn", **không** đáp ứng "không mất event khi sự cố" |
 
-### 6.4 Chống trùng ở Notification
+### 6.4 Chống lặp ở bên nghe (sửa 2026-10-05)
 
-Mỗi thông báo gắn với (`event_id`, người nhận). Gặp lại cặp này thì không tạo thông báo mới. Người nhận là `account_id` lấy từ event **[GĐ-9]**; Notification chỉ lưu thông báo trong ứng dụng nên không cần hỏi số điện thoại hay email từ service nào.
+Kafka giao ít nhất một lần, producer thử lại có thể gửi hai lần. **Không có bảng "event đã xử lý"** ở consumer nào; mỗi consumer chống lặp theo cách hợp với dữ liệu của nó:
+
+| Consumer | Event | Chống lặp bằng | Vì sao đủ |
+|---|---|---|---|
+| `payment-service` | K3, K4, K5 | **Trạng thái** — chỉ hoàn khi Payment đang `COMPLETED` (điện tử); chỉ hủy bỏ khi `PENDING` / `FAILED`; tiền mặt chỉ ghi nhận khi `PENDING`; đã `CANCELED` / `REFUNDED` → bỏ qua (spec 17-18 mục 2.5). Thêm UNIQUE một giao dịch `REFUND` mỗi Payment làm lưới an toàn (M8) | Event lặp gặp trạng thái đã đổi → bỏ qua |
+| `driver-service` | K5 | **Trạng thái** — `UPDATE … WHERE driver_id = $1 AND current_booking_id = $2` (D9) | Lần hai `current_booking_id` đã NULL → không đổi |
+| `booking-service` | K6 | **Trạng thái** — chỉ đổi khi `status = 'PENDING_PAYMENT'` | Lần hai Booking đã `SEARCHING` / `CANCELED` |
+| `notification-service` | K1–K7 | **UNIQUE** (`event_id`, `recipient_id`) — upsert `$setOnInsert` | Thông báo là bản ghi thêm mới, **không có trạng thái để so**, nên phải dựa vào `event_id` |
+
+| Điểm | Nội dung |
+|---|---|
+| Lý do | Trạng thái nghiệp vụ là sự thật duy nhất: không thể lệch với dữ liệu thật, không thêm bảng, không thêm bước ghi trong cùng giao dịch, ít khái niệm phải giải thích khi thi |
+| Đánh đổi | Mỗi handler phải viết bước chuyển có điều kiện cẩn thận; event lặp **đến sau** một thay đổi hợp lệ khác (ví dụ K5 `CANCELED` cũ đến sau khi tài xế đã nhận booking mới) vẫn an toàn vì điều kiện so cả `booking_id`. Không có nơi tra "event này đã xử lý chưa" để gỡ lỗi — phải xem log |
+| Đã sửa | Bản trước ở phong bì ghi "`event_id` để nhận ra message lặp" dễ hiểu nhầm là mọi consumer lưu `event_id`; chỉ Notification dùng |
+
+Ở Notification: mỗi thông báo gắn với (`event_id`, người nhận). Gặp lại cặp này thì không tạo thông báo mới. Người nhận là `account_id` lấy từ event **[GĐ-9]**; Notification chỉ lưu thông báo trong ứng dụng nên không cần hỏi số điện thoại hay email từ service nào.
 
 ## 7. Kiểm tra Kafka (mục chấm 7)
 
@@ -370,7 +406,7 @@ sequenceDiagram
   participant CU as customer-service
 
   Note over C,A: Mục 9 — đăng ký chỉ tạo tài khoản
-  C->>GW: A04 POST /api/v1/accounts (SĐT, email, mật khẩu)
+  C->>GW: A04 POST /api/v1/accounts (SĐT, mật khẩu)
   GW->>A: gRPC RegisterCustomer
   A->>A: kiểm tra trùng, băm mật khẩu, lưu Account role customer
   alt số điện thoại đã có

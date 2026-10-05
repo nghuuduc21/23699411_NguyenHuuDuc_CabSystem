@@ -4,6 +4,7 @@
 > Đầu vào: `CLAUDE.md` (Quyết định nghiệp vụ "Hoàn tiền", "Hủy và từ chối"; Quyết định kỹ thuật "Trả tài xế về rảnh sau chuyến", "Kết quả thanh toán, hoàn tiền", "Phát event Kafka", "Hệ thống ngoài", "Lỗi sai trạng thái"; Ràng buộc khi thi); `srs.md` (BR03, BR04.1, BR04.2, BR07, BR10; FR10, FR12, FR17, FR21–FR24, FR36, FR40, FR41; BRULE01, BRULE14–16; UC10, UC11, UC16, UC27, UC31, UC32; AC09–AC11, AC16, AC20, AC22–AC24; RTM08, RTM09, RTM12, RTM18, RTM23, RTM24); `docs/design/01` mục 6.4–6.7 (B12, B13, D9, T2–T8, M8–M12, N1–N5); `docs/design/02` K3–K7, mục 4.6, 6.2, 6.4, 7; `docs/design/03` mục 6, 7, 8, 9, 11.3, 14; `docs/design/04` A22, A27–A29, A33, mục 1, 1.10, 3, 4, 5.2; `docs/design/06` mục 16, 17, 18; ADR-014, ADR-017.
 > Phụ thuộc: **spec 00**, **09-10**, **12-13-21-23**, **14-15-16-19-30** (đã code ở `116e16e`: bảng `trips`, `trip_status_history` đủ cột; rpc `CreateTrip`; K5 `ACCEPTED`; K1–K4, K6; `ReleaseDriver`; seed B1–B7, T3–T5).
 > Ngoài phạm vi: A26 `ListTrips` (Q32 — làm sau 30 mục); S6 `GetDriverSummary` (FR14, mục 8.1); admin hủy chuyến (FR31, Q45); A34–A36 (spec 20).
+> **Sửa 2026-10-05 lần 2 (sinh viên chốt, FR43):** nội dung thông báo `APPLICATION_REJECTED` đổi thành "Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại." (mục 2.7) vì tài xế nay nộp lại được (spec 12-13-21-23 mục 2.6). Chống lặp ở consumer giữ nguyên (Payment, Driver bằng trạng thái; Notification bằng UNIQUE `event_id`, `recipient_id`; không bảng event đã xử lý — 02 mục 6.4). AC đổi: AC-TB-03; AC mới: AC-TB-09.
 > Ký hiệu: **[ĐC]** đã chốt; **[BA]** BA chọn (gom ở mục 9). Mã AC: **AC-CD** (chuyến, hủy), **AC-HT** (hoàn tiền, tài xế rảnh), **AC-TB** (thông báo).
 
 ## 1. Truy vết
@@ -102,7 +103,8 @@ Notification **không quyết định nghiệp vụ**: mỗi event → 0–2 th�
 | K6 | `FAILED` | `PAYMENT_FAILED` | `customer_id` | Thanh toán thất bại | `Thanh toán {payment_id} thất bại, bạn có thể thử lại` | như trên | FR19, M3 |
 | K6 | `CANCELED` | `PAYMENT_CANCELED` | `customer_id` | Thanh toán đã hủy | `Thanh toán {payment_id} quá hạn / hết lượt thử` (theo `reason`) | như trên | BRULE17 |
 | K6 | `REFUNDED` | `PAYMENT_REFUNDED` | `customer_id` | Đã hoàn tiền | `Đã hoàn {amount} đ cho thanh toán {payment_id}` | như trên | FR40 — **mục 18** |
-| K7 | `result = APPROVED` / `REJECTED` | `APPLICATION_APPROVED` / `APPLICATION_REJECTED` | `driver_id` | Hồ sơ tài xế đã được duyệt / bị từ chối | `Hồ sơ tài xế {driver_id}` | `driver_id`, `status` | FR39, AC20 |
+| K7 | `result = APPROVED` | `APPLICATION_APPROVED` | `driver_id` | Hồ sơ tài xế đã được duyệt | `Hồ sơ tài xế {driver_id}` | `driver_id`, `status` | FR39, AC20 |
+| K7 | `result = REJECTED` | `APPLICATION_REJECTED` | `driver_id` | Hồ sơ tài xế bị từ chối | **`Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại.`** (sửa 2026-10-05; trước: `Hồ sơ tài xế {driver_id}`). Không chứa lý do: K7 không mang văn bản tự do (02 mục 6.1); tài xế xem lý do ở A14 `drivers/{mã của mình}` và nộp lại bằng A11 | `driver_id`, `status` | FR39, FR43, AC20, AC30 |
 
 | Điểm | Quy định |
 |---|---|
@@ -409,14 +411,15 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23, 14-15-16-19-30 đạt; `dock
 | AC-HT-04 | NFR14 (event lặp) | Sau AC-HT-01 | Kafka UI → topic `trip.status-changed` → **Produce** lại y hệt message `CANCELED` của trip 5 (cùng `event_id`) | Payment 5 vẫn **một** `REFUND`; TX6 không đổi; A33 `[KH1]`, `[TX6]` **không** thêm thông báo |
 | AC-HT-05 | D9 | TX1 đang `BUSY` cho booking X | Produce K5 `COMPLETED` với `driver_id` 11, `booking_id` ≠ X | TX1 vẫn `BUSY` với X |
 | AC-HT-06 | NFR05 | `docker compose stop driver-service` | Chuyến `ACCEPTED` mới → A28 đến `COMPLETED`; `start driver-service`; ≈ 3 s A14 | 200 mọi bước; tài xế `ONLINE` sau khi Driver chạy lại |
-| AC-TB-03 | 19, 22 (AC13, AC20) | — | A31 `FAILED` trên payment mới; A15 duyệt tài xế mục 21 → tài xế đó A33; A16 từ chối TX7 → đăng nhập `0910000007` A33 | `PAYMENT_FAILED`; `APPLICATION_APPROVED`; `APPLICATION_REJECTED` |
+| AC-TB-03 (**đổi 2026-10-05**) | 19, 22 (AC13, AC20) | — | A31 `FAILED` trên payment mới; A15 duyệt tài xế mục 21 → tài xế đó A33; A16 từ chối TX7 → đăng nhập `0910000007` A33 | `PAYMENT_FAILED`; `APPLICATION_APPROVED`; `APPLICATION_REJECTED` với `body` **đúng** "Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại." (không chứa lý do từ chối) |
 | AC-TB-04 | 16, 18 (phân trang, N2) | Sau các AC trên | A33 `[KH1]` `?limit=1`; `?limit=1&page=2`; `?limit=abc`; `?page=0`; `?foo=1`; `[AD1]`; `[KH2]`; không token | 200 một mục, `total` > 1; mục kế tiếp; 400 `INVALID_PAGINATION` ×2; 400 `INVALID_INPUT`; 200 `data: []`, `total` 0; chỉ thông báo có `booking_id` của KH2; 401 |
 | AC-TB-05 | NFR05, N1 | `docker compose stop notification-service` | A19 → A24; A33 `[KH1]`; `start`; ≈ 3 s A33 | 201, 200 (đặt / nhận không lỗi); 503 `SERVICE_UNAVAILABLE`; sau khi chạy lại có `BOOKING_CREATED`, `TRIP_ACCEPTED` |
 | AC-TB-06 | N4 | Sau AC-TB-05 | `docker compose restart notification-service`; A33 `[KH1]` | `total` không đổi |
 | AC-TB-07 | 7 | Sau các AC trên | Kafka UI → Consumers | Có group `driver-service`, `payment-service`, `notification-service` (cùng `booking-service`), lag 0; topic K5 có message `ARRIVED` … `CANCELED`; không message nào chứa lý do hủy, tọa độ, họ tên |
 | AC-TB-08 | NFR08, NFR10 | Sau các AC trên | `docker compose logs notification-service trip-service` | Có `notification_created`, `trip_status_changed`, `trip_canceled`; không có `title`, `body`, `reason` |
+| AC-TB-09 (mới 2026-10-05) | 22 (FR43, N4) | Sau AC-TB-03 (TX7 đã có một `APPLICATION_REJECTED`) | TX7 nộp lại A11 (spec 12-13-21-23 AC-TX-34) → A16 từ chối lần hai → ≈ 1 s A33 `[TX7]`; Kafka UI Produce lại y hệt message K7 lần hai (cùng `event_id`) → A33 | Hai thông báo `APPLICATION_REJECTED` (hai `event_id` khác nhau, cùng `body` mới); sau khi Produce lặp vẫn **hai** (chống trùng theo `event_id`, `recipient_id`). Nộp lại **không** tạo thông báo (không có event) |
 
-Tổng: **33 tiêu chí** (19 AC-CD, 6 AC-HT, 8 AC-TB).
+Tổng: **34 tiêu chí** (19 AC-CD, 6 AC-HT, 9 AC-TB).
 
 ### 8.1 Chuỗi gõ tay khi thi
 

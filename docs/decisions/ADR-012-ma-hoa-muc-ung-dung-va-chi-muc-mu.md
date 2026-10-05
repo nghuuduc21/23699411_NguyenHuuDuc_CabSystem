@@ -11,6 +11,7 @@
 | 2026-10-02 | Bản đầu: AES-256-GCM cho số điện thoại, email, họ tên, ngày sinh, số giấy phép; thêm cột chỉ mục mù HMAC (`*_bidx`) cho số điện thoại, email, số giấy phép để UNIQUE và tra cứu; OTP băm HMAC có khóa; byte phiên bản khóa |
 | 2026-10-03 (ADR-013) | Hồ sơ khách không còn giữ số điện thoại (bỏ `customer_profiles.phone_enc`) |
 | 2026-10-03 (luật thi) | **Thu hẹp**: bỏ mã hóa số điện thoại, email; bỏ mọi chỉ mục mù và khóa của chúng (`AUTH_DATA_KEY`, `AUTH_BLIND_INDEX_KEY`, `DRIVER_BLIND_INDEX_KEY`); OTP băm scrypt (bỏ `AUTH_OTP_HMAC_KEY`); bỏ byte phiên bản khóa |
+| 2026-10-05 (ADR-019) | Email chuyển từ `accounts.email` (UNIQUE) sang `customer_profiles.email` (tùy chọn, không UNIQUE); **vẫn lưu rõ, không mã hóa**. Bảng "Lưu rõ" dưới đây đọc là `accounts.phone`, `otp_verifications.phone`, `customer_profiles.email` |
 
 ## Bối cảnh
 

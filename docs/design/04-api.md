@@ -3,6 +3,7 @@
 > Vòng 1 (chỉ BA), viết 2026-10-02. Đầu vào: `CLAUDE.md`, `srs.md` (FR01–FR42, BRULE01–18, UC01–UC33, AC01–AC29), file 01, file 02 (G1–G10, S2–S7, K1–K7), file 03, phiếu chấm 30 mục.
 > Sửa 2026-10-03: hồ sơ khách tạo sau khi đăng nhập (ADR-013); callback xác thực bằng khóa bí mật trong header, OTP trả trong response khi giả lập (ADR-014); `simulate_result: "MANUAL"` (Q57). Lần 3 (luật thi gõ tay): mã số nguyên (ADR-015), tên trường ngắn và giá trị mặc định (mục 1.8), chuỗi request mỗi mục ≤ 3.
 > **Sửa 2026-10-03 lần 4 (giảng viên trả lời Q59–Q61) — ADR-018:** đường dẫn theo chuẩn bài giảng **`/api/{version}/{resource}/{id}?{query-params}`**; **không động từ trong đường dẫn**, đổi trạng thái bằng `PATCH` + `status`; tìm kiếm, lọc bằng query; chỉ dùng **GET, POST, PATCH**. **Giữ nguyên mã A01–A39** (mã = một thao tác nghiệp vụ = một rpc; nhiều mã có thể chung một đường dẫn — mục 1.10). Không đổi proto, rpc. Chuỗi request mục 5 viết lại: được dùng lại tab, 30 giây gồm cả giải thích. Đóng Q59, Q60, Q61.
+> **Sửa 2026-10-05 (sinh viên chốt):** A04 không nhận `email`, A05 chỉ nhận `phone` (ADR-019); A37, A10 nhận `email` tùy chọn, A09, A38 trả `email`; A11 dùng cho cả **nộp lại** hồ sơ bị từ chối → 200 (FR43); **không thêm API `/me` mới** — khách, tài xế xem hồ sơ bằng mã của mình (`account_id` trong response đăng nhập), người khác → 403; giữ các route `/me` đã có. Bỏ mã lỗi `EMAIL_ALREADY_EXISTS`.
 > File này trả lời: **client gọi gì, ai được gọi, service nào xử lý, mỗi mục chấm gõ những request nào**. Chi tiết từng field và `.proto`: spec của từng mục chấm. Kịch bản học thuộc: file 06.
 > Ký hiệu: **[ĐC]** = đã chốt trong `CLAUDE.md` / `srs.md` / giảng viên. **[BA]** = BA tự chọn, chưa ai xác nhận (gom ở mục 9).
 
@@ -36,7 +37,7 @@
 | `UNAUTHENTICATED` | 401 | Sai thông tin đăng nhập; khóa callback sai / thiếu | `INVALID_CREDENTIALS`, `INVALID_CALLBACK_SECRET` |
 | `PERMISSION_DENIED` | 403 | Không phải chủ dữ liệu; tài khoản bị khóa | `NOT_OWNER`, `ACCOUNT_LOCKED` |
 | `NOT_FOUND` | 404 | Không có đối tượng | `CUSTOMER_NOT_FOUND`, `DRIVER_NOT_FOUND`, `BOOKING_NOT_FOUND`, `TRIP_NOT_FOUND`, `PAYMENT_NOT_FOUND`, `OFFER_NOT_FOUND`, `RATING_NOT_FOUND`, `TRANSACTION_NOT_FOUND` |
-| `ALREADY_EXISTS` | 409 | Trùng | `PHONE_ALREADY_EXISTS`, `EMAIL_ALREADY_EXISTS`, `CUSTOMER_ALREADY_EXISTS`, `DRIVER_ALREADY_EXISTS`, `LICENSE_PLATE_ALREADY_EXISTS`, `RATING_ALREADY_EXISTS` |
+| `ALREADY_EXISTS` | 409 | Trùng | `PHONE_ALREADY_EXISTS`, `CUSTOMER_ALREADY_EXISTS`, `DRIVER_ALREADY_EXISTS`, `LICENSE_PLATE_ALREADY_EXISTS`, `RATING_ALREADY_EXISTS` |
 | `FAILED_PRECONDITION` | 409 | Đúng dữ liệu nhưng sai thời điểm / sai trạng thái | `INVALID_STATUS_TRANSITION`, `BOOKING_NOT_CANCELABLE`, `BOOKING_ALREADY_ASSIGNED`, `TRIP_NOT_CANCELABLE`, `TRIP_NOT_COMPLETED`, `OFFER_EXPIRED`, `DRIVER_NOT_APPROVED`, `DRIVER_NOT_AVAILABLE`, `APPLICATION_ALREADY_REVIEWED`, `PAYMENT_ALREADY_COMPLETED`, `PAYMENT_IN_PROGRESS`, `PAYMENT_EXPIRED`, `PAYMENT_ATTEMPTS_EXHAUSTED`, `PAYMENT_CANCELED` (thanh toán đã hủy vì booking hủy / không có tài xế / chuyến hủy — spec 14-15-16-19-30 DX11), `PAYMENT_NOT_ONLINE`, `IDEMPOTENCY_KEY_REUSED` |
 | Còn lại (`UNAVAILABLE`, `DEADLINE_EXCEEDED`, `INTERNAL`, …) | 503 | Service không chạy, quá deadline, lỗi không lường trước | `SERVICE_UNAVAILABLE` |
 
@@ -106,7 +107,7 @@ Sửa tab rồi gửi mất ≥ 3 giây mỗi request nên mục 9 + 10 (5 reque
 
 ### 1.6 Văn bản do người dùng nhập (mục chấm 26) [BA]
 
-Field văn bản tự do: `name`, `from_address`, `to_address`, `reason`, `comment`, `plate`, `brand`, `model`, `color`.
+Field văn bản tự do: `name`, `from_address`, `to_address`, `reason`, `comment`, `plate`, `brand`, `model`, `color`. `email` (hồ sơ khách, 2026-10-05) **không** thuộc nhóm này: có định dạng cố định, biểu thức kiểm tra đã loại `<`, `>` → 400 `INVALID_EMAIL`.
 
 | Lớp | Làm gì | Ở đâu |
 |---|---|---|
@@ -124,12 +125,12 @@ Gateway kiểm tra token xong thì **tự dựng** metadata gRPC: `x-account-id`
 
 | API | Field | Bắt buộc | Mặc định khi không gửi | Ghi chú |
 |---|---|---|---|---|
-| A04 đăng ký | `phone`, `password` | Có | — | `email` tùy chọn |
-| A05 đăng nhập | `phone` **hoặc** `email`; `password` | Có | — | Gửi cả hai định danh → 400. Cùng body với A04 nên mục 9 chỉ sửa URL |
+| A04 đăng ký | `phone`, `password` | Có | — | Không có field nào khác; gửi `email` → 400 `INVALID_INPUT` như field lạ (sửa 2026-10-05, ADR-019) |
+| A05 đăng nhập | `phone`, `password` | Có | — | Chỉ đăng nhập bằng số điện thoại; gửi `email` → 400 `INVALID_INPUT`. Cùng body với A04 nên mục 9 chỉ sửa URL |
 | A07 xin OTP | `phone` | Có | — | |
 | A08 đăng ký tài xế | `phone`, `otp`, `password` | Có | — | Response có luôn `token` |
-| A37 / A10 hồ sơ khách | `name` | Có (A37) | — | `dob` (`YYYY-MM-DD`) tùy chọn. A10 gửi ít nhất một field |
-| A11 nộp hồ sơ tài xế | `name`, `license`, `plate` | Có | `vehicle` = **`CAR_4`** | `brand`, `model`, `color` tùy chọn |
+| A37 / A10 hồ sơ khách | `name` | Có (A37) | — | `dob` (`YYYY-MM-DD`), `email` tùy chọn (thêm `email` 2026-10-05). A10 gửi ít nhất một field; `email: null` ở A10 = xóa email |
+| A11 nộp / nộp lại hồ sơ tài xế | `name`, `license`, `plate` | Có | `vehicle` = **`CAR_4`** | `brand`, `model`, `color` tùy chọn. Nộp lại (hồ sơ `REJECTED`) gửi **cùng body** như lần đầu |
 | A17 / A39 bật / tắt | `status` = `ONLINE` / `OFFLINE` | Có | — | A17 nhận thêm `lat`, `lng` tùy chọn; bắt buộc nếu tài xế chưa từng có vị trí |
 | A18 vị trí | `lat`, `lng` | Có | — | Không có `status` |
 | A15 / A16 duyệt hồ sơ | `approval_status` = `APPROVED` / `REJECTED` | Có | — | A16 bắt buộc `reason` (FR36) |
@@ -157,7 +158,7 @@ Tài xế có **hai trạng thái độc lập** (file 03 mục 5.2): `status` �
 | R3 | **Method nói việc làm**, đường dẫn chỉ nói tài nguyên. Chỉ dùng ba method: `GET` đọc, `POST` tạo mới, `PATCH` sửa một phần | `POST /api/v1/bookings` = đặt xe |
 | R4 | **Đổi trạng thái** = `PATCH /api/v1/{resource}/{id}` với body `{"status": "<trạng thái mới>"}` (kèm `reason` khi hủy) | `PATCH /api/v1/trips/1000` `{"status":"ARRIVED"}` |
 | R5 | Tìm kiếm, lọc, phân trang = **query params** | `GET /api/v1/drivers?lat=10.82&lng=106.68&limit=2` |
-| R6 | `me` = "mã của người trong token", dùng thay `{id}` cho API "của tôi" | `GET /api/v1/customers/me` |
+| R6 | `me` = "mã của người trong token", dùng thay `{id}` cho API "của tôi". **Không thêm route `/me` mới** (sinh viên chốt 2026-10-05): xem hồ sơ của mình thì dùng `/{resource}/{id}` với mã = `account_id` trả về khi đăng nhập; mã người khác → 403. Giữ các route `/me` đã có (A38, A10, A17, A39, A18) | `GET /api/v1/customers/me` (có sẵn); `GET /api/v1/drivers/11` (tài xế 11 xem chính mình) |
 | R7 | Một "lần làm" có lưu lại (lần thanh toán, lần callback, mã OTP) là **tài nguyên được tạo** → `POST` | `POST /api/v1/payments/7/transactions` |
 
 **Ngoại lệ có chủ đích** (chỉ ba nhóm):
@@ -219,6 +220,7 @@ Cột **Role**: role Gateway cho qua ("—" = công khai); "(chủ)" = service c
 Ghi chú:
 
 - A05 sai mật khẩu và số chưa đăng ký trả **cùng** 401 `INVALID_CREDENTIALS`. Mật khẩu đúng nhưng `LOCKED` → 403 `ACCOUNT_LOCKED`. Định danh sai định dạng (gồm `' OR 1=1 --`) → 400 `INVALID_PHONE`.
+- A04, A05 gửi `email` (hoặc field lạ khác) → 400 `INVALID_INPUT` (ADR-019: tài khoản không còn email).
 - A04, A08 số đã có → 409 `PHONE_ALREADY_EXISTS`. A08 OTP sai → 400 `OTP_INVALID`; hết hạn → 400 `OTP_EXPIRED`.
 - A08 trả luôn `token` [BA]: OTP vừa chứng minh người gọi giữ số điện thoại, bớt một request ở mục 21. A04 **không** trả token: mục 9 phải thấy "đăng ký xong **đăng nhập được**".
 
@@ -234,21 +236,22 @@ Ba endpoint health:
 
 | Mã | Method, đường dẫn | Body / query | Role | Service — rpc | Mục chấm | FR / UC |
 |---|---|---|---|---|---|---|
-| A37 | `POST /api/v1/customers` | `{"name"}` (+ `dob`) | customer | customer — `CreateCustomer` | 11 (phụ), 26 | FR27, BRULE18 / UC03, AC28 |
+| A37 | `POST /api/v1/customers` | `{"name"}` (+ `dob`, `email`) | customer | customer — `CreateCustomer` | 11 (phụ), 26 | FR27, BRULE18 / UC03, AC28 |
 | A38 | `GET /api/v1/customers/me` | — | customer | customer — `GetCustomer` (mã = `sub`) | 26, 27 | FR27 / UC03, AC28 |
 | A09 | `GET /api/v1/customers/{id}` | — | customer (chủ), admin | customer — `GetCustomer` | **11**, 24, 25 | FR27 / UC03, UC19, AC29 |
-| A10 | `PATCH /api/v1/customers/me` | `{"name"}` và / hoặc `{"dob"}` | customer | customer — `UpdateCustomer` | 26 | FR27, BRULE18 / UC03, AC29 |
+| A10 | `PATCH /api/v1/customers/me` | Ít nhất một trong `name`, `dob`, `email` | customer | customer — `UpdateCustomer` | 26 | FR27, BRULE18 / UC03, AC29 |
 
 | Mã | Vì sao đặt như vậy | Request mẫu → response thành công |
 |---|---|---|
-| A37 | Tạo hồ sơ = `POST` vào tập `customers`. Không gửi mã: `customer_id` = `account_id` trong token (C4), nên khách không tạo hộ người khác | `{"name":"Pham Duc"}` → 201 `{ "customer_id": 1000, "name": "Pham Duc", "dob": null }` |
-| A38 | `me` = mã trong token (R6): khách không cần nhớ mã của mình | — → 200 `{ "customer_id": 1, "name": "Nguyễn Văn An", "dob": "2000-01-01" }` |
-| A09 | Đúng mẫu `/{resource}/{id}` của phiếu chấm "xem theo mã số" | — → 200 như A38 |
+| A37 | Tạo hồ sơ = `POST` vào tập `customers`. Không gửi mã: `customer_id` = `account_id` trong token (C4), nên khách không tạo hộ người khác | `{"name":"Pham Duc"}` → 201 `{ "customer_id": 1000, "name": "Pham Duc", "dob": null, "email": null }`; thêm `"email":"Duc@Cab.vn"` → lưu và trả `"duc@cab.vn"` |
+| A38 | `me` = mã trong token (R6): khách không cần nhớ mã của mình | — → 200 `{ "customer_id": 1, "name": "Nguyễn Văn An", "dob": "2000-01-01", "email": "kh1@cab.vn" }` |
+| A09 | Đúng mẫu `/{resource}/{id}` của phiếu chấm "xem theo mã số". Cách khách xem hồ sơ của mình được khuyến nghị khi thi: mã = `account_id` trong response đăng nhập | — → 200 như A38 |
 | A10 | `PATCH` vì **sửa một phần** (field vắng giữ nguyên); đổi từ `PUT` (đóng HS-Q4). Không có `PATCH /api/v1/customers/{id}`: chỉ chủ được sửa (BRULE18) | `{"name":"An Nguyen"}` → 200 hồ sơ sau khi sửa |
 
 Ghi chú:
 
 - A37 đã có hồ sơ → 409 `CUSTOMER_ALREADY_EXISTS`. A38, A10 chưa có hồ sơ → 404 `CUSTOMER_NOT_FOUND`. A10 body rỗng → 400.
+- A37, A10 `email` rỗng, sai định dạng, quá 254 ký tự → 400 `INVALID_EMAIL`; không phải chuỗi (hoặc `null` ở A37) → 400 `INVALID_INPUT`. Email **không** UNIQUE: hai khách cùng email đều 201 (ADR-019).
 - A09: khách gọi mã **khác mã của mình** → **403 `NOT_OWNER` ngay**, không tra database. Đúng mã của mình mà chưa có hồ sơ → 404. Admin: 200 hoặc 404.
 - Đường dẫn tĩnh (`/api/v1/customers/me`, `/api/v1/drivers/me`) được so khớp **trước** đường dẫn có mã.
 
@@ -256,7 +259,7 @@ Ghi chú:
 
 | Mã | Method, đường dẫn | Body / query | Role | Service — rpc | Mục chấm | FR / UC |
 |---|---|---|---|---|---|---|
-| A11 | `POST /api/v1/drivers` | `{"name","license","plate"}` (+ `vehicle`, `brand`, `model`, `color`) | driver | driver — `SubmitApplication` | 21 | FR39, FR28, FR29 / UC29 |
+| A11 | `POST /api/v1/drivers` | `{"name","license","plate"}` (+ `vehicle`, `brand`, `model`, `color`) | driver | driver — `SubmitApplication` | 21, 22 (nộp lại) | FR39, FR43, FR28, FR29 / UC29 |
 | A12 | `GET /api/v1/drivers?lat&lng&vehicle&page&limit` | Query | customer, admin | driver — `FindNearbyDrivers` | **13** | FR02–FR05 / UC06 |
 | A13 | `GET /api/v1/drivers?approval_status&page&limit` | Query | admin | driver — `ListDrivers` | 22 (bổ trợ) | FR28, FR39 / UC20, UC30 |
 | A14 | `GET /api/v1/drivers/{id}` | — | Cả ba | driver — `GetDriver` | **12** | FR28, FR29 / UC20, UC21 |
@@ -278,7 +281,9 @@ Ghi chú:
 
 Ghi chú:
 
-- A11 nộp lần hai → 409 `DRIVER_ALREADY_EXISTS`; biển số trùng → 409 `LICENSE_PLATE_ALREADY_EXISTS`.
+- A11 khi hồ sơ đang `PENDING` hoặc `APPROVED` → 409 `DRIVER_ALREADY_EXISTS`; biển số trùng **tài xế khác** → 409 `LICENSE_PLATE_ALREADY_EXISTS`.
+- A11 khi hồ sơ đang `REJECTED` → **nộp lại** (FR43, sửa 2026-10-05): ghi đè thông tin và xe, về `PENDING`, xóa `reason` và người / thời điểm xét → **200** (sửa bản ghi đã có, không tạo mới — R3; 201 chỉ dành cho lần tạo đầu). Response cùng dạng lần đầu. Không giới hạn số lần nộp lại. Admin duyệt lại bằng A15 / A16.
+- A14 tài xế xem chính mình (mã = `account_id`) thấy thêm `reason` khi đang `REJECTED` — đó là nơi thông báo `APPLICATION_REJECTED` dẫn tới.
 - A12: chỉ tài xế đã duyệt, `ONLINE`, trong **1 000 m** (D1–D3), sắp theo `distance_m` tăng dần rồi `driver_id`. `lat` ngoài −90…90 hoặc `lng` ngoài −180…180 → 400 `INVALID_COORDINATES`; chỉ có một trong `lat`, `lng` → 400 `INVALID_INPUT`. Cùng rpc với S2. Khách gọi `GET /api/v1/drivers` không có `lat` → biến thể A13 → 403 `FORBIDDEN`.
 - A15, A16 hồ sơ đã xét → 409 `APPLICATION_ALREADY_REVIEWED`; A16 thiếu `reason` → 400 `REASON_REQUIRED`.
 - A17 chưa được duyệt → 409 `DRIVER_NOT_APPROVED` (D6); không có vị trí và không gửi `lat`, `lng` → 400 `INVALID_INPUT`. A39 khi đang `BUSY` → 409 `DRIVER_NOT_AVAILABLE`. Đặt trạng thái đang có → 200 (không đổi gì). `{"status":"BUSY"}` → 400 (chỉ hệ thống đặt `BUSY`, qua S3).
@@ -419,7 +424,7 @@ Ghi chú:
 | A38 | `GET /api/v1/customers/me` | 401 | 200 (404 nếu chưa có) | 403 | 403 |
 | A09 | `GET /api/v1/customers/{id}` | 401 | 200\* (404 nếu chưa có hồ sơ) | 403 | 200 / 404 |
 | A10 | `PATCH /api/v1/customers/me` | 401 | 200 (404 nếu chưa có) | 403 | 403 |
-| A11 | `POST /api/v1/drivers` | 401 | 403 | 201 | 403 |
+| A11 | `POST /api/v1/drivers` | 401 | 403 | 201 (200 nếu nộp lại hồ sơ `REJECTED`; 409 nếu `PENDING` / `APPROVED`) | 403 |
 | A12 | `GET /api/v1/drivers?lat&lng` | 401 | 200 | 403 | 200 |
 | A13 | `GET /api/v1/drivers` (không `lat`) | 401 | 403 | 403 | 200 |
 | A14 | `GET /api/v1/drivers/{id}` | 401 | 200 (công khai) | 200 (đủ nếu là mình) | 200 (đủ) |
@@ -509,7 +514,7 @@ Ký hiệu: `[KH1]` = tab Authorization → Bearer Token → dán token của KH
 
 | Mục | # | Request | Kết quả mong đợi |
 |---|---|---|---|
-| 11 | 1 | `GET localhost:3000/api/v1/customers/1` — `[KH1]` | 200 `name` "Nguyễn Văn An", `dob` 2000-01-01 |
+| 11 | 1 | `GET localhost:3000/api/v1/customers/1` — `[KH1]` | 200 `name` "Nguyễn Văn An", `dob` 2000-01-01, `email` `kh1@cab.vn` |
 | | 2 | Sửa tab: `/customers/2` | 403 `NOT_OWNER` |
 | | (3) | (tùy chọn, tạo hồ sơ) `POST localhost:3000/api/v1/customers` — `[token mục 9]` — `{"name":"Pham Duc"}` | 201 `customer_id` 1000 |
 | 12 | 1 | Sửa tab mục 11: `customers/2` → `drivers/11` | 200 Tài Xế 1, `CAR_4`, `59A-00001`, `status` `ONLINE` |
@@ -545,6 +550,7 @@ Ký hiệu: `[KH1]` = tab Authorization → Bearer Token → dán token của KH
 | | 3 | Sửa tab: URL `drivers`, token `[token vừa nhận]`, body `{"name":"Tai Xe Moi","license":"GPLX-99","plate":"59A-99999"}` | 201 `approval_status` **`PENDING`**, `driver_id` D |
 | 22 | 1 | Sửa tab mục 21: method `PATCH`, URL `drivers/D`, token `[AD1]`, body `{"approval_status":"APPROVED"}` | 200 `APPROVED` |
 | | (2) | (tùy chọn) Sửa tab: `drivers/17`, body `{"approval_status":"REJECTED","reason":"thieu giay to"}` | 200 `REJECTED` |
+| | (—) | (chỉ vấn đáp) Bị từ chối thì sao? | Tài xế nộp lại bằng **chính request 3 mục 21** (`POST drivers`, cùng body) → 200 `PENDING`; admin duyệt lại như request 1 (FR43) |
 | 23 | 1 | Sửa tab mục 22: URL `drivers/me`, token `[TX1]`, body `{"status":"OFFLINE"}` | 200 `status` `OFFLINE` |
 | | 2 | Sửa tab: `"ONLINE"` | 200 `ONLINE` (TX1 trở lại như seed) |
 | 24 | 1 | Tab GET (mục 11–14, 18): URL `customers/1`, `[KH1]` | 200 họ tên rõ |

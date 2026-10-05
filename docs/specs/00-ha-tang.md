@@ -1,6 +1,7 @@
 # Spec 00 — Hạ tầng: cấu trúc mã nguồn, Compose, Kafka, Gateway health
 
 > Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3:** Gateway đọc body JSON bất kể `Content-Type`, lệnh `psql` dạng `table <bảng>`, tạo `.env` bằng `cp`. **Đồng bộ với 04 lần 4 (ADR-018):** route nghiệp vụ dưới `/api/v1/`; ba endpoint health ở ngoài tiền tố; `GET` bỏ qua body; đóng H-Q4 (giảng viên cho phép khóa mẫu trong `.env.example`). **Sửa 2026-10-04 theo phản hồi dev-agent sau khi dựng thật:** healthcheck gọi `127.0.0.1`; H-Q1 thêm trường hợp MongoDB của Windows; ghi nhận chi tiết code đã chọn (H10–H12, mục 3.2, 3.5, 4).
+> **Sửa 2026-10-05 (sinh viên chốt, sửa lỗi L3) — ADR-020:** mỗi service một **cổng gRPC riêng**: auth 50051, customer 50052, driver 50053, booking 50054, trip 50055, payment 50056, notification 50057, rating 50058 (mục 2.1, 3.1, 3.2, 3.5, H1). Ghi rõ quy ước chống lặp event (mục 3.3). AC mới: AC-HT-14, AC-HT-15; AC đổi: AC-HT-11.
 > Mục chấm **1, 2, 5, 6, 7, 8**.
 > Đầu vào: `CLAUDE.md` (Quy tắc kiến trúc, Quyết định kỹ thuật, Ràng buộc khi chấm, Ràng buộc khi thi, Cấu trúc thư mục, Quy ước code); `docs/design/02` mục 2, 6, 7; `docs/design/03` mục 1.1, 1.3, 11.3, 12, **13**, **14**; `docs/design/04` mục 1, 2.1; ADR-010, ADR-014, ADR-015, ADR-016, ADR-017.
 > Phạm vi: khung **chạy được, chưa có nghiệp vụ**. Mỗi service: khởi động → nối database của mình → chạy migration → chạy seed (nếu bật) → trả lời health gRPC. Gateway: ba endpoint health và bảng đổi lỗi gRPC → HTTP dùng chung cho các spec sau.
@@ -27,7 +28,7 @@ Không có UC: đây là phần nền mà mọi UC dựa vào.
 |---|---|
 | Tác nhân | Sinh viên chạy demo, người chấm |
 | Tiền điều kiện | Docker Desktop chạy; đã sao chép `.env.example` thành `.env` (mục 3.7) |
-| Luồng chính | 1. `docker compose up -d --build`. 2. Database, Redis, Kafka lên và healthy. 3. `kafka-init` tạo 7 topic rồi thoát mã 0. 4. Mỗi service: đọc biến môi trường → nối database (thử lại) → chạy migration → chạy seed nếu `SIMULATION_MODE=true` → mở gRPC `0.0.0.0:50051` → health `SERVING`. 5. Gateway: nối Redis, tạo 8 kênh gRPC, mở HTTP `0.0.0.0:3000`. 6. Kafka UI mở `:8080` |
+| Luồng chính | 1. `docker compose up -d --build`. 2. Database, Redis, Kafka lên và healthy. 3. `kafka-init` tạo 7 topic rồi thoát mã 0. 4. Mỗi service: đọc biến môi trường → nối database (thử lại) → chạy migration → chạy seed nếu `SIMULATION_MODE=true` → mở gRPC `0.0.0.0:<cổng của service>` (50051–50058, mục 3.2) → health `SERVING`. 5. Gateway: nối Redis, tạo 8 kênh gRPC, mở HTTP `0.0.0.0:3000`. 6. Kafka UI mở `:8080` |
 | Ngoại lệ | Thiếu biến bắt buộc hoặc khóa sai độ dài → service ghi một dòng lỗi nêu **tên biến** (không ghi giá trị), thoát mã 1. Database chưa sẵn sau hết lượt thử, hoặc migration lỗi → thoát mã 1, Compose khởi động lại (`restart: unless-stopped`) |
 | Hậu điều kiện | 21 container: 20 đang chạy (healthy), `kafka-init` đã thoát mã 0. Chỉ `gateway` (3000) và `kafka-ui` (8080) có cổng ra máy |
 
@@ -78,7 +79,7 @@ services/<tên>/
 │  ├─ migrate.js         chạy migration (mục 7.1)
 │  ├─ seed.js            seed của service (mục 7.2)
 │  ├─ health.js          trạng thái health
-│  ├─ healthcheck.js     cho healthcheck của Docker: gọi Health/Check ở 127.0.0.1:50051
+│  ├─ healthcheck.js     cho healthcheck của Docker: gọi Health/Check ở 127.0.0.1:<cổng của service> (cùng hằng số với server)
 │  ├─ grpc/              server gRPC, đổi lỗi nghiệp vụ → gRPC status
 │  └─ domain/            logic nghiệp vụ, không import gRPC / pg
 └─ test/                 unit test node:test
@@ -97,9 +98,11 @@ Tên container = tên service trong Compose, đặt bằng `container_name` đ�
 | # | Container | Image / build | Cổng trong mạng | Cổng ra máy | Healthcheck | `depends_on` | `mem_limit` |
 |---|---|---|---|---|---|---|---|
 | 1 | `gateway` | build `services/gateway` | 3000 | **`3000:3000`** | `wget -qO- http://127.0.0.1:3000/health` | `redis`: healthy; 8 service: `service_started` | 256m |
-| 2–3 | `auth-service`, `customer-service` | build | 50051 | — | `node src/healthcheck.js` | database của mình: healthy | 256m |
-| 4–8 | `driver-service`, `booking-service`, `trip-service`, `payment-service`, `notification-service` | build | 50051 | — | như trên | database của mình: healthy; `kafka-init`: completed | 256m |
-| 9 | `rating-service` | build | 50051 | — | như trên | `rating-db`: healthy | 256m |
+| 2–3 | `auth-service`, `customer-service` | build | **50051**, **50052** | — | `node src/healthcheck.js` | database của mình: healthy | 256m |
+| 4–8 | `driver-service`, `booking-service`, `trip-service`, `payment-service`, `notification-service` | build | **50053**, **50054**, **50055**, **50056**, **50057** | — | như trên | database của mình: healthy; `kafka-init`: completed | 256m |
+| 9 | `rating-service` | build | **50058** | — | như trên | `rating-db`: healthy | 256m |
+
+Cổng gRPC (sửa 2026-10-05, ADR-020) theo thứ tự 8 service trong `CLAUDE.md`: auth **1**, customer **2**, driver **3**, booking **4**, trip **5**, payment **6**, notification **7**, rating **8** → `5005n`. Lý do: lỗi L3 — sau khi restart một container, Docker có thể cấp IP cũ của nó cho container khác; khi mọi service cùng nghe 50051, kênh gRPC đã phân giải tên thành IP sẽ nối **nhầm service** mà vẫn thành công. Cổng khác nhau thì nối nhầm IP bị từ chối kết nối → kênh tự phân giải lại tên. Đánh đổi: thêm một con số mỗi service phải nhớ và cấu hình đúng ở bên gọi.
 | 10–16 | `auth-db`, `customer-db`, `driver-db`, `booking-db`, `trip-db`, `payment-db`, `rating-db` | `postgres:16-alpine` | 5432 | — | `pg_isready -U cab -d <database>` | — | 256m |
 | 17 | `notification-db` | `mongo:7.0`, `--wiredTigerCacheSizeGB 0.25` | 27017 | — | `mongosh --quiet --eval "db.adminCommand('ping').ok"` | — | 512m |
 | 18 | `redis` | `redis:7.4-alpine`, `redis-server --maxmemory 64mb --maxmemory-policy noeviction` | 6379 | — | `redis-cli ping` | — | 128m |
@@ -158,6 +161,8 @@ Kafka UI: `KAFKA_CLUSTERS_0_NAME=cab`, `KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:
 
 Quy ước gửi event cho các spec sau [ĐC ADR-017]: service **commit database xong rồi gửi Kafka ngay**, không có bảng outbox; producer thử lại tối đa 3 lần trong ≤ 1 giây (hằng số). Đánh đổi: service dừng đúng giữa commit và gửi thì mất event; bên nghe vẫn phải chịu được event lặp.
 
+Quy ước chống lặp ở bên nghe (sinh viên xác nhận 2026-10-05, 02 mục 6.4, 03 mục 11.3): **không có bảng event đã xử lý**. Payment, Driver, Booking chống lặp bằng **trạng thái** (bước chuyển có điều kiện, event lặp gặp trạng thái đã đổi thì bỏ qua) và không lưu `event_id`; Notification bằng UNIQUE (`event_id`, `recipient_id`) vì thông báo không có trạng thái để so. Đánh đổi: không có nơi tra "event này đã xử lý chưa"; handler phải viết điều kiện cẩn thận.
+
 ### 3.4 Dockerfile của service Node
 
 | Bước | Nội dung | Lý do |
@@ -200,10 +205,10 @@ Mỗi service **chỉ nhận biến của mình**: Compose ghi từng biến tro
 | `MONGODB_URI` | notification-service | `mongodb://cab:${DB_PASSWORD}@notification-db:27017/notification?authSource=admin` |
 | `REDIS_URL` | gateway | `redis://redis:6379` |
 | `KAFKA_BROKERS` | 5 service dùng Kafka | `kafka:9092` |
-| `AUTH_GRPC_ADDR` … `RATING_GRPC_ADDR` | gateway (8 biến); booking (`DRIVER_`, `PAYMENT_`, `TRIP_GRPC_ADDR`); trip (`DRIVER_GRPC_ADDR`); rating (`TRIP_GRPC_ADDR`) | `<tên-service>:50051`. Mỗi service chỉ có địa chỉ của service nó được gọi (02 mục 4.3) |
+| `AUTH_GRPC_ADDR` … `RATING_GRPC_ADDR` | gateway (8 biến); booking (`DRIVER_`, `PAYMENT_`, `TRIP_GRPC_ADDR`); trip (`DRIVER_GRPC_ADDR`); rating (`TRIP_GRPC_ADDR`) | `<tên-service>:<cổng của service đó>`: `auth-service:50051`, `customer-service:50052`, `driver-service:50053`, `booking-service:50054`, `trip-service:50055`, `payment-service:50056`, `notification-service:50057`, `rating-service:50058`. Mỗi service chỉ có địa chỉ của service nó được gọi (02 mục 4.3) |
 | `SERVICE_NAME` | gateway, 8 service | Tên container, ghi vào log |
 
-Cổng (`50051`, `3000`) và deadline gRPC (Gateway → service 3 000 ms, service → service 1 000 ms, health 1 000 ms) là **hằng số trong code** (03 mục 13).
+Cổng gRPC của chính service (50051–50058, mỗi service một số) và cổng `3000` của Gateway, cùng deadline gRPC (Gateway → service 3 000 ms, service → service 1 000 ms, health 1 000 ms) là **hằng số trong code** (03 mục 13).
 
 Mật khẩu database đi vào service **chỉ** qua chuỗi kết nối `DATABASE_URL` / `MONGODB_URI` (Compose ghép `${DB_PASSWORD}` vào): service đọc một biến thay vì ráp năm phần, ít chỗ lệch.
 
@@ -362,8 +367,10 @@ Tiền điều kiện chung: `.env` sao chép từ `.env.example`; `docker compo
 | AC-HT-08 | 404 | — | `GET /api/v1/khong-co`; `GET /api/health` | 404 `{ "error": "ROUTE_NOT_FOUND" }` cả hai (health chỉ có ở `/health`) |
 | AC-HT-09 | 7 | Compose đã lên | Mở `http://localhost:8080` → cluster `cab` → Topics | Đủ 7 topic mục 3.3, không topic nghiệp vụ nào khác (topic nội bộ `__…` được phép) |
 | AC-HT-10 | 8 | Compose đã lên | `docker compose ps -a` | Chỉ `gateway` có `0.0.0.0:3000->3000` và `kafka-ui` có `0.0.0.0:8080->8080`; container khác không có `->` |
-| AC-HT-11 | 8 (lỗi) | Compose đã lên | Postman gọi thẳng `http://localhost:50051`, `http://localhost:5432` | Lỗi kết nối (không có response) |
+| AC-HT-11 (**đổi 2026-10-05**) | 8 (lỗi) | Compose đã lên | Postman gọi thẳng `http://localhost:50051`, `http://localhost:50058`, `http://localhost:5432` | Lỗi kết nối (không có response) với **mọi** cổng gRPC 50051–50058 (trước đây chỉ thử 50051) |
 | AC-HT-12 | Đặt lại | Đã demo, dữ liệu đổi | `docker compose down -v` rồi `docker compose up -d --build` | Hệ thống lên lại healthy; seed về trạng thái đầu; `docker compose restart auth-service` sau đó không nhân đôi seed |
+| AC-HT-14 (mới 2026-10-05) | 5, 6 | Compose đã lên | `docker compose logs <service>` từng service (dòng khởi động); `docker exec gateway printenv` lọc `_GRPC_ADDR` | Mỗi service log nghe đúng cổng của mình (auth 50051 … rating 50058); 8 biến `*_GRPC_ADDR` ở Gateway mang đúng `<tên>:<cổng>`; booking có `DRIVER_`, `PAYMENT_`, `TRIP_GRPC_ADDR`, trip có `DRIVER_GRPC_ADDR`, rating có `TRIP_GRPC_ADDR` đúng cổng; `GET /health/services` 200 với 8 `SERVING` |
+| AC-HT-15 (mới 2026-10-05, lỗi L3) | 6 | Mọi thứ healthy | `docker compose restart customer-service rating-service` (hoặc dừng / bật lần lượt vài service để Docker cấp lại IP), chờ healthy, rồi `GET /health/services` và gọi một API của từng service bị restart (ví dụ A09 `customers/1` `[KH1]`, A36 `ratings?driver_id=11`) | 200 với 8 `SERVING`; mỗi API trả dữ liệu của **đúng** service (không có lỗi `UNIMPLEMENTED` / 503 do kênh nối nhầm service) |
 | AC-HT-13 | Quy ước | Unit test Gateway | Service giả trả `NOT_FOUND` + `"CUSTOMER_NOT_FOUND"`; `INVALID_ARGUMENT` + `"INVALID_INPUT"`; `INTERNAL` + `"lỗi gì đó"` | 404 `CUSTOMER_NOT_FOUND`; 400 `INVALID_INPUT`; 503 `SERVICE_UNAVAILABLE` |
 
 Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư mục; mục 2 — `.env` không có trên Git; mục 5 — 21 container và vai trò; mục 6 — ba request đều 200; mục 7 — Kafka UI thấy 7 topic (message có sau spec 15); mục 8 — chỉ hai cổng, gọi thẳng thất bại.
@@ -377,7 +384,7 @@ Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư
 | `docker compose stop customer-db` → `customer-service = NOT_SERVING` | AC-HT-06 đã phủ đường 503 |
 | Kiểm tra từng header bảo vệ, log JSON từng trường | Header đã là quy định ở mục 4; kiểm tra chi tiết ở spec 11 (mục 26) nếu cần |
 | `docker compose config` so `DATABASE_URL` từng service; `printenv` từng service | AC-HT-04 đã cho thấy database riêng |
-| Kết nối từ bên trong mạng `cab-net` tới `auth-service:50051` | Không thuộc mục chấm |
+| Kết nối từ bên trong mạng `cab-net` tới `auth-service:50051` (… `rating-service:50058`) | Không thuộc mục chấm |
 | Unit test `migrate.js` chạy hai lần | Test-agent làm khi rảnh |
 | Đo thời gian A03 ≤ 1,5 giây khi một service dừng | Deadline đã là hằng số |
 
@@ -387,7 +394,7 @@ Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư
 
 | # | Quyết định | Nếu đổi thì sửa |
 |---|---|---|
-| H1 | Mọi service nghe cùng cổng nội bộ 50051 (phân biệt bằng tên host) | Hằng số, `*_GRPC_ADDR` |
+| ~~H1~~ | **Đổi 2026-10-05 (ADR-020):** trước đây mọi service nghe cùng 50051; nay mỗi service một cổng 50051–50058 vì lỗi L3 (kênh gRPC nối nhầm service sau khi Docker cấp lại IP) | Hằng số cổng ở từng service, `healthcheck.js`, `*_GRPC_ADDR` trong `compose.yaml` |
 | H2 | Healthcheck Docker bằng `node src/healthcheck.js` thay cho `grpc_health_probe` | Dockerfile |
 | H3 | Gateway không chờ service healthy (`service_started`) | `depends_on` |
 | H4 | 3 partition mỗi topic; Kafka UI chỉ đọc | `kafka-init`, env Kafka UI |
