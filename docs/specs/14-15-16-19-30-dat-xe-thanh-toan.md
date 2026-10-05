@@ -157,7 +157,7 @@ Không có booking → 200 `data: []`, `total: 0`.
 |---|---|
 | Token / role | Có / `customer` (chủ), `admin` |
 | rpc | `GetBooking` |
-| Response 200 | Như A19, thêm `from`, `to`, `from_address`, `to_address` (nếu có), `created_at`; khi đã phân công thêm `driver_id`, `trip_id`; khi hủy thêm `canceled_by`, `cancel_reason` |
+| Response 200 | Như A19 **trừ `payment_expires_at`** (DX19), thêm `from`, `to`, `from_address`, `to_address` (nếu có), `created_at`; khi đã phân công thêm `driver_id`, `trip_id`; khi hủy thêm `canceled_by`, `cancel_reason` |
 
 | Đường lỗi | HTTP | Mã | Ai trả |
 |---|---|---|---|
@@ -304,7 +304,7 @@ Gateway nạp proto với `longs: Number`, `defaults: false`, `oneofs: true` (fi
 
 | Message | Field |
 |---|---|
-| `Booking` | `int64 booking_id = 1; string status = 2; string vehicle = 3; string pay = 4; int32 distance_m = 5; int32 fare = 6; int64 payment_id = 7; optional string payment_expires_at = 8; repeated double from = 9; repeated double to = 10; optional string from_address = 11; optional string to_address = 12; optional int64 driver_id = 13; optional int64 trip_id = 14; optional string canceled_by = 15; optional string cancel_reason = 16; optional string created_at = 17;` — mỗi rpc chỉ điền field của response tương ứng (mục 4) |
+| `Booking` | `int64 booking_id = 1; string status = 2; string vehicle = 3; string pay = 4; int32 distance_m = 5; int32 fare = 6; int64 payment_id = 7; optional string payment_expires_at = 8; repeated double from = 9; repeated double to = 10; optional string from_address = 11; optional string to_address = 12; optional int64 driver_id = 13; optional int64 trip_id = 14; optional string canceled_by = 15; optional string cancel_reason = 16; optional string created_at = 17;` — mỗi rpc chỉ điền field của response tương ứng (mục 4); `payment_expires_at` chỉ có ở A19 (DX19) |
 | `Pagination` | `int32 page = 1; int32 limit = 2; int32 total = 3; int32 total_pages = 4;` |
 | `CreateBookingRequest` | `repeated double from = 1; repeated double to = 2; string vehicle = 3; string pay = 4; optional string from_address = 5; optional string to_address = 6;` |
 | `ListBookingsRequest` → `ListBookingsResponse` | `optional string status = 1; int32 page = 2; int32 limit = 3;` → `repeated Booking data = 1; Pagination pagination = 2;` |
@@ -574,7 +574,7 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23 đạt; `docker compose down 
 | AC-DX-22 | 16 (D8) | Offer `PENDING` của TX1 | A39 `PATCH /api/v1/drivers/me` `{"status":"OFFLINE"}` `[TX1]`; A24 | 200 `OFFLINE`; 409 `DRIVER_NOT_AVAILABLE`; Offer vẫn `PENDING` (DX-Q6). Bật lại `ONLINE` |
 | AC-DX-23 | 16 (gRPC nội bộ) | Test gọi thẳng `driver-service:50051` trong mạng Compose | `ReserveDriver(11, B)` hai lần; `ReserveDriver(11, B2)`; `ReleaseDriver(11, B2)`; `ReleaseDriver(11, B)`; gọi không có `x-role` / với `x-role: customer` | `BUSY` cả hai lần; `DRIVER_NOT_AVAILABLE`; `released: false`; `released: true`, TX1 `ONLINE`; `IDENTITY_MISSING` / `FORBIDDEN` |
 | AC-DX-24 | 16 (T1) | Gọi thẳng `trip-service` | `CreateTrip` hai lần cùng `booking_id`, cùng `driver_id`; lần ba khác `driver_id`; không `x-role: system` | Cùng `trip_id`, `created` true rồi false, Kafka chỉ **một** message `ACCEPTED`; `FAILED_PRECONDITION` `BOOKING_ALREADY_ASSIGNED`; `FORBIDDEN` |
-| AC-DX-25 | 12 / 21 | A21 | `bookings/7` `[KH1]`; `bookings/3` `[KH1]`; `bookings/7` `[AD1]`; `bookings/7` `[KH2]`; `bookings/999` `[KH1]`; `bookings/abc`; `[TX1]` | 200 `PENDING_PAYMENT`, `CAR_7`, `ONLINE`, `fare` 56000, `payment_id` 7; 200 `DRIVER_ASSIGNED`, `driver_id` 11, `trip_id` 3; 200; 403 `NOT_OWNER`; 404 `BOOKING_NOT_FOUND`; 400 `INVALID_ID`; 403 `FORBIDDEN` |
+| AC-DX-25 | 12 / 21 | A21 | `bookings/7` `[KH1]`; `bookings/3` `[KH1]`; `bookings/7` `[AD1]`; `bookings/7` `[KH2]`; `bookings/999` `[KH1]`; `bookings/abc`; `[TX1]` | 200 `PENDING_PAYMENT`, `CAR_7`, `ONLINE`, `fare` 56000, `payment_id` 7, **không** có `payment_expires_at` (DX19); 200 `DRIVER_ASSIGNED`, `driver_id` 11, `trip_id` 3; 200; 403 `NOT_OWNER`; 404 `BOOKING_NOT_FOUND`; 400 `INVALID_ID`; 403 `FORBIDDEN` |
 | AC-TT-01 | 19 | Seed B7 | A31 `POST /api/v1/payments/7/transactions` `[KH1]`, `Idempotency-Key: k1`, `{"simulate_result":"MANUAL"}` | 200 `{ payment_id: 7, status: PENDING, txn_id: "SIM-7-1", txn_status: PENDING, attempt_no: 1, attempts_left: 2, expires_at }`; topic `payment.status-changed` **không** có message mới; A21 `bookings/7` vẫn `PENDING_PAYMENT` |
 | AC-TT-02 | 19 (AC12, AC21) | Sau AC-TT-01 | A32 `POST /api/v1/payment-callbacks`, không token, `X-Callback-Secret: cab-secret`, `{"txn_id":"SIM-7-1"}`; ≈ 1 s sau A21 `bookings/7`, A23 `[TX4]` | 200 `{ txn_id: "SIM-7-1", txn_status: SUCCEEDED, payment_id: 7, status: COMPLETED }`; Kafka K6 key `7` `COMPLETED`, `previous_status` `PENDING`; booking 7 `SEARCHING`; TX4 có Offer cho booking 7, `distance_m` 445 |
 | AC-TT-03 | 30 | Sau AC-TT-02 | Gửi lại **y hệt** AC-TT-01 | 200 body **y hệt** AC-TT-01 (`PENDING`), header `Idempotency-Replayed: true`; `payment_transactions` của payment 7 vẫn 1 dòng |
@@ -645,6 +645,9 @@ Kết quả mong đợi theo phiếu chấm: **14** — chỉ booking của khá
 | DX16 | Seed `created_at` của Bn = lúc seed − (8 − n) giờ | Thứ tự mục 14 cố định 7, 6, 5, 4 | Mục 7.4 |
 | DX17 | `CreateTrip` ghi lịch sử đầu với `changed_by` = tài xế, role `driver` | Người khiến chuyến ra đời là tài xế bấm nhận; CHECK chỉ có `customer` / `driver` | Mục 5.3 |
 | DX18 | Migration `trips` tạo đủ cột của spec 17, 18 ngay | Một bảng một migration; spec sau chỉ thêm code | Mục 7.3 |
+| DX19 | **A21 không trả `payment_expires_at`** (sinh viên chốt 2026-10-05). Hạn thanh toán xem ở A19 (lúc đặt) và A30 (`expires_at`) | Booking không lưu hạn thanh toán; muốn trả ở A21 thì phải lưu trùng cột của Payment hoặc gọi thêm S4 mỗi lần xem | Mục 4.4, 5.1, AC-DX-25 |
+| DX20 | **A24 khi S3 lỗi** (sinh viên chốt 2026-10-05): S3 trả `FAILED_PRECONDITION` **hoặc `NOT_FOUND`** → 409 `DRIVER_NOT_AVAILABLE`. S3 lỗi hạ tầng / quá deadline → gọi `ReleaseDriver` phòng khi (không biết đã giữ hay chưa) rồi 503 `SERVICE_UNAVAILABLE`; Offer vẫn `PENDING` | `ReleaseDriver` lặp an toàn (DX6) nên gọi thừa không hại; tài xế không bị kẹt `BUSY` nếu lần giữ thực ra đã thành công | Mục 2.3, 5.6 |
+| DX21 | **Chống lặp A31 so đúng body đã gửi** (sinh viên chốt 2026-10-05): body rỗng (hash của `{}`) và `{"simulate_result":"SUCCESS"}` là **hai nội dung khác nhau** → cùng khóa thì 409 `IDEMPOTENCY_KEY_REUSED`. Chỉ chuẩn hóa chữ hoa / thứ tự khóa / khoảng trắng, **không** điền giá trị mặc định trước khi băm | Đúng định nghĩa "cùng request" của 04 mục 1.4; không phải đoán ý client | Mục 4.8 bước 3 |
 
 ### 9.2 Chỗ thiết kế chưa khớp hoặc thiếu (ghi lại, không tự sửa design)
 
