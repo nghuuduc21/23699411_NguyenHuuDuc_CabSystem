@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "6b0f3c9e-2f1a-4c55-9a1e-cab000000000",
     "name": "Cab Booking System",
-    "description": "Collection theo số mục chấm. CHỈ để test-agent kiểm thử và sinh viên luyện tập; khi thi không được dùng (gõ tay mọi request). Biến {{base}} = http://localhost:3000. Chạy cả collection theo thứ tự thư mục (06 → 28): token lưu ở mục 10 dùng cho các mục sau; số điện thoại, biển số mới tự sinh để chạy lại được. Request 22.2 đổi seed TX7 (xem mô tả thư mục 22).",
+    "description": "Collection theo số mục chấm. CHỈ để test-agent kiểm thử và sinh viên luyện tập; khi thi không được dùng (gõ tay mọi request). Biến {{base}} = http://localhost:3000. Chạy cả collection theo thứ tự thư mục (06 → 28, rồi 14, 15, 16, 19, 30 ở cuối vì mục 16 làm TX1 BUSY mà mục 23 cần TX1 rảnh): token lưu ở mục 10 dùng cho các mục sau; số điện thoại, biển số mới tự sinh để chạy lại được. Request 22.2 đổi seed TX7 (xem mô tả thư mục 22).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -60,6 +60,26 @@
     },
     {
       "key": "logoutToken",
+      "value": ""
+    },
+    {
+      "key": "B",
+      "value": ""
+    },
+    {
+      "key": "O",
+      "value": ""
+    },
+    {
+      "key": "T",
+      "value": ""
+    },
+    {
+      "key": "pay19",
+      "value": ""
+    },
+    {
+      "key": "cb19",
       "value": ""
     }
   ],
@@ -1995,7 +2015,7 @@
     },
     {
       "name": "28 Sai quyền → 403",
-      "description": "Mục chấm 28 (AC-TX-17, AC-HS-07, AC-TX-32). Tab tài xế: URL drivers/17, [KH1], xóa body → 403. Request 2 của kịch bản thi (POST /api/v1/bookings bằng TX1) thuộc spec đặt xe, chưa có route lúc viết collection (2026-10-04) — thay tạm bằng 28.2, 28.3.",
+      "description": "Mục chấm 28 (AC-TX-17, AC-DX-10). Tab tài xế: URL drivers/17, [KH1], xóa body → 403. Tab đặt xe (POST bookings): đổi token sang [TX1] → 403 (role kiểm trước body).",
       "item": [
         {
           "name": "28.1 PATCH /api/v1/drivers/17 [KH1] không body → 403",
@@ -2039,15 +2059,73 @@
           }
         },
         {
-          "name": "28.2 (test-agent) GET /api/v1/customers/1 [TX1] → 403",
+          "name": "28.2 Tab đặt xe: POST /api/v1/bookings [TX1] → 403",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('AC-HS-07: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('AC-DX-10: status 403', () => pm.response.to.have.status(403));",
                   "pm.test('error = FORBIDDEN', () => pm.expect(pm.response.json()).to.eql({ error: 'FORBIDDEN' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/bookings",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"from\":[10.82,106.68],\"to\":[10.83,106.69]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "14 Booking của khách, limit + paging",
+      "description": "Mục chấm 14 (AC-DX-01…03). Chạy TRƯỚC mục 15 (KH1 còn đúng 7 booking seed). Tab GET: bookings?limit=2 → thêm &page=2.",
+      "item": [
+        {
+          "name": "14.1 GET /api/v1/bookings?limit=2 [KH1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-01: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DX-01: booking 7, 6 (mới nhất trước)', () => pm.expect(b.data.map((x) => x.booking_id)).to.eql([7, 6]));",
+                  "pm.test('AC-DX-01: pagination {1, 2, total 7, total_pages 4}', () => pm.expect(b.pagination).to.eql({ page: 1, limit: 2, total: 7, total_pages: 4 }));",
+                  "pm.test('booking 7: PENDING_PAYMENT, CAR_7, ONLINE, 56000', () => { const x = b.data[0]; pm.expect([x.status, x.vehicle, x.pay, x.fare]).to.eql(['PENDING_PAYMENT', 'CAR_7', 'ONLINE', 56000]); });"
                 ]
               }
             }
@@ -2056,15 +2134,231 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base}}/api/v1/customers/1",
+              "raw": "{{base}}/api/v1/bookings?limit=2",
               "host": [
                 "{{base}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "customers",
-                "1"
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "14.2 … &page=2",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-01: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DX-01: trang 2 = booking 5, 4', () => pm.expect(b.data.map((x) => x.booking_id)).to.eql([5, 4]));",
+                  "pm.test('pagination page 2', () => pm.expect(b.pagination).to.eql({ page: 2, limit: 2, total: 7, total_pages: 4 }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/bookings?limit=2&page=2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "2"
+                },
+                {
+                  "key": "page",
+                  "value": "2"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "14.3 (tùy chọn) … ?limit=abc → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-03: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = INVALID_PAGINATION', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_PAGINATION' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/bookings?limit=abc",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "abc"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "15 Đặt xe → tìm tài xế → gửi Offer",
+      "description": "Mục chấm 15 (AC-DX-05, 06). Sau mục 14; TX1 rảnh. Tab đặt xe: POST bookings [KH1] → nhân bản tab: GET offers [TX1] (tab chuyến). Lưu B = booking_id, O = offer_id.",
+      "item": [
+        {
+          "name": "15.1 POST /api/v1/bookings [KH1] (tab đặt xe)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-05: status 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DX-05: SEARCHING, CAR_4, CASH (mặc định)', () => pm.expect([b.status, b.vehicle, b.pay]).to.eql(['SEARCHING', 'CAR_4', 'CASH']));",
+                  "pm.test('AC-DX-05: cước cố định 45000, quãng đường ≈ 2026 m', () => { pm.expect(b.fare).to.eql(45000); pm.expect(Math.abs(b.distance_m - 2026)).to.be.at.most(3); });",
+                  "pm.test('AC-DX-05: booking_id, payment_id ≥ 1000 (1000 khi dữ liệu vừa đặt lại)', () => { pm.expect(b.booking_id).to.be.at.least(1000); pm.expect(b.payment_id).to.be.at.least(1000); });",
+                  "pm.collectionVariables.set('B', b.booking_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/bookings",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"from\":[10.82,106.68],\"to\":[10.83,106.69]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "15.2 Nhân bản: GET /api/v1/offers [TX1] (tab chuyến)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Người gõ tay mất vài giây giữa hai request; bộ ghép chạy nền ~0,1 s. Chờ 1 giây cho giống.",
+                  "setTimeout(() => {}, 1000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-06: status 200', () => pm.response.to.have.status(200));",
+                  "const B = Number(pm.collectionVariables.get('B'));",
+                  "const o = pm.response.json().data.find((x) => x.booking_id === B);",
+                  "pm.test('AC-DX-06: TX1 (gần nhất, CAR_4, rảnh) nhận Offer cho booking vừa đặt', () => pm.expect(o).to.be.an('object'));",
+                  "pm.test('AC-DX-06: PENDING, distance_m 111, CASH, 45000', () => pm.expect([o.status, o.distance_m, o.pay, o.fare]).to.eql(['PENDING', 111, 'CASH', 45000]));",
+                  "pm.collectionVariables.set('O', o.offer_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/offers",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offers"
               ]
             },
             "auth": {
@@ -2078,43 +2372,43 @@
               ]
             }
           }
-        },
+        }
+      ]
+    },
+    {
+      "name": "16 Tài xế nhận chuyến",
+      "description": "Mục chấm 16 (AC-DX-19, 20). Trong 5 phút sau mục 15. Tab chuyến: PATCH offers/{{O}} {\"status\":\"ACCEPTED\"}. Sau mục này TX1 BUSY (spec 17 chưa có để hoàn thành chuyến) — vì vậy thư mục 14, 15, 16, 19, 30 đặt cuối collection, sau mục 23.",
+      "item": [
         {
-          "name": "28.3 (test-agent) GET /api/v1/drivers?lat=10.82&lng=106.68 [TX1] → 403",
+          "name": "16.1 PATCH /api/v1/offers/{{O}} [TX1] ACCEPTED",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('AC-TX-32: status 403', () => pm.response.to.have.status(403));",
-                  "pm.test('error = FORBIDDEN', () => pm.expect(pm.response.json()).to.eql({ error: 'FORBIDDEN' }));"
+                  "pm.test('AC-DX-19: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DX-19: Offer ACCEPTED, booking DRIVER_ASSIGNED, Trip ACCEPTED', () => pm.expect([b.status, b.booking_status, b.trip_status]).to.eql(['ACCEPTED', 'DRIVER_ASSIGNED', 'ACCEPTED']));",
+                  "pm.test('AC-DX-19: có trip_id, đúng booking', () => { pm.expect(b.trip_id).to.be.at.least(1000); pm.expect(b.booking_id).to.eql(Number(pm.collectionVariables.get('B'))); });",
+                  "pm.collectionVariables.set('T', b.trip_id);"
                 ]
               }
             }
           ],
           "request": {
-            "method": "GET",
+            "method": "PATCH",
             "header": [],
             "url": {
-              "raw": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68",
+              "raw": "{{base}}/api/v1/offers/{{O}}",
               "host": [
                 "{{base}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "drivers"
-              ],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "10.82"
-                },
-                {
-                  "key": "lng",
-                  "value": "106.68"
-                }
+                "offers",
+                "{{O}}"
               ]
             },
             "auth": {
@@ -2126,6 +2420,482 @@
                   "type": "string"
                 }
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ACCEPTED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "16.2 (tùy chọn) GET /api/v1/bookings/{{B}} [KH1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-DX-19: DRIVER_ASSIGNED, driver_id 11, trip_id', () => pm.expect([b.status, b.driver_id, b.trip_id]).to.eql(['DRIVER_ASSIGNED', 11, Number(pm.collectionVariables.get('T'))]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/bookings/{{B}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings",
+                "{{B}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "16.3 (test-agent) PATCH lại → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-20: status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error = INVALID_STATUS_TRANSITION', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_STATUS_TRANSITION' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/offers/{{O}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "offers",
+                "{{O}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ACCEPTED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "19 Thanh toán online + callback → COMPLETED",
+      "description": "Mục chấm 19 (AC-TT-01, 02). Seed booking 7 = payment 7 (CAR_7, online, PENDING, 56 000 đ). Chạy liền với mục 30. Request 1: Idempotency-Key k1 + MANUAL; request 2 (nhân bản): No Auth, X-Callback-Secret, txn_id SIM-7-1.",
+      "item": [
+        {
+          "name": "19.1 POST /api/v1/payments/7/transactions [KH1] k1 MANUAL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TT-01: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-TT-01: PENDING, SIM-7-1, txn PENDING, lần 1, còn 2 lượt', () => pm.expect([b.payment_id, b.status, b.txn_id, b.txn_status, b.attempt_no, b.attempts_left]).to.eql([7, 'PENDING', 'SIM-7-1', 'PENDING', 1, 2]));",
+                  "pm.test('lần đầu: không có header Idempotency-Replayed', () => pm.expect(pm.response.headers.has('Idempotency-Replayed')).to.eql(false));",
+                  "pm.collectionVariables.set('pay19', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "k1"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/api/v1/payments/7/transactions",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "7",
+                "transactions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"simulate_result\":\"MANUAL\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "19.2 Nhân bản: POST /api/v1/payment-callbacks (No Auth, X-Callback-Secret)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TT-02: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TT-02: giao dịch SUCCEEDED, thanh toán COMPLETED', () => pm.expect(pm.response.json()).to.eql({ txn_id: 'SIM-7-1', txn_status: 'SUCCEEDED', payment_id: 7, status: 'COMPLETED' }));",
+                  "pm.collectionVariables.set('cb19', pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Callback-Secret",
+                "value": "cab-secret"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/api/v1/payment-callbacks",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payment-callbacks"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"txn_id\":\"SIM-7-1\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "19.3 (tùy chọn) GET /api/v1/bookings/7 [KH1]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Người gõ tay mất vài giây giữa hai request; bộ ghép chạy nền ~0,1 s. Chờ 1 giây cho giống.",
+                  "setTimeout(() => {}, 1000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TT-02: trả xong mới tìm tài xế → SEARCHING (BRULE13)', () => pm.expect(pm.response.json().status).to.eql('SEARCHING'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/bookings/7",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "bookings",
+                "7"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "30 Replay thanh toán → trả response cũ",
+      "description": "Mục chấm 30 (AC-TT-03…06). Ngay sau mục 19: gửi lại tab 1, tab 2 của mục 19; sửa tab 1 thành GET payments/7.",
+      "item": [
+        {
+          "name": "30.1 Gửi lại 19.1 (k1, MANUAL)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TT-03: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TT-03: body y hệt lần đầu (PENDING)', () => pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('pay19')));",
+                  "pm.test('AC-TT-03: header Idempotency-Replayed: true', () => pm.expect(pm.response.headers.get('Idempotency-Replayed')).to.eql('true'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "k1"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/api/v1/payments/7/transactions",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "7",
+                "transactions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"simulate_result\":\"MANUAL\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "30.2 Gửi lại 19.2 (callback)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TT-04: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TT-04: body y hệt lần đầu', () => pm.expect(pm.response.text()).to.eql(pm.collectionVariables.get('cb19')));",
+                  "pm.test('AC-TT-04: header Idempotency-Replayed: true', () => pm.expect(pm.response.headers.get('Idempotency-Replayed')).to.eql('true'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Callback-Secret",
+                "value": "cab-secret"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/api/v1/payment-callbacks",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payment-callbacks"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"txn_id\":\"SIM-7-1\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "30.3 Sửa tab 1: GET /api/v1/payments/7 [KH1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TT-05: status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AC-TT-05: COMPLETED, 56000, có paid_at', () => { pm.expect([b.status, b.amount]).to.eql(['COMPLETED', 56000]); pm.expect(b.paid_at).to.be.a('string'); });",
+                  "pm.test('AC-TT-05: cước {25000, 15000, 40000}', () => pm.expect([b.fare.base_fare, b.fare.per_km_rate, b.fare.min_fare]).to.eql([25000, 15000, 40000]));",
+                  "pm.test('AC-TT-05: đúng MỘT giao dịch SIM-7-1', () => pm.expect(b.transactions).to.eql([{ txn_id: 'SIM-7-1', type: 'CHARGE', attempt_no: 1, status: 'SUCCEEDED', amount: 56000 }]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/payments/7",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "7"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "30.4 (test-agent) k1 khác body → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TT-06: status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('error = IDEMPOTENCY_KEY_REUSED', () => pm.expect(pm.response.json()).to.eql({ error: 'IDEMPOTENCY_KEY_REUSED' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "k1"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/api/v1/payments/7/transactions",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "payments",
+                "7",
+                "transactions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"simulate_result\":\"FAILED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }

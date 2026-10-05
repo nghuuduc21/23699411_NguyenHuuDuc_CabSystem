@@ -145,7 +145,14 @@ export async function kafkaMessages(topic) {
       } catch {
         content = ev.message.content;
       }
-      out.push({ key: ev.message.key, content, raw: ev.message.content });
+      out.push({
+        key: ev.message.key,
+        content,
+        raw: ev.message.content,
+        partition: ev.message.partition,
+        offset: ev.message.offset,
+        timestamp: ev.message.timestamp,
+      });
     }
   }
   return out;
