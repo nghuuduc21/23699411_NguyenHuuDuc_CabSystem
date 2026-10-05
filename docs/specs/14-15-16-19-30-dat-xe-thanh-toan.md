@@ -339,7 +339,7 @@ Gateway nạp proto với `longs: Number`, `defaults: false`, `oneofs: true` (fi
 
 | rpc | Ai gọi | Danh tính | Lỗi (status → `details`) |
 |---|---|---|---|
-| `CreatePayment` | **booking (S4)** | `x-role = system` | `PERMISSION_DENIED` → `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT` (loại xe không có giá, `distance_m ≤ 0`, `method` lạ); `INTERNAL`. Gọi lặp cùng `booking_id` → trả Payment cũ (M1) |
+| `CreatePayment` | **booking (S4)** | `x-role = system` | `UNAUTHENTICATED` → `IDENTITY_MISSING` (thiếu `x-role` — DX22); `PERMISSION_DENIED` → `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT` (loại xe không có giá, `distance_m ≤ 0`, `method` lạ); `INTERNAL`. Gọi lặp cùng `booking_id` → trả Payment cũ (M1) |
 | `GetPayment` | GW (A30) | `customer`, `admin` | `IDENTITY_MISSING`; `FORBIDDEN`; `NOT_FOUND` → `PAYMENT_NOT_FOUND`; `PERMISSION_DENIED` → `NOT_OWNER`; `INTERNAL` |
 | `PayPayment` | GW (A31) | `customer` | Mục 4.8; `FAILED_PRECONDITION` → `IDEMPOTENCY_KEY_REUSED` / `PAYMENT_IN_PROGRESS` / `PAYMENT_NOT_ONLINE` / `PAYMENT_ALREADY_COMPLETED` / `PAYMENT_EXPIRED` / `PAYMENT_ATTEMPTS_EXHAUSTED` / `PAYMENT_CANCELED` |
 | `HandleProviderCallback` | GW (A32) | `x-callback-secret` | `UNAUTHENTICATED` → `INVALID_CALLBACK_SECRET`; `NOT_FOUND` → `TRANSACTION_NOT_FOUND`; `INVALID_ARGUMENT` → `INVALID_INPUT`; `INTERNAL` |
@@ -348,7 +348,7 @@ Gateway nạp proto với `longs: Number`, `defaults: false`, `oneofs: true` (fi
 
 | rpc | Vào | Ra | Ai gọi / danh tính | Lỗi |
 |---|---|---|---|---|
-| `CreateTrip` | `int64 booking_id = 1; int64 customer_id = 2; int64 driver_id = 3; string vehicle_type = 4; double pickup_lat = 5; double pickup_lng = 6; double destination_lat = 7; double destination_lng = 8; optional string pickup_address = 9; optional string destination_address = 10; string payment_method = 11; int32 fare_amount = 12;` | `int64 trip_id = 1; string status = 2; bool created = 3;` | booking (S5) / `x-role = system` | `PERMISSION_DENIED` → `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT`; `FAILED_PRECONDITION` → `BOOKING_ALREADY_ASSIGNED` (đã có Trip cho booking này với **tài xế khác**); `INTERNAL` |
+| `CreateTrip` | `int64 booking_id = 1; int64 customer_id = 2; int64 driver_id = 3; string vehicle_type = 4; double pickup_lat = 5; double pickup_lng = 6; double destination_lat = 7; double destination_lng = 8; optional string pickup_address = 9; optional string destination_address = 10; string payment_method = 11; int32 fare_amount = 12;` | `int64 trip_id = 1; string status = 2; bool created = 3;` | booking (S5) / `x-role = system` | `UNAUTHENTICATED` → `IDENTITY_MISSING` (thiếu `x-role` — DX22); `PERMISSION_DENIED` → `FORBIDDEN` (`x-role` khác `system`); `INVALID_ARGUMENT` → `INVALID_INPUT`; `FAILED_PRECONDITION` → `BOOKING_ALREADY_ASSIGNED` (đã có Trip cho booking này với **tài xế khác**); `INTERNAL` |
 
 Cài đặt: một giao dịch `INSERT INTO trips (…, status) VALUES (…, 'ACCEPTED') ON CONFLICT (booking_id) DO NOTHING RETURNING trip_id` + `INSERT trip_status_history (from_status NULL, to_status 'ACCEPTED', changed_by = driver_id, changed_by_role 'driver', changed_at = now())` → commit → phát **K5** → `created = true`. Không có dòng trả về → đọc Trip theo `booking_id`: cùng `driver_id` → trả Trip cũ, `created = false`, **không** phát lại K5 (T1); khác → `BOOKING_ALREADY_ASSIGNED`. Log `trip_created` kèm `trip_id`, `booking_id`.
 
@@ -358,8 +358,8 @@ Cài đặt: một giao dịch `INSERT INTO trips (…, status) VALUES (…, 'AC
 
 | rpc | Vào | Ra | Danh tính | Lỗi |
 |---|---|---|---|---|
-| `ReserveDriver` | `int64 driver_id = 1; int64 booking_id = 2;` | `Reservation { int64 driver_id = 1; int64 booking_id = 2; string status = 3; }` | `x-role = system` | `PERMISSION_DENIED` → `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT`; `NOT_FOUND` → `DRIVER_NOT_FOUND`; `FAILED_PRECONDITION` → `DRIVER_NOT_AVAILABLE`; `INTERNAL` |
-| `ReleaseDriver` | `int64 driver_id = 1; int64 booking_id = 2;` | `ReleaseResult { int64 driver_id = 1; bool released = 2; }` | `x-role = system` | `FORBIDDEN`; `INVALID_INPUT`; `INTERNAL` |
+| `ReserveDriver` | `int64 driver_id = 1; int64 booking_id = 2;` | `Reservation { int64 driver_id = 1; int64 booking_id = 2; string status = 3; }` | `x-role = system` | `UNAUTHENTICATED` → `IDENTITY_MISSING` (thiếu `x-role` — DX22); `PERMISSION_DENIED` → `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT`; `NOT_FOUND` → `DRIVER_NOT_FOUND`; `FAILED_PRECONDITION` → `DRIVER_NOT_AVAILABLE`; `INTERNAL` |
+| `ReleaseDriver` | `int64 driver_id = 1; int64 booking_id = 2;` | `ReleaseResult { int64 driver_id = 1; bool released = 2; }` | `x-role = system` | `IDENTITY_MISSING`; `FORBIDDEN`; `INVALID_INPUT`; `INTERNAL` |
 | `FindNearbyDrivers` (đã có — spec 12-13-21-23) | Không đổi | Không đổi | **Thêm `system`** vào danh sách role chấp nhận (TX-Q3) | Không đổi |
 
 Hành vi (D8, D9):
@@ -385,6 +385,7 @@ Quy định:
 |---|---|
 | Bên gửi | `booking-service` khi gọi S2, S3, S4, S5: metadata `x-role: system`, `x-request-id` (lấy của request đang xử lý; tiến trình nền tự sinh UUID). **Không** gửi `x-account-id` |
 | Bên nhận | `CreatePayment`, `CreateTrip`, `ReserveDriver`, `ReleaseDriver`: **chỉ** nhận `system`. `FindNearbyDrivers`: `customer`, `admin`, `system` |
+| Thiếu / sai `x-role` (DX22) | **Thiếu** `x-role` → `UNAUTHENTICATED` `IDENTITY_MISSING` (không biết ai gọi); **có** nhưng không thuộc danh sách → `PERMISSION_DENIED` `FORBIDDEN`. Cùng một quy tắc với rpc Gateway gọi (AC-DX-23) |
 | Vì sao client không giả được | Gateway **tự dựng** metadata từ token, bỏ header cùng tên của client (spec 09-10 mục 4.1); token chỉ mang 3 role (CHECK `accounts.role`), Gateway từ chối role khác; chỉ Gateway mở cổng ra ngoài (mục 8) |
 | Đánh đổi | Không xác thực service với nhau (mTLS) — ngoài phạm vi môn; ghi rõ khi vấn đáp |
 
@@ -573,7 +574,7 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23 đạt; `docker compose down 
 | AC-DX-21 | 16 (Q35) | Offer `PENDING` của TX1; `docker compose stop trip-service` | A24 `[TX1]`; A14 `drivers/11` `[AD1]`; `start trip-service`; A24 lại | 503; TX1 `ONLINE` (đã nhả), Offer vẫn `PENDING`, booking `SEARCHING`; lần hai 200 có `trip_id` |
 | AC-DX-22 | 16 (D8) | Offer `PENDING` của TX1 | A39 `PATCH /api/v1/drivers/me` `{"status":"OFFLINE"}` `[TX1]`; A24 | 200 `OFFLINE`; 409 `DRIVER_NOT_AVAILABLE`; Offer vẫn `PENDING` (DX-Q6). Bật lại `ONLINE` |
 | AC-DX-23 | 16 (gRPC nội bộ) | Test gọi thẳng `driver-service:50051` trong mạng Compose | `ReserveDriver(11, B)` hai lần; `ReserveDriver(11, B2)`; `ReleaseDriver(11, B2)`; `ReleaseDriver(11, B)`; gọi không có `x-role` / với `x-role: customer` | `BUSY` cả hai lần; `DRIVER_NOT_AVAILABLE`; `released: false`; `released: true`, TX1 `ONLINE`; `IDENTITY_MISSING` / `FORBIDDEN` |
-| AC-DX-24 | 16 (T1) | Gọi thẳng `trip-service` | `CreateTrip` hai lần cùng `booking_id`, cùng `driver_id`; lần ba khác `driver_id`; không `x-role: system` | Cùng `trip_id`, `created` true rồi false, Kafka chỉ **một** message `ACCEPTED`; `FAILED_PRECONDITION` `BOOKING_ALREADY_ASSIGNED`; `FORBIDDEN` |
+| AC-DX-24 | 16 (T1) | Gọi thẳng `trip-service` | `CreateTrip` hai lần cùng `booking_id`, cùng `driver_id`; lần ba khác `driver_id`; gọi không có `x-role`; với `x-role: customer` | Cùng `trip_id`, `created` true rồi false, Kafka chỉ **một** message `ACCEPTED`; `FAILED_PRECONDITION` `BOOKING_ALREADY_ASSIGNED`; `UNAUTHENTICATED` `IDENTITY_MISSING`; `PERMISSION_DENIED` `FORBIDDEN` (DX22) |
 | AC-DX-25 | 12 / 21 | A21 | `bookings/7` `[KH1]`; `bookings/3` `[KH1]`; `bookings/7` `[AD1]`; `bookings/7` `[KH2]`; `bookings/999` `[KH1]`; `bookings/abc`; `[TX1]` | 200 `PENDING_PAYMENT`, `CAR_7`, `ONLINE`, `fare` 56000, `payment_id` 7, **không** có `payment_expires_at` (DX19); 200 `DRIVER_ASSIGNED`, `driver_id` 11, `trip_id` 3; 200; 403 `NOT_OWNER`; 404 `BOOKING_NOT_FOUND`; 400 `INVALID_ID`; 403 `FORBIDDEN` |
 | AC-TT-01 | 19 | Seed B7 | A31 `POST /api/v1/payments/7/transactions` `[KH1]`, `Idempotency-Key: k1`, `{"simulate_result":"MANUAL"}` | 200 `{ payment_id: 7, status: PENDING, txn_id: "SIM-7-1", txn_status: PENDING, attempt_no: 1, attempts_left: 2, expires_at }`; topic `payment.status-changed` **không** có message mới; A21 `bookings/7` vẫn `PENDING_PAYMENT` |
 | AC-TT-02 | 19 (AC12, AC21) | Sau AC-TT-01 | A32 `POST /api/v1/payment-callbacks`, không token, `X-Callback-Secret: cab-secret`, `{"txn_id":"SIM-7-1"}`; ≈ 1 s sau A21 `bookings/7`, A23 `[TX4]` | 200 `{ txn_id: "SIM-7-1", txn_status: SUCCEEDED, payment_id: 7, status: COMPLETED }`; Kafka K6 key `7` `COMPLETED`, `previous_status` `PENDING`; booking 7 `SEARCHING`; TX4 có Offer cho booking 7, `distance_m` 445 |
@@ -648,6 +649,7 @@ Kết quả mong đợi theo phiếu chấm: **14** — chỉ booking của khá
 | DX19 | **A21 không trả `payment_expires_at`** (sinh viên chốt 2026-10-05). Hạn thanh toán xem ở A19 (lúc đặt) và A30 (`expires_at`) | Booking không lưu hạn thanh toán; muốn trả ở A21 thì phải lưu trùng cột của Payment hoặc gọi thêm S4 mỗi lần xem | Mục 4.4, 5.1, AC-DX-25 |
 | DX20 | **A24 khi S3 lỗi** (sinh viên chốt 2026-10-05): S3 trả `FAILED_PRECONDITION` **hoặc `NOT_FOUND`** → 409 `DRIVER_NOT_AVAILABLE`. S3 lỗi hạ tầng / quá deadline → gọi `ReleaseDriver` phòng khi (không biết đã giữ hay chưa) rồi 503 `SERVICE_UNAVAILABLE`; Offer vẫn `PENDING` | `ReleaseDriver` lặp an toàn (DX6) nên gọi thừa không hại; tài xế không bị kẹt `BUSY` nếu lần giữ thực ra đã thành công | Mục 2.3, 5.6 |
 | DX21 | **Chống lặp A31 so đúng body đã gửi** (sinh viên chốt 2026-10-05): body rỗng (hash của `{}`) và `{"simulate_result":"SUCCESS"}` là **hai nội dung khác nhau** → cùng khóa thì 409 `IDEMPOTENCY_KEY_REUSED`. Chỉ chuẩn hóa chữ hoa / thứ tự khóa / khoảng trắng, **không** điền giá trị mặc định trước khi băm | Đúng định nghĩa "cùng request" của 04 mục 1.4; không phải đoán ý client | Mục 4.8 bước 3 |
+| DX22 | **rpc nội bộ gọi thiếu `x-role`** (`CreatePayment`, `CreateTrip`, `ReserveDriver`, `ReleaseDriver`) → `UNAUTHENTICATED` `IDENTITY_MISSING`; `x-role` sai → `PERMISSION_DENIED` `FORBIDDEN` (sinh viên chốt 2026-10-05, đồng nhất với AC-DX-23 và code) | Một quy tắc cho mọi rpc: thiếu danh tính khác sai quyền, như 401 / 403 ở Gateway | Mục 5.2–5.5, AC-DX-23, AC-DX-24 |
 
 ### 9.2 Chỗ thiết kế chưa khớp hoặc thiếu (ghi lại, không tự sửa design)
 

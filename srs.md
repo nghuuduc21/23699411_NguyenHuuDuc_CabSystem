@@ -247,6 +247,7 @@ Xác định Non-Functional Requirements (NFR)
 | **NFR14** | **Data Integrity**          | Tính toàn vẹn dữ liệu       | Dữ liệu Booking, Trip, Payment phải được đảm bảo nhất quán, đặc biệt khi xảy ra lỗi hoặc mất kết nối.                                                           |
 | **NFR15** | **Availability/Resilience** | Khả năng phục hồi           | Hệ thống phải có cơ chế xử lý và phục hồi khi một dịch vụ thành phần gặp sự cố.                                                                                 |
 | **NFR16** | **Privacy**                 | Bảo vệ dữ liệu cá nhân      | Việc truy cập và sử dụng thông tin cá nhân, vị trí và dữ liệu giao dịch phải tuân thủ chính sách bảo mật của doanh nghiệp và quy định pháp luật áp dụng.        |
+| **NFR17** | **Security/Availability**   | Giới hạn tần suất truy cập  | Hệ thống phải giới hạn số request của mỗi client trong một khoảng thời gian (theo IP với chức năng công khai, theo tài khoản với chức năng cần đăng nhập) để chặn dò mật khẩu và spam; ngưỡng và độ dài khoảng thời gian đọc từ biến môi trường; vượt ngưỡng thì trả **429** kèm thời gian chờ, không chuyển request vào dịch vụ nghiệp vụ. |
 
 
 Bước 11: Xác định Use Case (UC)
@@ -480,6 +481,7 @@ RTM cho CAB System
 | **RTM26** | BG05          | BR05 – Thông tin khách hàng | FR42 – Đăng xuất                    | —              | UC33              | —                   |
 | **RTM27** | BG05          | BR05 – Thông tin khách hàng | FR26 – Đăng ký tài khoản, đăng nhập | —              | UC01, UC02        | AC27                |
 | **RTM28** | BG03          | BR05 – Thông tin khách hàng | FR27 – Quản lý hồ sơ khách hàng     | BRULE18        | UC03, UC19        | AC28, AC29          |
+| **RTM29** | BG03          | BR10 – Thông báo          | FR21–FR24 – Gửi thông báo (đặt xe, tài xế nhận chuyến, trạng thái chuyến, thanh toán) | — | UC16 | AC16, AC20 |
 
 
 ```mermaid

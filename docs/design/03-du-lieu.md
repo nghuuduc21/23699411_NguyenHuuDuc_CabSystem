@@ -617,10 +617,26 @@ Collection `notifications` (FR21–FR24; N2–N5; mục 16, 18, 22):
 | `_id` | ObjectId | Có | MongoDB tự sinh (đổi 2026-10-03, trước là chuỗi UUID). Không ai cần gõ mã thông báo: không có API theo mã thông báo |
 | `event_id` | string (UUID) | Có | `event_id` trong phong bì event (file 02 mục 6.1). Giữ UUID vì do bên phát sinh lúc gửi, không có bảng cấp số, và không ai phải gõ (ADR-015) |
 | `recipient_id` | long (số nguyên 64 bit) | Có | `account_id` người nhận, lấy từ event |
-| `type` | string | Có | Ví dụ `BOOKING_CREATED`, `OFFER_CREATED`, `TRIP_ACCEPTED`, `TRIP_CANCELED`, `PAYMENT_COMPLETED`, `PAYMENT_REFUNDED`, `NO_DRIVER_FOUND`, `APPLICATION_APPROVED`; danh sách chốt ở spec |
+| `type` | string | Có | Một trong 15 loại ở bảng dưới (chốt ở spec 17-18 mục 2.7) |
 | `title`, `body` | string | Có | Nội dung do service tự soạn theo `type`; **không** chứa dữ liệu cá nhân vì event chỉ mang ID, trạng thái, số tiền |
 | `data` | object | Có | Các ID liên quan: `booking_id`, `trip_id`, `payment_id`, `offer_id`… — khác nhau theo `type` (lý do chọn kiểu tài liệu) |
-| `created_at` | date | Có | |
+| `created_at` | date | Có | **= `occurred_at` của event** (lúc sự việc xảy ra), không phải lúc Notification ghi; `occurred_at` sai dạng thì dùng giờ hiện tại. Vì sao: Notification dừng rồi đọc bù event thì thông báo vẫn xếp đúng thứ tự sự việc (spec 17-18 CD6) |
+
+Danh sách `type` (spec 17-18 mục 2.7; mỗi event tạo 0–2 thông báo):
+
+| Topic | `type` | Người nhận |
+|---|---|---|
+| `booking.created` (K1) | `BOOKING_CREATED` | Khách |
+| `booking.offer-created` (K2) | `OFFER_CREATED` | Tài xế được mời |
+| `booking.no-driver-found` (K3) | `NO_DRIVER_FOUND` | Khách |
+| `booking.canceled` (K4) | `BOOKING_CANCELED`; `OFFER_VOIDED` (nếu có tài xế đang giữ lời mời chờ) | Khách; tài xế đó |
+| `trip.status-changed` (K5) `ACCEPTED`, `ARRIVED`, `COMPLETED` | `TRIP_ACCEPTED`, `TRIP_ARRIVED`, `TRIP_COMPLETED` | Khách |
+| K5 `CANCELED` | `TRIP_CANCELED` | **Cả khách và tài xế** (CD-Q3) |
+| K5 `PICKED_UP`, `IN_PROGRESS` | — (không tạo; BR10 không liệt kê) | — |
+| `payment.status-changed` (K6) `COMPLETED`, `FAILED`, `CANCELED`, `REFUNDED` | `PAYMENT_COMPLETED`, `PAYMENT_FAILED`, `PAYMENT_CANCELED`, `PAYMENT_REFUNDED` | Khách |
+| `driver.application-reviewed` (K7) | `APPLICATION_APPROVED`, `APPLICATION_REJECTED` | Tài xế |
+
+Quá hạn / hết lượt thanh toán sinh hai thông báo `PAYMENT_CANCELED` (K6) và `BOOKING_CANCELED` (K4): giữ cả hai vì là hai đối tượng khác nhau (CD-Q5).
 
 Bỏ field `status` (`SENT` / `FAILED`) của bản trước: kênh gửi giả lập **chỉ lưu vào database và ghi log** (ADR-014), không có kết quả gửi nào để ghi. Khi nối kênh thật thì thêm lại field này (MongoDB không cần migration).
 
@@ -654,7 +670,7 @@ erDiagram
 | `rating_id` | `bigint` identity | PK | |
 | `trip_id` | `bigint` | NOT NULL, **UNIQUE** | "Liên kết với chuyến đi" (mục 20); UNIQUE = mỗi chuyến một đánh giá (V3) |
 | `customer_id`, `driver_id` | `bigint` | NOT NULL | Lấy từ Trip qua S7, không tin dữ liệu client gửi |
-| `score` | `smallint` | NOT NULL, CHECK (BETWEEN 1 AND 5) | V4: thang 1–5 [BA] |
+| `score` | `smallint` | NOT NULL, CHECK (BETWEEN 1 AND 5) | V4: thang số nguyên 1–5 (đã chốt 2026-10-05, DG-Q1) |
 | `comment` | `text` | NULL, CHECK độ dài ≤ 500 | |
 
 Index: `(driver_id, created_at DESC)`.
@@ -787,11 +803,18 @@ Bằng chứng khi chấm: xem file 04, chuỗi request của mục 24.
 
 | Key | Kiểu | Giá trị | Thời gian sống | Dùng cho |
 |---|---|---|---|---|
-| `rl:ip:{ip}:{cửa sổ}` | string (số đếm) | `INCR` | `RATE_LIMIT_WINDOW_SECONDS` (đặt khi tạo key) | Rate limit route công khai theo IP (mục 29) |
-| `rl:acc:{account_id}:{cửa sổ}` | string (số đếm) | `INCR` | Như trên | Rate limit route có token theo tài khoản |
+| `rl:ip:{ip}` | string (số đếm) | `INCR` | `RATE_LIMIT_WINDOW_SECONDS`, đặt **một lần khi request đầu tiên tạo key** | Rate limit route công khai theo IP (mục 29; NFR17) |
+| `rl:acc:{account_id}` | string (số đếm) | `INCR` | Như trên | Rate limit route có token theo tài khoản (NFR17) |
 | `revoked:{jti}` | string | `1` | Đúng bằng thời gian sống **còn lại** của token | Đăng xuất (FR42, UC33): token có `jti` này bị từ chối 401 |
 
-`{cửa sổ}` = `floor(giờ hiện tại / RATE_LIMIT_WINDOW_SECONDS)`: cửa sổ cố định. Giá trị demo trong `.env.example`: cửa sổ 10 giây, 5 request công khai, 30 request có token (mục 13) — đủ thấp để bấm Send liên tục là thấy 429, đủ cao để gõ tay bình thường không bao giờ chạm (mỗi request gõ tay mất ≥ 5 giây). Đánh đổi: ở ranh giới hai cửa sổ có thể lọt gấp đôi ngưỡng trong chốc lát; đổi lại chỉ cần một lệnh `INCR` mỗi request.
+**Cửa sổ cố định bắt đầu từ request đầu tiên** (sửa 2026-10-05, GH-Q1 / GH-M2 của spec 20-29; trước đây key có thêm `{cửa sổ}` = `floor(giờ / window)` chia theo đồng hồ). Mỗi request chạy một `MULTI`: `SET key 0 EX <window> NX` → `INCR key` → `TTL key`. Request đầu tạo key kèm hạn; các request sau chỉ tăng số, **không** kéo dài hạn, nên spam không làm cửa sổ dài thêm; `TTL` chính là `Retry-After` / `RateLimit-Reset`. Hết hạn thì key tự mất, request kế tiếp mở cửa sổ mới.
+
+| Lựa chọn | Ưu | Nhược |
+|---|---|---|
+| (a) **Bắt đầu từ request đầu** (chọn) | Bấm Send 6 lần liên tục thì lần 6 **luôn** 429 — demo 30 giây không phụ thuộc may rủi; vẫn một vòng gọi Redis | Ba lệnh trong `MULTI` thay vì một `INCR` |
+| (b) Chia theo đồng hồ | Một lệnh `INCR` | 6 lần bấm có thể rơi vào hai cửa sổ → lần 6 vẫn 200 (~30 % khả năng khi demo); ở ranh giới lọt gấp đôi ngưỡng |
+
+Giá trị demo trong `.env.example`: cửa sổ 10 giây, 5 request công khai, 30 request có token (mục 13) — đủ thấp để bấm Send liên tục là thấy 429, đủ cao để gõ tay bình thường không bao giờ chạm (mỗi request gõ tay mất ≥ 5 giây). Bộ test tự động của các mục khác chạy với `RATE_LIMIT_PUBLIC_MAX=1000`, `RATE_LIMIT_ACCOUNT_MAX=1000`; chỉ bộ test mục 29 dùng giá trị mẫu (GH-Q3).
 
 Redis dừng [ĐC]: Gateway cho request đi qua và ghi log cảnh báo; trong lúc đó không có rate limit và token đã đăng xuất dùng lại được.
 

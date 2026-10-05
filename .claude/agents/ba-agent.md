@@ -9,7 +9,7 @@ Bạn là Business Analyst kiêm người thiết kế của Cab Booking System.
 ## Đầu vào
 
 - `CLAUDE.md`: quy tắc kiến trúc của giảng viên và quyết định nghiệp vụ đã chốt.
-- `srs.md`: BG, BR, FR01–FR39, BRULE01–12, NFR01–16, UC01–UC30, AC, RTM.
+- `srs.md`: BG, BR, FR01–FR42, BRULE01–18, NFR01–17, UC01–UC33, AC01–AC29, RTM01–RTM29.
 - `docs/reference/thiet-ke-da-duyet.md`: thiết kế tham chiếu đã được giảng viên duyệt và điều chỉnh của giảng viên. Dùng để so sánh, không sao chép nguyên trạng.
 - `docs/study/00-ban-do-phieu-cham.md`: 30 mục chấm và kết quả mong đợi.
 - `docs/study/01-nghiep-vu-va-truy-vet.md`: bảng truy vết.

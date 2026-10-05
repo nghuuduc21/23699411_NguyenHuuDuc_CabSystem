@@ -122,6 +122,15 @@ API còn thiếu trong `API document/`: `GET /customers/{id}`, `GET /drivers/{id
 `GET /bookings` (phân trang), `POST /trips/{id}/cancel`, nhóm đăng ký/duyệt tài xế, và ba endpoint health.
 Phần này làm ở buổi rà API.
 
+**Bổ sung 2026-10-05** (sinh viên chốt khi viết spec 17-18 và 20-29):
+
+| Thêm | Nội dung | Lý do |
+|---|---|---|
+| **NFR17** Giới hạn tần suất truy cập | Giới hạn số request mỗi client trong một khoảng thời gian (IP với route công khai, tài khoản với route có token); ngưỡng đọc từ biến môi trường; vượt thì 429 | Mục chấm 29 trước đó không có mã yêu cầu nào trong `srs.md`, chỉ truy vết gián tiếp qua NFR04, NFR06 (GH-Q5) |
+| **RTM29** | BG03 / BR10 / FR21–FR24 / — / UC16 / AC16, AC20 | RTM chưa có dòng nào cho nhóm thông báo (CD-Q6). Bảng RTM không có cột NFR nên NFR17 không có dòng RTM riêng |
+
+Bảng 3.5 dòng "Bảo vệ dữ liệu, lưu vết": mục chấm 29 nay truy vết thẳng về **NFR17**.
+
 ### 4.3 Câu hỏi bạn cần tự quyết (giảng viên có thể hỏi)
 
 1. ~~Hai danh sách BG~~ **Đã chốt:** danh sách 6 mục tiêu là chính thức, danh sách 12 mục bỏ mã; BG05 thêm "bảo mật". Gốc vấn đề: `srs.md` có danh sách 12 mục tiêu rồi một danh sách "quan trọng nhất" 6 mục tiêu, **đánh lại số từ BG01**. BG03 ở danh sách đầu là "Giảm thời gian tìm tài xế", ở danh sách sau là "Nâng cao trải nghiệm khách hàng". RTM dùng danh sách sau. Nên giữ một danh sách.

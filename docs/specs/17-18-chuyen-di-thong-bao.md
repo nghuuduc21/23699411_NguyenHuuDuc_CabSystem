@@ -481,22 +481,24 @@ Kết quả mong đợi theo phiếu chấm: **16** — nhận chuyến có `tri
 
 | # | Chỗ | Ghi chú | Spec theo |
 |---|---|---|---|
-| CD-M1 | 06 mục 18 và 04 mục 5.2 dùng **tab chuyến** + token KH1 cho A29 | Phải đổi token → ~36 s, Vượt. Spec đề xuất **tab GET** (~28 s) — cần sửa 04, 06 nếu sinh viên đồng ý (CD-Q2) | Tab GET |
+| CD-M1 | 06 mục 18 và 04 mục 5.2 dùng **tab chuyến** + token KH1 cho A29 | Phải đổi token → ~36 s, Vượt. Spec dùng **tab GET** (~28 s). **Đã sửa 04, 06 (2026-10-05, CD-Q2)** | Tab GET |
 | CD-M2 | 04 A27 có khối `driver` (qua S6) | Spec để sau (CD10) | Không có `driver` |
 | CD-M3 | 03 mục 9 "danh sách `type` chốt ở spec" | Chốt 15 loại ở mục 2.7 (thêm `OFFER_VOIDED`, `TRIP_ARRIVED`, `TRIP_COMPLETED`, `PAYMENT_FAILED`, `PAYMENT_CANCELED`, `APPLICATION_REJECTED`, `BOOKING_CANCELED`) | Mục 2.7 |
 | CD-M4 | 01 N5 "bên **còn lại** được báo" | Spec báo cả hai (CD9) | Mục 2.7 |
 | CD-M5 | 03 mục 9 không nói `created_at` lấy từ đâu | CD6 | Mục 2.7 |
-| CD-M6 | `srs.md` RTM không có dòng cho FR21–FR24 (BR10, UC16) | Đề xuất thêm RTM29: BG03 / BR10 / FR21–FR24 / — / UC16 / AC16, AC20. Spec này không được sửa `srs.md` (CD-Q6) | — |
-| CD-M7 | 02 mục 7 bước 8 ghi A29 `trips/5` không kèm cách đổi token | Như CD-M1 | — |
+| CD-M6 | `srs.md` RTM không có dòng cho FR21–FR24 (BR10, UC16) | **Đã thêm RTM29 (2026-10-05):** BG03 / BR10 / FR21–FR24 / — / UC16 / AC16, AC20 (CD-Q6) | — |
+| CD-M7 | 02 mục 7 bước 8 ghi A29 `trips/5` không kèm cách đổi token | Như CD-M1; **đã sửa 02 (2026-10-05)** | — |
 
 ### 9.3 Câu hỏi còn mở
 
-| # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
+Sinh viên chốt **2026-10-05** theo đề xuất của BA. Hành vi của spec không đổi (các đề xuất đã được viết sẵn ở mục 2–8); chỉ còn CD-Q7 cần hỏi lại giảng viên.
+
+| # | Câu hỏi | Lựa chọn | Đã chốt | Hỏi ai |
 |---|---|---|---|---|
-| CD-Q1 | Mục 16: xem thông báo (A33) là request **chính** hay tùy chọn? | (a) Chính — phiếu ghi Notification cho mục 16 (~26 s, Sát); (b) tùy chọn như 06 (~18 s) | **(a)** | SV |
-| CD-Q2 | Mục 18 gõ A29 ở tab nào? | (a) Tab GET đang mang token KH1 (~28 s); (b) tab chuyến như 06, đổi token (~36 s) | **(a)**; nếu chốt thì BA sửa 04 mục 5.2, 06 mục 2/18 | SV |
-| CD-Q3 | `TRIP_CANCELED` gửi cho ai? | (a) Cả hai bên; (b) chỉ bên không hủy (đúng chữ N5) | **(a)** — mục 18 khách thấy ngay, không cần đăng nhập TX6 | SV |
-| CD-Q4 | Booking sau khi chuyến bị hủy vẫn `DRIVER_ASSIGNED` (R13) — chấp nhận? | (a) Giữ, giải thích "Booking kết thúc khi bàn giao cho Trip; trạng thái chuyến xem ở Trip"; (b) thêm Booking nghe K5 | **(a)** — không thêm đường giao tiếp không có FR | SV |
-| CD-Q5 | Hết hạn / hết lượt thanh toán sinh **hai** thông báo (`PAYMENT_CANCELED` từ K6, `BOOKING_CANCELED` từ K4) | (a) Giữ cả hai (hai đối tượng khác nhau); (b) bỏ thông báo khi K4 `canceled_by = system` | **(a)** | SV |
-| CD-Q6 | Thêm RTM29 cho FR21–FR24 vào `srs.md`? | (a) Thêm (BA làm ở lượt sửa design); (b) để nguyên | **(a)** | SV |
-| CD-Q7 | Admin có được hủy chuyến (FR31) không? | (a) Không, 403 như 04 mục 3; (b) thiết kế thêm | **(a)** trong phạm vi 30 mục (Q45) | GV |
+| CD-Q1 | Mục 16: xem thông báo (A33) là request **chính** hay tùy chọn? | (a) Chính — phiếu ghi Notification cho mục 16 (~26 s, Sát); (b) tùy chọn như 06 (~18 s) | **Đã chốt (a)** (sinh viên 2026-10-05); đã sửa 06 mục 16 | — |
+| CD-Q2 | Mục 18 gõ A29 ở tab nào? | (a) Tab GET đang mang token KH1 (~28 s); (b) tab chuyến như 06, đổi token (~36 s) | **Đã chốt (a)** (sinh viên 2026-10-05); đã sửa 04 mục 5.2, 06 mục 18, 02 mục 7 | — |
+| CD-Q3 | `TRIP_CANCELED` gửi cho ai? | (a) Cả hai bên; (b) chỉ bên không hủy (đúng chữ N5) | **Đã chốt (a)** (sinh viên 2026-10-05) — mục 18 khách thấy ngay, không cần đăng nhập TX6 | — |
+| CD-Q4 | Booking sau khi chuyến bị hủy vẫn `DRIVER_ASSIGNED` (R13) — chấp nhận? | (a) Giữ; (b) thêm Booking nghe K5 | **Đã chốt (a)** (sinh viên 2026-10-05) — không thêm đường giao tiếp không có FR. Câu trả lời vấn đáp: *"Booking là yêu cầu đặt xe; nhiệm vụ của nó kết thúc khi đã bàn giao cho một chuyến (`DRIVER_ASSIGNED`). Từ đó trạng thái thật của chuyến — kể cả `CANCELED` — nằm ở Trip, xem bằng `GET /api/v1/trips/{id}`. Cho Booking nghe thêm `trip.status-changed` chỉ để chép lại trạng thái là thêm một đường giao tiếp không có FR nào cần."* | — |
+| CD-Q5 | Hết hạn / hết lượt thanh toán sinh **hai** thông báo (`PAYMENT_CANCELED` từ K6, `BOOKING_CANCELED` từ K4) | (a) Giữ cả hai (hai đối tượng khác nhau); (b) bỏ thông báo khi K4 `canceled_by = system` | **Đã chốt (a)** (sinh viên 2026-10-05) | — |
+| CD-Q6 | Thêm RTM29 cho FR21–FR24 vào `srs.md`? | (a) Thêm; (b) để nguyên | **Đã chốt (a)** (sinh viên 2026-10-05); đã thêm RTM29 vào `srs.md` | — |
+| CD-Q7 | Admin có được hủy chuyến (FR31) không? | (a) Không, 403 như 04 mục 3; (b) thiết kế thêm | **Đã chốt (a)** (sinh viên 2026-10-05) trong phạm vi 30 mục (Q45): admin gọi A29 → 403. **Vẫn hỏi lại giảng viên** khi có dịp | GV |

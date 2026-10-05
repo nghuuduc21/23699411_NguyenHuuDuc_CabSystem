@@ -1,6 +1,6 @@
 # Spec 20-29 — Đánh giá chuyến đi; giới hạn tần suất request (rate limit) tại Gateway
 
-> Vòng 2, viết 2026-10-05. Mục chấm **20, 29**; bổ trợ **26** (nhận xét là văn bản tự do), **28** (tài xế / admin gửi đánh giá → 403), **3** (Gateway có rate limit). FR25; NFR04, NFR06, NFR14.
+> Vòng 2, viết 2026-10-05. Mục chấm **20, 29**; bổ trợ **26** (nhận xét là văn bản tự do), **28** (tài xế / admin gửi đánh giá → 403), **3** (Gateway có rate limit). FR25; NFR04, NFR06, NFR14, NFR17.
 > Đầu vào: `CLAUDE.md` (Quyết định kỹ thuật "Redis dừng", "Khóa chính", "Lỗi sai trạng thái"; quy tắc "Redis ở Gateway"; Ràng buộc khi thi); `srs.md` (BG03, BG05, BR11, FR25, BRULE11, UC17, AC14, RTM15, NFR04, NFR06, NFR14); `docs/design/01` mục 6.8 (V1–V5), R10, R11; `docs/design/02` mục 2.2, G8, G10, S7, mục 9; `docs/design/03` mục 10, 12, 13, 14; `docs/design/04` A34–A36, mục 1, 1.5, 1.6, 1.10, 3, 4, 5; `docs/design/06` mục 20, 29; ADR-007, ADR-010, ADR-015, ADR-018.
 > Phụ thuộc: **spec 00** (Redis, Compose, `.env.example` có 3 biến `RATE_LIMIT_*`), **spec 09-10** (xác thực Gateway mục 4.1, seed tài khoản, tab đăng nhập), **spec 14-15-16-19-30** (bảng `trips`, seed T3, T4, T5, quy ước `x-role: system` mục 5.5), **spec 17-18** (đang viết — trình tự trạng thái chuyến, giá trị `COMPLETED`).
 > Ngoài phạm vi: API liệt kê đánh giá; tài xế đánh giá khách; sửa / xóa đánh giá (không FR nào yêu cầu).
@@ -12,7 +12,7 @@
 |---|---|---|---|---|---|---|---|
 | 20 Đánh giá chuyến đi, lưu và liên kết với chuyến | BG03 | BR11 | FR25 | BRULE11; V1–V5; R10 | UC17 | AC14 / RTM15 | NFR14 (V5), NFR08 |
 | 20 (bổ trợ) Xem đánh giá của chuyến, điểm của tài xế | BG03 | BR11 | FR25 | V2 | UC17 bước 5 | AC14 / RTM15 | NFR08 |
-| 29 Spam → 429 | BG05 | BR15 | — (không có FR; yêu cầu của phiếu chấm) | — | — | — | NFR04 (ổn định khi tải cao), NFR06 (chặn dò mật khẩu) |
+| 29 Spam → 429 | BG05 | BR15 | — (không có FR; yêu cầu của phiếu chấm) | — | — | — | **NFR17** (giới hạn tần suất truy cập — thêm 2026-10-05, GH-Q5); NFR04 (ổn định khi tải cao), NFR06 (chặn dò mật khẩu) |
 | 26 (bổ trợ) `comment` có `<` `>` → 400 | BG05 | BR15 | FR25 | 04 mục 1.6 | UC17 | — | NFR08 |
 | 28 (bổ trợ) Tài xế, admin gửi đánh giá → 403 | BG05 | BR15 | FR32 | BRULE12 | — | — | NFR07 |
 
@@ -341,24 +341,28 @@ Kết quả mong đợi theo phiếu chấm: **20** — đánh giá được lư
 | # | Chỗ | Ghi chú | Spec theo |
 |---|---|---|---|
 | DG-M1 | 03 mục 10.1 có index `ratings (driver_id, created_at DESC)` | Không API nào dùng → không tạo (quy tắc "không truy vết được thì bỏ") | Mục 7.1 |
-| DG-M2 | 04 A34 ví dụ `"comment": null`, `"driver_avg": 5.0` | Spec: không gửi `comment` thì không có key (quy ước spec 14); JSON in `5` | Mục 4.1 |
-| DG-M3 | 04 A35, A36 chưa nói mã lỗi khi mã trong query sai định dạng | DG5 | Mục 4.2 |
+| DG-M2 | 04 A34 ví dụ `"comment": null`, `"driver_avg": 5.0` | Spec: không gửi `comment` thì không có key (quy ước spec 14); JSON in `5`. **Đã sửa 04, 06 (2026-10-05)** | Mục 4.1 |
+| DG-M3 | 04 A35, A36 chưa nói mã lỗi khi mã trong query sai định dạng | DG5. **Đã sửa 04 (2026-10-05)** | Mục 4.2 |
 | DG-M4 | 03 mục 10.2 `driver_ratings` thiếu `created_at`, `updated_at` và CHECK tổng | Thêm theo quy ước chung + DG6 | Mục 7.1 |
-| DG-M5 | 01 V4 ghi "thang 1–5 là suy đoán, xác nhận ở spec mục 20" | Spec giữ 1–5 (DG1), chờ DG-Q1 | — |
-| GH-M1 | 04 mục 1 thứ tự "429 → 401 → 403"; spec 09-10 mục 4.1 đặt rate limit ở bước 1 cho mọi route | Chỉ đúng với route công khai; route có token: 401 → **429** → 403 (GH2). **Dev-agent đặt bước 5a** khi làm spec này | Mục 4.5 |
-| GH-M2 | 03 mục 12 key `rl:ip:{ip}:{cửa sổ}`, `{cửa sổ} = floor(giờ / window)` | Đổi sang cửa sổ bắt đầu từ request đầu tiên (GH1); key `rl:ip:{ip}` | Mục 5.4, 7.3 |
-| GH-M3 | `srs.md` không có FR / NFR nào về giới hạn tần suất | Mục 29 truy vết về NFR04, NFR06 và phiếu chấm; xem GH-Q5 | Mục 1 |
-| GH-M4 | 04 mục 5 / 06 mục 29 ghi "Tab KH1" | Là **tab đăng nhập** KH1 (route công khai, ngưỡng 5) — không phải tab có token (ngưỡng 30) | Mục 8 |
+| DG-M5 | 01 V4 ghi "thang 1–5 là suy đoán, xác nhận ở spec mục 20" | Spec giữ 1–5 (DG1). **DG-Q1 đã chốt; đã sửa 01 V4 (2026-10-05)** | — |
+| GH-M1 | 04 mục 1 thứ tự "429 → 401 → 403"; spec 09-10 mục 4.1 đặt rate limit ở bước 1 cho mọi route | Chỉ đúng với route công khai; route có token: 401 → **429** → 403 (GH2). **Dev-agent đặt bước 5a** khi làm spec này. **Đã sửa 04 mục 1, 1.5 (2026-10-05)** | Mục 4.5 |
+| GH-M2 | 03 mục 12 key `rl:ip:{ip}:{cửa sổ}`, `{cửa sổ} = floor(giờ / window)` | Đổi sang cửa sổ bắt đầu từ request đầu tiên (GH1); key `rl:ip:{ip}`. **Đã sửa 03 mục 12 (2026-10-05)** | Mục 5.4, 7.3 |
+| GH-M3 | `srs.md` không có FR / NFR nào về giới hạn tần suất | **Đã xử lý 2026-10-05:** thêm NFR17 vào `srs.md` (GH-Q5) | Mục 1 |
+| GH-M4 | 04 mục 5 / 06 mục 29 ghi "Tab KH1" | Là **tab đăng nhập** KH1 (route công khai, ngưỡng 5) — không phải tab có token (ngưỡng 30). **Đã sửa 04 mục 5.3, 5.5 và 06 (2026-10-05)** | Mục 8 |
 
 ### 9.3 Câu hỏi còn mở
 
 | # | Câu hỏi | Lựa chọn | Đề xuất | Hỏi ai |
 |---|---|---|---|---|
-| DG-Q1 | Thang điểm đánh giá (V4)? | (a) Số nguyên 1–5; (b) 1–10; (c) cho nửa sao | **(a)** — giống ứng dụng thật, CHECK đơn giản | SV (GV nếu được hỏi) |
-| DG-Q2 | Điểm trung bình hiển thị mấy chữ số? | (a) 1 chữ số (4.5); (b) 2 chữ số (4.67) | **(a)** | SV |
-| DG-Q3 | Có hạn đánh giá (ví dụ trong 7 ngày sau chuyến)? | (a) Không hạn; (b) có hạn | **(a)** — SRS không nói; thêm hạn là thêm quy tắc không truy vết được | SV |
-| GH-Q1 | Cửa sổ rate limit: neo theo request đầu (GH1) hay chia theo đồng hồ (03 mục 12)? | (a) Neo theo request đầu; (b) chia theo đồng hồ — lần 6 có ~30 % khả năng vẫn 200 khi demo | **(a)** — sau khi chốt, BA sửa 03 mục 12 | SV |
-| GH-Q2 | Route có token: 401 hay 429 trước? | (a) 401 trước (đếm theo tài khoản đã xác thực); (b) đếm thêm theo IP trước khi xác thực | **(a)** — sau khi chốt, BA sửa 04 mục 1 | SV |
-| GH-Q3 | Bộ test tự động (test-agent) gọi đăng nhập nhiều lần trong 10 giây sẽ bị 429 khi bật rate limit | (a) Chạy các bộ test khác với `.env` `RATE_LIMIT_PUBLIC_MAX=1000`, `RATE_LIMIT_ACCOUNT_MAX=1000`; chỉ bộ test mục 29 dùng giá trị mẫu; (b) test tự chờ giữa các lần đăng nhập | **(a)** — test-agent phải biết **trước** khi chạy lại các báo cáo cũ | SV, test-agent |
-| GH-Q4 | Có giới hạn request sai token trên route có token (theo IP)? | (a) Không — kiểm chữ ký tại chỗ, rẻ; (b) có, thêm một bộ đếm | **(a)**, để "có thể làm sau" | SV |
-| GH-Q5 | Thêm mã yêu cầu cho rate limit vào `srs.md` (ví dụ NFR17 "Giới hạn tần suất truy cập", RTM mới)? | (a) Thêm — mục 29 truy vết thẳng; (b) giữ truy vết qua NFR04, NFR06 | **(a)** — BA thêm khi sinh viên đồng ý | SV |
+Tất cả câu hỏi dưới đây **đã chốt 2026-10-05** theo đề xuất của BA (sinh viên đồng ý).
+
+| # | Câu hỏi | Lựa chọn | Đã chốt | Hỏi ai |
+|---|---|---|---|---|
+| DG-Q1 | Thang điểm đánh giá (V4)? | (a) Số nguyên 1–5; (b) 1–10; (c) cho nửa sao | **Đã chốt (a)** (sinh viên 2026-10-05) — giống ứng dụng thật, CHECK đơn giản | — |
+| DG-Q2 | Điểm trung bình hiển thị mấy chữ số? | (a) 1 chữ số (4.5); (b) 2 chữ số (4.67) | **Đã chốt (a)** (sinh viên 2026-10-05) | — |
+| DG-Q3 | Có hạn đánh giá (ví dụ trong 7 ngày sau chuyến)? | (a) Không hạn; (b) có hạn | **Đã chốt (a)** (sinh viên 2026-10-05) — SRS không nói; thêm hạn là thêm quy tắc không truy vết được | — |
+| GH-Q1 | Cửa sổ rate limit: neo theo request đầu (GH1) hay chia theo đồng hồ (03 mục 12)? | (a) Neo theo request đầu; (b) chia theo đồng hồ — lần 6 có ~30 % khả năng vẫn 200 khi demo | **Đã chốt (a)** (sinh viên 2026-10-05); đã sửa 03 mục 12 | — |
+| GH-Q2 | Route có token: 401 hay 429 trước? | (a) 401 trước (đếm theo tài khoản đã xác thực); (b) đếm thêm theo IP trước khi xác thực | **Đã chốt (a)** (sinh viên 2026-10-05); đã sửa 04 mục 1 | — |
+| GH-Q3 | Bộ test tự động (test-agent) gọi đăng nhập nhiều lần trong 10 giây sẽ bị 429 khi bật rate limit | (a) Chạy các bộ test khác với `.env` `RATE_LIMIT_PUBLIC_MAX=1000`, `RATE_LIMIT_ACCOUNT_MAX=1000`; chỉ bộ test mục 29 dùng giá trị mẫu; (b) test tự chờ giữa các lần đăng nhập | **Đã chốt (a)** (sinh viên 2026-10-05) — test-agent phải biết **trước** khi chạy lại các báo cáo cũ | — |
+| GH-Q4 | Có giới hạn request sai token trên route có token (theo IP)? | (a) Không — kiểm chữ ký tại chỗ, rẻ; (b) có, thêm một bộ đếm | **Đã chốt (a)** (sinh viên 2026-10-05); để ở mục 8.1 "có thể làm sau" | — |
+| GH-Q5 | Thêm mã yêu cầu cho rate limit vào `srs.md` (ví dụ NFR17 "Giới hạn tần suất truy cập", RTM mới)? | (a) Thêm — mục 29 truy vết thẳng; (b) giữ truy vết qua NFR04, NFR06 | **Đã chốt (a)** (sinh viên 2026-10-05); đã thêm NFR17 vào `srs.md` (bảng RTM của `srs.md` không có cột NFR nên không thêm dòng RTM; mục 1 truy vết thẳng về NFR17) | — |

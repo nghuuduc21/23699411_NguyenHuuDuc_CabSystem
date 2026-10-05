@@ -83,9 +83,9 @@ việc có đòn bẩy cao nhất** sau khi sửa hạ tầng (mục 2, 5).
 | Muốn trả lời… | Mở tài liệu |
 |---|---|
 | Hệ thống giải quyết vấn đề gì, cho ai | `srs.md` — Business Problem, Stakeholder, BG |
-| Hệ thống phải làm gì | `srs.md` — BR, FR01–FR34, UC |
-| Quy tắc nghiệp vụ bắt buộc | `srs.md` — BRULE01–12 |
-| Chất lượng (bảo mật, hiệu năng, tin cậy) | `srs.md` — NFR01–16 |
+| Hệ thống phải làm gì | `srs.md` — BR, FR01–FR42, UC01–UC33 |
+| Quy tắc nghiệp vụ bắt buộc | `srs.md` — BRULE01–18 |
+| Chất lượng (bảo mật, hiệu năng, tin cậy) | `srs.md` — NFR01–17 (NFR17: giới hạn tần suất, mục 29) |
 | Chia service thế nào, vì sao | `DDD Bounded Contexts — Cab Booking System.md` |
 | Service giao tiếp thế nào | `docs/architecture/cab-architecture.png`, `proto/*.proto` |
 | API cụ thể (URL, body, status) | `API document/*.yml` |

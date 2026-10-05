@@ -22,7 +22,7 @@
 | Thành công | 200 (đọc, sửa, đổi trạng thái), 201 (tạo mới). Một đối tượng thì trả thẳng đối tượng; danh sách theo mục 1.3 | |
 | Đổi trạng thái | Response **luôn có trạng thái mới** của đối tượng bị đổi (và đối tượng liên quan nếu đổi trong cùng request) | Luật thi: không cần gọi thêm request để kiểm tra |
 | Lỗi | `{ "error": "MA_LOI" }`, không stack trace | `CLAUDE.md` |
-| Thứ tự kiểm tra | 429 → 401 → 403 (role của **đường dẫn**) → 400 (hình thức, gồm chọn biến thể — mục 1.10) → 403 (role của **biến thể**) → service: 404 → 403 (không phải chủ) → 409 → 400 (nghiệp vụ) | Lỗi rẻ nhất trả trước. Hệ quả dùng ở mục 28: sai role thì 403 **dù body rỗng** |
+| Thứ tự kiểm tra | **Route công khai:** 429 (đếm theo IP) → 400 → service. **Route có token:** 401 (xác thực token) → 429 (đếm theo `account_id`) → 403 (role của **đường dẫn**) → 400 (hình thức, gồm chọn biến thể — mục 1.10) → 403 (role của **biến thể**) → service: 404 → 403 (không phải chủ) → 409 → 400 (nghiệp vụ). Sửa 2026-10-05 (GH-Q2, spec 20-29 GH-M1) | Lỗi rẻ nhất trả trước. Route có token đếm **sau** khi xác thực vì `account_id` chỉ đáng tin khi chữ ký đúng: đọc `sub` từ token chưa kiểm thì kẻ xấu ghi `sub` của người khác để làm người đó bị chặn. Request sai token không bị đếm (kiểm HS256 tại chỗ, rẻ — GH-Q4). Hệ quả dùng ở mục 28: sai role thì 403 **dù body rỗng** |
 | Header bảo vệ | Mọi response: `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, `Cache-Control: no-store`, `X-Request-Id` | Mục chấm 26, NFR08, NFR10 |
 | Field lạ trong body | 400 `INVALID_INPUT` | Chặn client tự gửi `role`, `customer_id`… |
 | Body của `GET` | **Bỏ qua** (không kiểm tra, không chuyển cho service) [BA] | Khi sửa tab từ `POST` / `PATCH` sang `GET`, Postman vẫn gửi body cũ; không bắt người thi phải xóa body |
@@ -95,8 +95,10 @@ API có phân trang: A12 (mục 13), A20 (mục 14), A13, A23, A26, A33.
 | Route công khai (A04, A05, A07, A08) | Đếm theo **IP**; `RATE_LIMIT_PUBLIC_MAX` = **5** mỗi `RATE_LIMIT_WINDOW_SECONDS` = **10** giây (`.env.example`) |
 | Route có token | Đếm theo **`account_id`**; `RATE_LIMIT_ACCOUNT_MAX` = **30** mỗi 10 giây |
 | Không giới hạn | A01–A03 (health), A32 (callback — xác thực bằng khóa; Provider gửi nhiều callback từ một IP là bình thường) |
+| Cửa sổ | Cố định, **bắt đầu từ request đầu tiên** của client (key Redis tạo kèm hạn ở request đầu; request sau không kéo dài hạn) — file 03 mục 12, GH-Q1. Bấm Send 6 lần liên tục thì lần 6 luôn 429 |
+| Thứ tự | Route công khai: đếm trước mọi kiểm tra. Route có token: xác thực token trước, rồi mới đếm (401 trước 429) — mục 1 |
 | Header | `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` (giây) |
-| Vượt ngưỡng | 429 `{ "error": "RATE_LIMITED" }` + `Retry-After: <giây>` |
+| Vượt ngưỡng | 429 `{ "error": "RATE_LIMITED" }` + `Retry-After: <giây>` (NFR17) |
 | IP lấy ở đâu | Địa chỉ kết nối TCP; không tin `X-Forwarded-For` (không có proxy trước Gateway) |
 | Redis dừng [ĐC] | Cho qua, ghi log cảnh báo; không có header `RateLimit-*` |
 
@@ -352,9 +354,9 @@ Ghi chú:
 | A31 | Mỗi lần thanh toán là **một giao dịch mới** (`payment_transactions`, file 03 mục 8.4) → `POST` tạo phần tử con (R7). Bỏ `/pay` (động từ). Khớp đúng nghiệp vụ "tối đa 3 lần thử" = tối đa 3 transaction | Header `Idempotency-Key: k1`; `{"simulate_result":"MANUAL"}` → 200 `{ "payment_id": 7, "status": "PENDING", "txn_id": "SIM-7-1", "txn_status": "PENDING", "attempt_no": 1, "attempts_left": 2, "expires_at": "…" }` |
 | A32 | Mỗi callback là **một thông báo kết quả** mà cổng thanh toán gửi tới; response được lưu (`callback_response`) để trả lại khi gửi lặp → là tài nguyên được tạo (R7). Không đặt dưới `/payments/{id}` vì Provider chỉ biết `txn_id` của nó. Bỏ `/payments/callback` (số ít, lẫn vào tập `payments`) | Header `X-Callback-Secret: cab-secret`; `{"txn_id":"SIM-7-1"}` → 200 `{ "txn_id": "SIM-7-1", "txn_status": "SUCCEEDED", "payment_id": 7, "status": "COMPLETED" }` |
 | A33 | Danh sách "của tôi", lọc theo token | — → 200 `{ "data": [ { "type": "TRIP_ACCEPTED", "title": "…", "body": "…", "data": { "booking_id": 1000, "trip_id": 1000 }, "created_at": "…" } ], "pagination": { … } }` |
-| A34 | Đánh giá là tài nguyên của context Rating → tập `ratings` ở gốc; `trip_id` trong body như mọi tham chiếu khác. Bỏ `/trips/{id}/rating` (số ít, lồng vào tài nguyên của service khác) | `{"trip_id":4,"score":5}` → 201 `{ "rating_id": 1000, "trip_id": 4, "driver_id": 13, "score": 5, "comment": null, "driver_avg": 5.0, "driver_count": 1 }` |
+| A34 | Đánh giá là tài nguyên của context Rating → tập `ratings` ở gốc; `trip_id` trong body như mọi tham chiếu khác. Bỏ `/trips/{id}/rating` (số ít, lồng vào tài nguyên của service khác) | `{"trip_id":4,"score":5}` → 201 `{ "rating_id": 1000, "trip_id": 4, "driver_id": 13, "score": 5, "driver_avg": 5, "driver_count": 1 }` — không gửi `comment` thì response không có key `comment`; `driver_avg` làm tròn 1 chữ số (JSON in `5`, `4.5`) (spec 20-29, DG-M2) |
 | A35 | Lọc tập `ratings` theo chuyến (R5). Một chuyến có nhiều nhất một đánh giá (UNIQUE `trip_id`) nên trả một đối tượng | `?trip_id=4` → 200 đánh giá của chuyến; chưa có → 404 `RATING_NOT_FOUND` |
-| A36 | Lọc tập `ratings` theo tài xế; trả **số liệu tổng hợp** của tập đó (không thêm API liệt kê vì không FR nào cần) | `?driver_id=11` → 200 `{ "driver_id": 11, "avg": 5.0, "count": 1 }` |
+| A36 | Lọc tập `ratings` theo tài xế; trả **số liệu tổng hợp** của tập đó (không thêm API liệt kê vì không FR nào cần) | `?driver_id=11` → 200 `{ "driver_id": 11, "avg": 5, "count": 1 }`; tài xế chưa có đánh giá → 200 `{ "driver_id": 999, "count": 0 }` (không có `avg`) |
 
 Ghi chú:
 
@@ -370,7 +372,7 @@ Ghi chú:
   Lỗi: đã `COMPLETED` → 409 `PAYMENT_ALREADY_COMPLETED`; đang có lần thử `PENDING` → 409 `PAYMENT_IN_PROGRESS`; quá hạn → 409 `PAYMENT_EXPIRED`; hết lượt → 409 `PAYMENT_ATTEMPTS_EXHAUSTED`; thanh toán tiền mặt → 409 `PAYMENT_NOT_ONLINE`.
 - `txn_id` theo quy luật **`SIM-<payment_id>-<attempt_no>`** (file 03 mục 8.4): học thuộc được, không cần copy.
 - A34: `trip_id` không phải số nguyên dương → 400 `INVALID_INPUT`; chuyến không có → 404 `TRIP_NOT_FOUND`; chưa `COMPLETED` → 409 `TRIP_NOT_COMPLETED`; không phải khách của chuyến → 403 `NOT_OWNER`; đã đánh giá → 409 `RATING_ALREADY_EXISTS`; `score` ngoài 1–5 → 400. Response có luôn điểm trung bình mới của tài xế (bớt request A36).
-- A35, A36: thiếu cả hai hoặc gửi cả `trip_id` lẫn `driver_id` → 400 `INVALID_INPUT`.
+- A35, A36: thiếu cả hai hoặc gửi cả `trip_id` lẫn `driver_id` → 400 `INVALID_INPUT`; `trip_id` / `driver_id` trong query sai định dạng (`abc`, `4 OR 1=1`) → 400 **`INVALID_ID`** như mã trong đường dẫn (khác A34: mã trong body sai → `INVALID_INPUT`) (spec 20-29 DG5, DG-M3). Thang điểm 1–5 số nguyên, không có hạn đánh giá (DG-Q1, DG-Q3 đã chốt 2026-10-05).
 
 ### 2.7 Callback thanh toán (A32) và cổng thanh toán giả lập — ADR-014
 
@@ -519,18 +521,18 @@ Ký hiệu: `[KH1]` = tab Authorization → Bearer Token → dán token của KH
 | 15 | 1 | `POST localhost:3000/api/v1/bookings` — `[KH1]` — `{"from":[10.82,106.68],"to":[10.83,106.69]}` | 201 `SEARCHING`, `CAR_4`, `CASH`, `fare` 45000, `booking_id` 1000 — **giữ tab (dùng ở mục 28)** |
 | | 2 | Nhân bản tab: method `GET`, URL `offers`, token `[TX1]` | 200: một Offer `PENDING` cho booking 1000, `distance_m` ≈ 111 |
 | 16 | 1 | Sửa tab: method `PATCH`, URL `offers/1000`, body `{"status":"ACCEPTED"}` | 200 `ACCEPTED`, `booking_status` `DRIVER_ASSIGNED`, `trip_id` 1000 |
-| | (2) | (tùy chọn) Tab mục 14: URL `notifications` — `[KH1]` | 200: `TRIP_ACCEPTED` mới nhất |
+| | 2 | **Tab GET** (đang `[KH1]`, URL `bookings?limit=2&page=2` của mục 14): sửa URL thành `notifications` (CD-Q1, chốt 2026-10-05) | 200: `data[0]` `TRIP_ACCEPTED`, `data[1]` `BOOKING_CREATED` |
 | 17 | 1 | Sửa tab mục 16: URL `trips/1000`, body `{"status":"COMPLETED"}` | **409 `INVALID_STATUS_TRANSITION`** (nhảy cóc) |
 | | 2–5 | Sửa tab, lần lượt `ARRIVED`, `PICKED_UP`, `IN_PROGRESS`, `COMPLETED` | 200 mỗi lần; lần cuối `history` đủ 5 trạng thái |
-| 18 | 1 | Sửa tab mục 17: URL `trips/5`, token `[KH1]`, body `{"status":"CANCELED","reason":"ban viec"}` | 200 `CANCELED`, `canceled_by` customer |
-| | 2 | Tab mục 14: URL `notifications` — `[KH1]` | 200: `TRIP_CANCELED` và `PAYMENT_REFUNDED` (payment 5) — Trip, Payment, Notification đều đã nhận event |
-| | (3) | (tùy chọn, phía tài xế) đăng nhập `0910000006` rồi `GET …/notifications` | `TRIP_CANCELED` cho chuyến 5 |
-| | (4) | (tùy chọn, hủy booking) Tab mục 15: thêm `"pay":"ONLINE"` → copy `booking_id` → `PATCH …/api/v1/bookings/<id>` `{"status":"CANCELED","reason":"doi y"}` | 201 `PENDING_PAYMENT`; 200 `CANCELED` |
+| 18 | 1 | **Tab GET** (đang `[KH1]`, không phải đổi token — CD-Q2, chốt 2026-10-05): method `PATCH`, URL `trips/5`, Body raw `{"status":"CANCELED","reason":"ban viec"}` | 200 `CANCELED`, `canceled_by` customer |
+| | 2 | Cùng tab: method `GET`, URL `notifications` (body để nguyên — Gateway bỏ qua body của `GET`) | 200: `PAYMENT_REFUNDED` (payment 5, 45000) và `TRIP_CANCELED` (trip 5) — Trip, Payment, Notification đều đã nhận event |
+| | (3) | (tùy chọn, phía tài xế) Tab đăng nhập TX1 sửa `0910000006` → copy token → tab GET `[TX6]` Send | `TRIP_CANCELED` cho chuyến 5 |
+| | (4) | (tùy chọn, hủy booking) Tab mục 15: thêm `"pay":"ONLINE"` → copy `booking_id` → tab GET `PATCH …/api/v1/bookings/<id>` `{"status":"CANCELED","reason":"doi y"}` | 201 `PENDING_PAYMENT`; 200 `CANCELED` |
 | 19 | 1 | `POST localhost:3000/api/v1/payments/7/transactions` — `[KH1]` — Headers `Idempotency-Key:k1` — `{"simulate_result":"MANUAL"}` | 200 `status` `PENDING`, `txn_id` `SIM-7-1`, `txn_status` `PENDING` |
 | | 2 | Nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:cab-secret`, body `{"txn_id":"SIM-7-1"}` | 200 `txn_status` `SUCCEEDED`, **`status` `COMPLETED`** |
 | | (3) | (tùy chọn) `GET …/api/v1/bookings/7` — `[KH1]` | `SEARCHING` (BRULE13: trả xong mới tìm tài xế) |
 | | Dự phòng | Chỉ request 1, **bỏ body** | 200 `COMPLETED` ngay (adapter tự gọi callback) |
-| 20 | 1 | `POST localhost:3000/api/v1/ratings` — `[KH1]` — `{"trip_id":4,"score":5}` | 201 `driver_id` 13, `driver_avg` 5.0 |
+| 20 | 1 | `POST localhost:3000/api/v1/ratings` — `[KH1]` — `{"trip_id":4,"score":5}` | 201 `driver_id` 13, `driver_avg` 5, `driver_count` 1 |
 | | 2 | Gửi lại y hệt | 409 `RATING_ALREADY_EXISTS` |
 | | (3) | (tùy chọn) Sửa body `"trip_id":5` | 409 `TRIP_NOT_COMPLETED` |
 
@@ -558,7 +560,7 @@ Ký hiệu: `[KH1]` = tab Authorization → Bearer Token → dán token của KH
 | | (3) | (tùy chọn) `POST …/api/v1/auth/logout` — `[KH1]` → gửi lại request 1 với token đúng | 200 `LOGGED_OUT`; 401 `TOKEN_REVOKED` |
 | 28 | 1 | Tab mục 23: token `[KH1]`, URL `drivers/17`, **xóa body** | 403 `FORBIDDEN` |
 | | 2 | Tab mục 15 (`POST …/api/v1/bookings`): token `[TX1]` | 403 `FORBIDDEN` (role kiểm tra trước body) |
-| 29 | 1 | Tab KH1, bấm Send liên tục 6 lần | Lần 6: **429 `RATE_LIMITED`**, header `Retry-After` |
+| 29 | 1 | **Tab đăng nhập KH1** (`POST …/api/v1/auth/login`, route công khai, ngưỡng 5 — không phải tab có token, ngưỡng 30; GH-M4), bấm Send liên tục 6 lần → mở Headers của response | Lần 1–5: 200; lần 6: **429 `RATE_LIMITED`**, header `Retry-After`, `RateLimit-Remaining: 0` |
 | 30 | 1 | Tab request 1 mục 19 → Send (cùng `k1`, cùng body) | 200, body **y hệt** lần đầu (`PENDING`), header `Idempotency-Replayed: true` |
 | | 2 | Tab request 2 mục 19 → Send | 200 y hệt (`COMPLETED`), `Idempotency-Replayed: true` |
 | | 3 | Sửa tab request 1: method `GET`, URL bỏ `/transactions` | `COMPLETED`, **đúng một** giao dịch `CHARGE` `SIM-7-1` |
@@ -582,9 +584,9 @@ Ngưỡng: **Ổn** ≤ 25 s; **Sát** 26–32 s; **Vượt** > 32 s. Chỉ tín
 | 13 | 2 sửa | ~12 s | ~24 s | Ổn | |
 | 14 | 2 sửa | ~8 s | ~18 s | Ổn | |
 | 15 | 1 gõ + 1 nhân bản | ~25 s | ~32 s | **Sát** | Không bớt được: phải thấy Offer **ở phía tài xế**. Token TX1 có sẵn từ mục 10 nên bỏ được request đăng nhập |
-| 16 | 1 sửa | ~10 s | ~18 s | Ổn | |
+| 16 | 2 sửa | ~15 s | ~26 s | Sát | Thêm xem thông báo (A33) làm request chính vì phiếu ghi Notification cho mục 16 (CD-Q1) |
 | 17 | 5 sửa | ~20 s | ~30 s | **Sát** | FR12: 4 bước + 1 lần thử sai; mỗi lần đổi một từ |
-| 18 | 1 sửa + 1 sửa | ~18 s | ~28 s | Sát | Thông báo của KH1 chứng minh cả hoàn tiền (Payment) lẫn thông báo (Notification) |
+| 18 | 2 sửa ở tab GET | ~20 s | ~28 s | Sát | Tab GET đã mang token KH1 nên không phải đổi token (dùng tab chuyến mang TX1 thì ~36 s, Vượt — CD-Q2). Thông báo của KH1 chứng minh cả hoàn tiền (Payment) lẫn thông báo (Notification) |
 | 19 | 1 gõ + 1 nhân bản | ~35 s | **~42 s** | **Vượt** | Hai request đều có header phụ (`Idempotency-Key` cho mục 30; `X-Callback-Secret` cho callback). Dự phòng 1 request ~25 s |
 | 20 | 1 gõ + gửi lại | ~18 s | ~25 s | Ổn | |
 | 21 | 1 gõ + 2 sửa | ~35 s | **~42 s** | **Vượt** | Ba bước nghiệp vụ khác nhau (OTP → tài khoản → hồ sơ) ở hai service; đã gộp đăng nhập vào A08 |
@@ -598,7 +600,7 @@ Ngưỡng: **Ổn** ≤ 25 s; **Sát** 26–32 s; **Vượt** > 32 s. Chỉ tín
 | 29 | 6 lần Send | ~5 s | ~18 s | Ổn | |
 | 30 | 2 gửi lại + 1 sửa | ~10 s | ~22 s | Ổn | Phải còn hai tab của mục 19 |
 
-So với lần 3: tiền tố `/api/v1` thêm 7 ký tự mỗi URL gõ mới, nhưng phần lớn request giờ là **sửa tab** nên không tốn thêm. Còn **2 mục vượt** (19, 21) và 4 mục sát (15, 17, 18, 24) — xem Q64.
+So với lần 3: tiền tố `/api/v1` thêm 7 ký tự mỗi URL gõ mới, nhưng phần lớn request giờ là **sửa tab** nên không tốn thêm. Còn **2 mục vượt** (19, 21) và 5 mục sát (15, 16, 17, 18, 24 — mục 16 thành Sát từ 2026-10-05 vì thêm request xem thông báo) — xem Q64.
 
 Không chuỗi nào có bước **chờ**: Offer xuất hiện trong khoảng một giây sau đặt xe; Booking sang `SEARCHING` một nhịp K6 sau callback.
 
@@ -607,7 +609,7 @@ Không chuỗi nào có bước **chờ**: Offer xuất hiện trong khoảng m�
 | Điểm | Nội dung |
 |---|---|
 | Thứ tự đề xuất | 1–8 → 9 → **10** (tạo ba tab token) → 11 → 12 → **13, 14 trước 15** → 15 → 16 → 17 → 20 → 18 → **19 → 30 liền nhau** → 21 → 22 → 23 → 24 → 25 → 26 → 28 → **27** → **29 cuối cùng** (file 06 mục 3) |
-| Chuỗi tab | **Tab GET**: 11 → 12 → 13 → 14 → (16) → 18 (thông báo) → 24 → 25 → 26 → 27. **Tab đặt xe** (mục 15 request 1): giữ cho mục 28. **Tab chuyến**: 15 (offers) → 16 → 17 → 18. **Hai tab thanh toán**: 19 → 30. **Tab tài xế**: 21 → 22 → 23 → 28. **Ba tab đăng nhập** KH1, TX1, AD1: 10 → 25, 29 |
+| Chuỗi tab | **Tab GET** (`[KH1]`): 11 → 12 → 13 → 14 → 16 (thông báo) → 18 (hủy chuyến + thông báo) → 24 → 25 → 26 → 27. **Tab đặt xe** (mục 15 request 1): giữ cho mục 28. **Tab chuyến** (`[TX1]`): 15 (offers) → 16 → 17. **Hai tab thanh toán**: 19 → 30. **Tab tài xế**: 21 → 22 → 23 → 28. **Ba tab đăng nhập** KH1, TX1, AD1: 10 → 25, 29 (mục 29 bấm Send ở **tab đăng nhập KH1**) |
 | 13, 14 trước 15 | Sau 15, TX1 bận (mục 13 còn 3 tài xế) và KH1 có thêm booking (mục 14 `total` > 7) |
 | 15 → 16 → 17 | Dùng chung booking, Offer, trip 1000. Offer hạn `OFFER_TIMEOUT_SECONDS` = 300 giây: mục 16 phải trong 5 phút sau mục 15 |
 | 19 → 30 | Sau mục 19, B7 đang tìm tài xế `CAR_7` (chỉ TX4). Không ai nhận thì sau 300 giây Payment 7 thành `REFUNDED` → chạy 30 **ngay sau** 19 |

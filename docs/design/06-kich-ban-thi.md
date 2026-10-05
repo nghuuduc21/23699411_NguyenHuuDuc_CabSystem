@@ -3,6 +3,7 @@
 > Viết 2026-10-03. Nguồn: `docs/design/04-api.md` (API, mục 5), `docs/design/03-du-lieu.md` mục 13 (biến môi trường), mục 14 (seed), `CLAUDE.md` (Ràng buộc khi thi). Sửa API hay seed thì sửa file này theo.
 > **Sửa 2026-10-03 lần 4 theo 04 lần 4 (ADR-018):** mọi đường dẫn dưới `/api/v1/`; đổi trạng thái là `PATCH` + `status`; được **dùng lại tab**; 30 giây **gồm cả giải thích**, nên mỗi mục chỉ giữ request chính, phần còn lại ghi `(tùy chọn)`.
 > Luật thi: Postman **không lưu sẵn** gì; **được copy** giá trị từ response; **được dùng lại tab và mở tab mới**; lệnh terminal **gõ đầy đủ**; **không mở ghi chú**. Mỗi mục khoảng **30 giây, vừa làm vừa nói**.
+> **Sửa 2026-10-05** (sinh viên chốt spec 17-18, 20-29): mục 16 thêm xem thông báo là request chính; mục 18 gõ ở tab GET đang mang token KH1; mục 29 bấm Send ở tab **đăng nhập** KH1; `driver_avg` in `5`.
 > Cách dùng: học thuộc mục 4 ("những thứ phải nhớ") trước, rồi tập từng mục ở mục 2 theo thứ tự ở mục 3.
 
 ## 1. Sáu thao tác Postman dùng ở mọi mục
@@ -22,10 +23,10 @@ Các tab giữ suốt buổi (04 mục 5.5):
 
 | Tab | Tạo ở | Dùng lại ở |
 |---|---|---|
-| Đăng nhập KH1, TX1, AD1 | 10 | Lấy token (Send lại rồi copy); 25, 29 |
-| Tab GET | 11 | 12, 13, 14, 18, 24, 25, 26, 27 |
+| Đăng nhập KH1, TX1, AD1 | 10 | Lấy token (Send lại rồi copy); 25; 29 (**tab đăng nhập KH1**) |
+| Tab GET (`[KH1]`) | 11 | 12, 13, 14, 16 (thông báo), 18 (hủy chuyến + thông báo), 24, 25, 26, 27 |
 | Tab đặt xe | 15 | 28 |
-| Tab chuyến | 15 | 16, 17, 18 |
+| Tab chuyến (`[TX1]`) | 15 | 16, 17 |
 | Hai tab thanh toán | 19 | 30 |
 | Tab tài xế | 21 | 22, 23, 28 |
 
@@ -201,9 +202,11 @@ Chuẩn bị: trong 5 phút sau mục 15.
 | # | Gõ | Kết quả |
 |---|---|---|
 | 1 | Tab chuyến: method `PATCH`, URL `offers/1000`, body `{"status":"ACCEPTED"}` | 200 `ACCEPTED`, `booking_status` `DRIVER_ASSIGNED`, **`trip_id` 1000** |
-| (2) | (tùy chọn) Tab GET: `notifications`, `[KH1]` | Thông báo mới nhất `TRIP_ACCEPTED` |
+| 2 | **Tab GET** (đang `[KH1]`, URL `bookings?limit=2&page=2` của mục 14): sửa URL thành `notifications` | 200: `data[0]` **`TRIP_ACCEPTED`**, `data[1]` `BOOKING_CREATED` |
 
-Nói gì: nhận chuyến = **đổi trạng thái lời mời** sang `ACCEPTED`, nên là `PATCH` + `status`, không có `/accept`. Booking giữ tài xế rồi gọi **gRPC `CreateTrip`** — đồng bộ vì tài xế cần ngay mã chuyến. Trip phát `trip.status-changed`, Notification báo khách.
+Thời gian: ~15 s thao tác + nói → **~26 s, Sát**. Request 2 là **chính** (chốt 2026-10-05, CD-Q1): phiếu chấm ghi Notification cho mục 16.
+
+Nói gì: nhận chuyến = **đổi trạng thái lời mời** sang `ACCEPTED`, nên là `PATCH` + `status`, không có `/accept`. Booking giữ tài xế rồi gọi **gRPC `CreateTrip`** — đồng bộ vì tài xế cần ngay mã chuyến. Trip phát `trip.status-changed`, Notification nghe Kafka và báo khách — Notification lỗi thì nhận chuyến vẫn thành công.
 
 ### Mục 17 — Cập nhật trạng thái chuyến đúng trình tự
 
@@ -223,10 +226,14 @@ Chuẩn bị: seed chuyến **5** (KH1, TX6, đã trả online, `ACCEPTED`).
 
 | # | Gõ | Kết quả |
 |---|---|---|
-| 1 | Tab chuyến: URL `trips/5`, `[KH1]`, body `{"status":"CANCELED","reason":"ban viec"}` | 200 `CANCELED`, `canceled_by` customer |
-| 2 | Tab GET: `notifications`, `[KH1]` | `TRIP_CANCELED` và `PAYMENT_REFUNDED` |
-| (3) | (tùy chọn, phía tài xế) Tab TX1 sửa `"phone":"0910000006"` → copy → Tab GET `[TX6]` | `TRIP_CANCELED` cho chuyến 5 |
-| (4) | (tùy chọn, hủy booking) Tab đặt xe thêm `"pay":"ONLINE"` → copy `booking_id` → `PATCH …/api/v1/bookings/<id>` `{"status":"CANCELED","reason":"doi y"}` | 201 `PENDING_PAYMENT`; 200 `CANCELED` |
+| 1 | **Tab GET** (đang `[KH1]`): method `PATCH`, URL `trips/5`, Body raw `{"status":"CANCELED","reason":"ban viec"}` | 200 `CANCELED`, `canceled_by` customer |
+| 2 | Cùng tab: method `GET`, URL `notifications` (body để nguyên — Gateway bỏ qua body của `GET`) | `PAYMENT_REFUNDED` (payment 5, 45000) và `TRIP_CANCELED` (trip 5) |
+| (3) | (tùy chọn, phía tài xế) Tab đăng nhập TX1 sửa `"phone":"0910000006"` → copy token → tab GET `[TX6]` Send | `TRIP_CANCELED` cho chuyến 5 |
+| (4) | (tùy chọn, hủy booking) Tab đặt xe thêm `"pay":"ONLINE"` → copy `booking_id` → tab GET `PATCH …/api/v1/bookings/<id>` `{"status":"CANCELED","reason":"doi y"}` | 201 `PENDING_PAYMENT`; 200 `CANCELED` |
+
+Thời gian: ~20 s thao tác + nói ~8 s → **~28 s, Sát**. Vì sao tab GET (chốt 2026-10-05, CD-Q2): tab chuyến đang mang token TX1, đổi sang KH1 phải sang tab đăng nhập, Send, copy, dán → ~36 s, Vượt. Tab GET đã mang token KH1, chỉ đổi method / URL / body.
+
+Nếu được hỏi "booking 5 sau khi hủy chuyến có trạng thái gì?": vẫn `DRIVER_ASSIGNED` (CD-Q4). *"Booking là yêu cầu đặt xe; nhiệm vụ của nó kết thúc khi đã bàn giao cho một chuyến. Trạng thái thật của chuyến, kể cả `CANCELED`, nằm ở Trip. Cho Booking nghe thêm event chỉ để chép lại trạng thái là thêm một đường giao tiếp không có FR nào cần."* Admin không hủy được chuyến (403) — trong phạm vi 30 mục (CD-Q7).
 
 Nói gì: hủy cũng là đổi trạng thái — **cùng đường dẫn** với mục 17, `status` là `CANCELED` kèm lý do. Chỉ hủy được **trước khi đón khách** (BRULE16). Trip phát `trip.status-changed`: Payment hoàn tiền, Driver trả TX6 về rảnh, Notification báo cả hai — thấy ngay `PAYMENT_REFUNDED` trong thông báo của khách. Kafka vì hủy phải thành công **dù Payment đang dừng** (NFR05).
 
@@ -252,7 +259,7 @@ Chuẩn bị: seed chuyến **4** (`COMPLETED`, TX3, chưa đánh giá).
 
 | # | Gõ | Kết quả |
 |---|---|---|
-| 1 | `POST localhost:3000/api/v1/ratings`, `[KH1]`, body `{"trip_id":4,"score":5}` | 201 `trip_id` 4, `driver_id` 13, `driver_avg` 5.0 |
+| 1 | `POST localhost:3000/api/v1/ratings`, `[KH1]`, body `{"trip_id":4,"score":5}` | 201 `trip_id` 4, `driver_id` 13, `driver_avg` 5, `driver_count` 1 |
 | 2 | Gửi lại y hệt | 409 `RATING_ALREADY_EXISTS` |
 | (3) | (tùy chọn) Sửa body `"trip_id":5` | 409 `TRIP_NOT_COMPLETED` |
 
@@ -349,13 +356,15 @@ Nói gì: Gateway so `role` trong token với danh sách role của đường d�
 
 ### Mục 29 — Spam → 429
 
-Chuẩn bị: làm **cuối cùng**.
+Chuẩn bị: làm **cuối cùng** (khóa đăng nhập / đăng ký theo IP tối đa 10 giây); trong 10 giây trước đó không gửi request công khai nào.
 
 | # | Gõ | Kết quả |
 |---|---|---|
-| 1 | Tab KH1, bấm **Send liên tục 6 lần** | Lần 6: **429 `RATE_LIMITED`**, header `Retry-After` |
+| 1 | **Tab đăng nhập KH1** (`POST …/api/v1/auth/login` của mục 10 — route công khai, ngưỡng 5; **không** phải tab có token, ngưỡng 30), bấm **Send** (hoặc **Ctrl+Enter**) **liên tục 6 lần** → mở tab **Headers** của response | Lần 1–5: 200; lần 6: **429 `RATE_LIMITED`**, header `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0` |
 
-Nói gì: Redis `INCR` theo **IP** cho route công khai (5 / 10 giây), theo **tài khoản** cho route có token (30 / 10 giây). Redis dừng thì cho qua.
+Thời gian: bấm ~4 s + mở Headers ~4 s + nói ~10 s → **~18 s, Ổn**. Không dùng Collection Runner (cần collection lưu sẵn — luật thi cấm).
+
+Nói gì: Gateway đếm bằng Redis: route công khai theo **IP**, 5 lần mỗi 10 giây, để chặn dò mật khẩu; route có token theo **tài khoản**, 30 lần — đếm **sau** khi kiểm token nên token sai là 401 chứ không phải 429. Cửa sổ **bắt đầu từ request đầu tiên**; spam không kéo dài cửa sổ; `Retry-After` cho biết bao lâu nữa gọi lại được. Vượt ngưỡng thì không request nào tới service. Ngưỡng đọc từ biến môi trường (NFR17). Redis dừng thì cho qua và ghi log.
 
 ### Mục 30 — Replay thanh toán → trả response cũ
 
@@ -384,7 +393,7 @@ Nói gì: hai lớp chống lặp — khách bấm hai lần: `idempotency_keys`
 | 9 | 21 → 22 → 23 | Một tab tài xế; 22 duyệt tài xế của 21; 23 sau 17 (TX1 rảnh) |
 | 10 | 24 → 25 → 26 → 28 | Chỉ đọc hoặc bị từ chối |
 | 11 | **27** | Phần tùy chọn đăng xuất thu hồi token KH1 |
-| 12 | **29** cuối cùng | Khóa đăng nhập / đăng ký tối đa 10 giây |
+| 12 | **29** cuối cùng | Bấm Send ở **tab đăng nhập KH1**; khóa đăng nhập / đăng ký theo IP tối đa 10 giây |
 
 Giảng viên gọi lệch thứ tự: mục chỉ đọc (6, 11–14, 24–26, 28) chạy lúc nào cũng được; mục đổi seed (15–20, 22, 23, 30) xem dòng "Chuẩn bị". Tab cần chưa có thì gõ mới (≈ +10 s). Seed hỏng thì `docker compose down -v` rồi `docker compose up -d --build`.
 
@@ -442,9 +451,9 @@ Giả định: gõ mới GET ≈ 10 s, POST / PATCH có body ≈ 15–20 s, thê
 | 13 | 2 sửa | ~12 s | ~24 s | Ổn |
 | 14 | 2 sửa | ~8 s | ~18 s | Ổn |
 | 15 | 1 gõ + 1 nhân bản | ~25 s | ~32 s | **Sát** |
-| 16 | 1 sửa | ~10 s | ~18 s | Ổn |
+| 16 | 2 sửa (tab chuyến + tab GET) | ~15 s | ~26 s | Sát — thêm xem thông báo (CD-Q1) |
 | 17 | 5 sửa | ~20 s | ~30 s | **Sát** |
-| 18 | 2 sửa | ~18 s | ~28 s | Sát |
+| 18 | 2 sửa ở tab GET | ~20 s | ~28 s | Sát — tab GET đã có token KH1 (CD-Q2) |
 | 19 | 1 gõ + 1 nhân bản | ~35 s | **~42 s** | **Vượt** — dự phòng 1 request ~25 s |
 | 20 | 1 gõ + gửi lại | ~18 s | ~25 s | Ổn |
 | 21 | 1 gõ + 2 sửa | ~35 s | **~42 s** | **Vượt** — nói trong lúc gõ |

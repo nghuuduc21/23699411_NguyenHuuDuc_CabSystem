@@ -438,7 +438,7 @@ Fare và Payment chung một context và một aggregate: cước tính xong là
 | V1 | Chỉ đánh giá chuyến đã hoàn thành | BRULE11, AC14 |
 | V2 | Chỉ khách của chính chuyến đó được đánh giá | BRULE11 |
 | V3 | Mỗi chuyến chỉ một đánh giá | Exception của UC17 |
-| V4 | Điểm nằm trong thang cho phép | UC17 bước 3 — thang 1–5 là **suy đoán**; file 03 đặt CHECK 1–5, xác nhận ở spec mục 20 |
+| V4 | Điểm nằm trong thang cho phép | UC17 bước 3 — thang **số nguyên 1–5**, **đã chốt** 2026-10-05 (spec 20-29 DG-Q1); file 03 đặt CHECK 1–5. Không có hạn đánh giá (DG-Q3) |
 | V5 | Lưu Rating và cập nhật điểm trung bình của tài xế trong cùng một giao dịch | UC17 bước 4–5, NFR14 |
 
 ## 7. Context → microservice
@@ -574,7 +574,8 @@ Kết quả: **30/30 mục có nơi nhận.** Mỗi service trong 8 service gán
 | Mục chấm / quy tắc | Hiện bám vào | Thiếu |
 |---|---|---|
 | 17 (đúng trình tự) — T2 | FR12 | BRULE về thứ tự trạng thái |
-| 29 (rate limit) | Không NFR nào nói về giới hạn tần suất | NFR mới |
+| 29 (rate limit) | **NFR17** "Giới hạn tần suất truy cập" (đã thêm vào `srs.md` 2026-10-05, spec 20-29 GH-Q5) | Đủ |
+| Thông báo FR21–FR24 (mục 16, 18) | **RTM29** (đã thêm vào `srs.md` 2026-10-05, spec 17-18 CD-Q6) | Đủ |
 | 30 (replay thanh toán) — M5 | NFR14 | BRULE / FR về chống xử lý lặp |
 | Đăng xuất, thu hồi token (Redis ở Gateway) | **FR42, UC33** (đã thêm vào `srs.md`) | AC cho FR42 (RTM26 đang để trống) |
 | Thời hạn chờ thanh toán, số lần thanh toán lại | **BRULE17, AC25** (đã thêm vào `srs.md`) | Đủ |
@@ -585,7 +586,7 @@ Kết quả: **30/30 mục có nơi nhận.** Mỗi service trong 8 service gán
 
 | Hồ sơ khách tạo sau đăng nhập (2026-10-03) | **BRULE18, AC27–AC29, RTM27, RTM28** (đã thêm vào `srs.md`); FR26, FR27, UC01, UC03 viết lại | Đủ |
 
-Các dòng còn thiếu ở trên vẫn chờ Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE19, NFR17, FR43, UC34, AC30, RTM29** (BRULE18, FR42, UC33, AC29, RTM28 đã được dùng).
+Các dòng còn thiếu ở trên vẫn chờ Q10. Mã mới nếu thêm phải bắt đầu từ **BRULE19, NFR18, FR43, UC34, AC30, RTM30** (BRULE18, NFR17, FR42, UC33, AC29, RTM29 đã được dùng).
 
 ## 9. Câu hỏi còn mở
 
@@ -606,7 +607,7 @@ Loại: **SV** = sinh viên tự quyết được; **GV** = nên hỏi giảng v
 | Q31 | Khóa chính INT hay UUID? | **Đổi 2026-10-03:** số nguyên `bigint GENERATED ALWAYS AS IDENTITY` (trước là UUID) vì luật thi phải gõ tay mọi request; mọi API theo mã kiểm tra quyền sở hữu (403) | `CLAUDE.md`; ADR-015 |
 | Q37 | Booking chờ thanh toán được bao lâu, thanh toán lại mấy lần? | 10 phút, tối đa 3 lần thử; quá thì booking bị hủy | `srs.md` BRULE17, AC25; `CLAUDE.md` |
 | Q16 | Bảng Entity trong `srs.md` chưa khớp thiết kế | Sinh viên đã sửa Booking, Trip, Fare, Payment theo trả trước và thêm dòng dẫn sang file 03. Phần còn khác (`password_hash` ở ba bảng, bảng Role, lịch sử vị trí): file 03 câu Q46 | `srs.md` |
-| Q10 (một phần) | Thêm mã mới vào `srs.md`? | Đã thêm FR42, UC33, BRULE17, AC25, AC26. **Còn thiếu** mã cho: trình tự trạng thái chuyến (mục 17), rate limit (mục 29), chống xử lý lặp (mục 30), D6, D8 — vẫn mở ở 9.2 | `srs.md` |
+| Q10 (một phần) | Thêm mã mới vào `srs.md`? | Đã thêm FR42, UC33, BRULE17, AC25, AC26; NFR17 (rate limit, mục 29) và RTM29 (thông báo) thêm 2026-10-05. **Còn thiếu** mã cho: trình tự trạng thái chuyến (mục 17), chống xử lý lặp (mục 30), D6, D8 — vẫn mở ở 9.2 | `srs.md` |
 | Q11 (BA đóng, chưa xác nhận) | ETA và lịch sử vị trí làm đến đâu? | Chỉ lưu vị trí hiện tại của tài xế; không có bảng lịch sử | File 03 mục 5.2 |
 | Q56 (đóng 2026-10-03) | Khách **chưa tạo hồ sơ** có được đặt xe không? | **Được.** Đủ điều kiện khi có tài khoản `customer` đã đăng ký (số điện thoại ở Auth) và đủ dữ liệu yêu cầu đặt xe. Booking chỉ dùng `customer_id` trong token, **không gọi Customer**; Customer vẫn không nối với service nào | `CLAUDE.md` dòng "Điều kiện đặt xe" |
 | Q57 (đóng 2026-10-03) | Callback từ ngoài có làm đổi trạng thái ở mục 19 không? | **Có**, bằng `simulate_result: "MANUAL"` (chỉ khi `SIMULATION_MODE=true`): giao dịch và Payment đứng `PENDING`, callback A32 từ Postman là callback đầu tiên → `COMPLETED`. Không gửi tham số thì vẫn tự callback thành công; `FAILED` như cũ | `CLAUDE.md` dòng "Hệ thống ngoài"; ADR-014 |
