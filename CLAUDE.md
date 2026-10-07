@@ -7,7 +7,7 @@ Sinh viên phải tự giải thích được mọi quyết định. Vì vậy m
 
 ## Trạng thái
 
-Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã xong:** `docs/design/01`–`05`, ADR-001 đến ADR-014 và hai ảnh sơ đồ. Đã đưa vào hai góp ý của giảng viên (2026-10-03): tách đăng ký khỏi hồ sơ khách hàng (ADR-013) và giả lập hệ thống ngoài thật đơn giản (ADR-014). Vòng 2: thiết kế, kịch bản thi (`docs/design/06`) và ba đặc tả đầu (`docs/specs/00`, `09-10`, `11`) đã đồng bộ theo luật thi và chuẩn đường dẫn `/api/v1` (ADR-015 đến ADR-018). Đã code và kiểm thử đặc tả `00-ha-tang`, `09-10`, `11`, `12-13-21-23` (tài xế), `14-15-16-19-30` (đặt xe, thanh toán). Đã code `17-18` (chuyến đi, hủy, hoàn tiền, thông báo). Đang code `20-29` (đánh giá, rate limit) và cổng gRPC riêng; kế tiếp: email trong hồ sơ khách, tài xế nộp lại hồ sơ (ADR-019, FR43). Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
+Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba agent. **Vòng 1 (thiết kế) đã xong:** `docs/design/01`–`05`, ADR-001 đến ADR-014 và hai ảnh sơ đồ. Đã đưa vào hai góp ý của giảng viên (2026-10-03): tách đăng ký khỏi hồ sơ khách hàng (ADR-013) và giả lập hệ thống ngoài thật đơn giản (ADR-014). Vòng 2: thiết kế, kịch bản thi (`docs/design/06`) và ba đặc tả đầu (`docs/specs/00`, `09-10`, `11`) đã đồng bộ theo luật thi và chuẩn đường dẫn `/api/v1` (ADR-015 đến ADR-018). Đã code và kiểm thử đặc tả `00-ha-tang`, `09-10`, `11`, `12-13-21-23` (tài xế), `14-15-16-19-30` (đặt xe, thanh toán). Đã code `17-18` (chuyến đi, hủy, hoàn tiền, thông báo), `20-29` (đánh giá, rate limit), cổng gRPC riêng (ADR-020), email trong hồ sơ khách (ADR-019), tài xế nộp lại hồ sơ (FR43). **Hồi quy 2026-10-07: cả 30 mục chấm đạt** (`docs/test-reports/2026-10-07-hoi-quy-toan-he-thong.md`). Còn lại: push GitHub và ôn thi. Bản cũ nằm ở nhánh `codex/customer-registration`, chỉ để tham khảo, không sao chép lại nguyên trạng.
 
 ## Tài liệu
 
@@ -24,7 +24,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Quy trình nghiệp vụ theo mô hình 5 thành phần (Procedures, People, Hardware, Software, Data) | `docs/design/05-quy-trinh-5-thanh-phan.md` | Có |
 | Ảnh kiến trúc và ảnh bounded context / database (vẽ từ `docs/design/02` và `03`; sửa thiết kế thì sửa file `.html` cùng thư mục rồi xuất lại ảnh) | `docs/architecture/kien-truc.png`, `bounded-context-db.png` | Có |
 | Kịch bản thi: request gõ tay, lệnh, câu trả lời vấn đáp cho từng mục chấm; những thứ phải nhớ | `docs/design/06-kich-ban-thi.md` | Có |
-| Đặc tả từng phần việc | `docs/specs/` | `00-ha-tang`, `09-10-dang-ky-dang-nhap`, `11-ho-so-khach-hang`, `12-13-21-23-tai-xe`, `14-15-16-19-30-dat-xe-thanh-toan`, `17-18-chuyen-di-thong-bao` (đã code); `20-29-danh-gia-gioi-han` (đang code) |
+| Đặc tả từng phần việc | `docs/specs/` | `00-ha-tang`, `09-10-dang-ky-dang-nhap`, `11-ho-so-khach-hang`, `12-13-21-23-tai-xe`, `14-15-16-19-30-dat-xe-thanh-toan`, `17-18-chuyen-di-thong-bao`, `20-29-danh-gia-gioi-han` (đã code, đã kiểm thử) |
 | Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-020 |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
 

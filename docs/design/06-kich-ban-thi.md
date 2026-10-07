@@ -5,6 +5,7 @@
 > Luật thi: Postman **không lưu sẵn** gì; **được copy** giá trị từ response; **được dùng lại tab và mở tab mới**; lệnh terminal **gõ đầy đủ**; **không mở ghi chú**. Mỗi mục khoảng **30 giây, vừa làm vừa nói**.
 > **Sửa 2026-10-05** (sinh viên chốt spec 17-18, 20-29): mục 16 thêm xem thông báo là request chính; mục 18 gõ ở tab GET đang mang token KH1; mục 29 bấm Send ở tab **đăng nhập** KH1; `driver_avg` in `5`.
 > **Sửa 2026-10-05 lần 2** (sinh viên chốt): tài khoản chỉ có số điện thoại + mật khẩu, email nằm ở hồ sơ khách (mục 9, 11 — ADR-019); bị từ chối thì nộp lại bằng chính request nộp hồ sơ (mục 21, 22 — FR43); cổng gRPC riêng 50051–50058 (mục 8, mục 4 — ADR-020). Không thêm request vào chuỗi chính.
+> **Sửa 2026-10-07** (sinh viên chốt M1 báo cáo hồi quy): mục 7 thêm câu trả lời vấn đáp về Kafka UI chỉ đọc và chống lặp event. Không thêm request.
 > Cách dùng: học thuộc mục 4 ("những thứ phải nhớ") trước, rồi tập từng mục ở mục 2 theo thứ tự ở mục 3.
 
 ## 1. Sáu thao tác Postman dùng ở mọi mục
@@ -109,6 +110,12 @@ Chuẩn bị: làm sau mục 15 để có message.
 | (3) | (tùy chọn) Tab **Consumers** | Group mang tên service, lag 0 |
 
 Nói gì: topic **tạo sẵn** bởi `kafka-init`, broker tắt tự tạo topic. Consumer group = tên service. Event gửi **ngay sau khi commit**, không outbox — đánh đổi: service dừng đúng lúc đó thì mất event.
+
+Nếu hỏi "sao không có nút Produce?": Kafka UI để **chỉ đọc** (`KAFKA_CLUSTERS_0_READONLY=true`). Mục 7 chỉ cần **xem** event; chỉ đọc thì không ai gửi nhầm event giả vào hệ thống lúc demo. Đánh đổi: muốn gửi lại message phải dùng `kafka-console-producer.sh` trong container `kafka` (lệnh dài, không gõ khi thi — spec 17-18 mục 8.0).
+
+Nếu hỏi "event bị gửi hai lần thì sao?" (trả lời bằng lời): Kafka giao **ít nhất một lần**, nên mọi bên nghe chịu được event lặp, **không cần bảng "event đã xử lý"**:
+- **Payment, Driver, Booking**: đổi trạng thái **có điều kiện** — chỉ đổi khi đang ở trạng thái trước đó (Driver còn so cả `booking_id`). Lần hai thấy đã đổi rồi thì bỏ qua. Ví dụ hủy chuyến gửi hai lần: lần hai Payment đã `REFUNDED` nên không hoàn thêm; UNIQUE một giao dịch `REFUND` mỗi thanh toán chặn thêm lần nữa.
+- **Notification**: thông báo là bản ghi mới, không có trạng thái để so → UNIQUE (`event_id`, `recipient_id`); event lặp cùng `event_id` không tạo thông báo thứ hai.
 
 ### Mục 8 — Mọi request đi qua Gateway
 

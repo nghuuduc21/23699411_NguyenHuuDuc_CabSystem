@@ -5,6 +5,7 @@
 > Phụ thuộc: **spec 00**, **09-10**, **12-13-21-23**, **14-15-16-19-30** (đã code ở `116e16e`: bảng `trips`, `trip_status_history` đủ cột; rpc `CreateTrip`; K5 `ACCEPTED`; K1–K4, K6; `ReleaseDriver`; seed B1–B7, T3–T5).
 > Ngoài phạm vi: A26 `ListTrips` (Q32 — làm sau 30 mục); S6 `GetDriverSummary` (FR14, mục 8.1); admin hủy chuyến (FR31, Q45); A34–A36 (spec 20).
 > **Sửa 2026-10-05 lần 2 (sinh viên chốt, FR43):** nội dung thông báo `APPLICATION_REJECTED` đổi thành "Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại." (mục 2.7) vì tài xế nay nộp lại được (spec 12-13-21-23 mục 2.6). Chống lặp ở consumer giữ nguyên (Payment, Driver bằng trạng thái; Notification bằng UNIQUE `event_id`, `recipient_id`; không bảng event đã xử lý — 02 mục 6.4). AC đổi: AC-TB-03; AC mới: AC-TB-09.
+> **Sửa 2026-10-07 (sinh viên chốt M1 của báo cáo hồi quy, CD-Q8):** giữ Kafka UI chỉ đọc; AC-HT-04, AC-HT-05, AC-TB-09 gửi message lặp bằng `kafka-console-producer.sh` trong container `kafka` (mục 8.0) thay cho "Kafka UI → Produce". Hành vi hệ thống không đổi.
 > Ký hiệu: **[ĐC]** đã chốt; **[BA]** BA chọn (gom ở mục 9). Mã AC: **AC-CD** (chuyến, hủy), **AC-HT** (hoàn tiền, tài xế rảnh), **AC-TB** (thông báo).
 
 ## 1. Truy vết
@@ -408,8 +409,8 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23, 14-15-16-19-30 đạt; `dock
 | AC-CD-19 | 18 (NFR05) | `docker compose stop payment-service` | A22 trên booking `ONLINE` mới đã trả; A29 trên chuyến `ONLINE` mới; `start payment-service`; ≈ 3 s A30 cả hai | 200, 200 (hủy không lỗi theo Payment); sau khi Payment chạy lại cả hai `REFUNDED` |
 | AC-HT-02 | 15 (AC09, AC22) | — | A19 `{"from":[10.90,106.68],"to":[10.91,106.69],"pay":"online"}` `[KH1]` → A31 body rỗng; ≈ 1 s A21, A30, A33 `[KH1]` | `NO_DRIVER_FOUND`; Payment `REFUNDED` (`NO_DRIVER_FOUND`); KH1 có `NO_DRIVER_FOUND`, `PAYMENT_REFUNDED`. Với `pay` mặc định `CASH`: Payment `CANCELED` (`NO_DRIVER_FOUND`) |
 | AC-HT-03 | BRULE15 (AC23) | Chuyến `ONLINE` đã trả, tiến tới `COMPLETED`; một booking có Offer bị TX1 từ chối (AC-DX-13) | A30 hai thanh toán | Cả hai giữ nguyên (`COMPLETED` / `PENDING`), **không** giao dịch `REFUND`, không K6 `REFUNDED` |
-| AC-HT-04 | NFR14 (event lặp) | Sau AC-HT-01 | Kafka UI → topic `trip.status-changed` → **Produce** lại y hệt message `CANCELED` của trip 5 (cùng `event_id`) | Payment 5 vẫn **một** `REFUND`; TX6 không đổi; A33 `[KH1]`, `[TX6]` **không** thêm thông báo |
-| AC-HT-05 | D9 | TX1 đang `BUSY` cho booking X | Produce K5 `COMPLETED` với `driver_id` 11, `booking_id` ≠ X | TX1 vẫn `BUSY` với X |
+| AC-HT-04 (**đổi 2026-10-07**, CD-Q8) | NFR14 (event lặp) | Sau AC-HT-01 | Kafka UI (chỉ đọc) → topic `trip.status-changed` → **Messages**: chép key và nội dung message `CANCELED` của trip 5. Gửi lại y hệt (cùng key, cùng `event_id`) bằng `kafka-console-producer.sh` (lệnh ở mục 8.0) | Payment 5 vẫn **một** `REFUND`; TX6 không đổi; A33 `[KH1]`, `[TX6]` **không** thêm thông báo; không có K6 mới |
+| AC-HT-05 (**đổi 2026-10-07**, CD-Q8) | D9 | TX1 đang `BUSY` cho booking X | Gửi K5 `COMPLETED` với `driver_id` 11, `booking_id` ≠ X bằng `kafka-console-producer.sh` (mục 8.0, topic `trip.status-changed`) | TX1 vẫn `BUSY` với X |
 | AC-HT-06 | NFR05 | `docker compose stop driver-service` | Chuyến `ACCEPTED` mới → A28 đến `COMPLETED`; `start driver-service`; ≈ 3 s A14 | 200 mọi bước; tài xế `ONLINE` sau khi Driver chạy lại |
 | AC-TB-03 (**đổi 2026-10-05**) | 19, 22 (AC13, AC20) | — | A31 `FAILED` trên payment mới; A15 duyệt tài xế mục 21 → tài xế đó A33; A16 từ chối TX7 → đăng nhập `0910000007` A33 | `PAYMENT_FAILED`; `APPLICATION_APPROVED`; `APPLICATION_REJECTED` với `body` **đúng** "Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại." (không chứa lý do từ chối) |
 | AC-TB-04 | 16, 18 (phân trang, N2) | Sau các AC trên | A33 `[KH1]` `?limit=1`; `?limit=1&page=2`; `?limit=abc`; `?page=0`; `?foo=1`; `[AD1]`; `[KH2]`; không token | 200 một mục, `total` > 1; mục kế tiếp; 400 `INVALID_PAGINATION` ×2; 400 `INVALID_INPUT`; 200 `data: []`, `total` 0; chỉ thông báo có `booking_id` của KH2; 401 |
@@ -417,9 +418,21 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23, 14-15-16-19-30 đạt; `dock
 | AC-TB-06 | N4 | Sau AC-TB-05 | `docker compose restart notification-service`; A33 `[KH1]` | `total` không đổi |
 | AC-TB-07 | 7 | Sau các AC trên | Kafka UI → Consumers | Có group `driver-service`, `payment-service`, `notification-service` (cùng `booking-service`), lag 0; topic K5 có message `ARRIVED` … `CANCELED`; không message nào chứa lý do hủy, tọa độ, họ tên |
 | AC-TB-08 | NFR08, NFR10 | Sau các AC trên | `docker compose logs notification-service trip-service` | Có `notification_created`, `trip_status_changed`, `trip_canceled`; không có `title`, `body`, `reason` |
-| AC-TB-09 (mới 2026-10-05) | 22 (FR43, N4) | Sau AC-TB-03 (TX7 đã có một `APPLICATION_REJECTED`) | TX7 nộp lại A11 (spec 12-13-21-23 AC-TX-34) → A16 từ chối lần hai → ≈ 1 s A33 `[TX7]`; Kafka UI Produce lại y hệt message K7 lần hai (cùng `event_id`) → A33 | Hai thông báo `APPLICATION_REJECTED` (hai `event_id` khác nhau, cùng `body` mới); sau khi Produce lặp vẫn **hai** (chống trùng theo `event_id`, `recipient_id`). Nộp lại **không** tạo thông báo (không có event) |
+| AC-TB-09 (mới 2026-10-05; **đổi 2026-10-07**, CD-Q8) | 22 (FR43, N4) | Sau AC-TB-03 (TX7 đã có một `APPLICATION_REJECTED`) | TX7 nộp lại A11 (spec 12-13-21-23 AC-TX-34) → A16 từ chối lần hai → ≈ 1 s A33 `[TX7]`; gửi lại y hệt message K7 lần hai (cùng key, cùng `event_id`; chép từ Kafka UI → Messages) bằng `kafka-console-producer.sh` (mục 8.0) → A33 | Hai thông báo `APPLICATION_REJECTED` (hai `event_id` khác nhau, cùng `body` mới); sau khi gửi lặp vẫn **hai** (chống trùng theo `event_id`, `recipient_id`). Nộp lại **không** tạo thông báo (không có event) |
 
 Tổng: **34 tiêu chí** (19 AC-CD, 6 AC-HT, 9 AC-TB).
+
+### 8.0 Gửi lại message Kafka (AC-HT-04, AC-HT-05, AC-TB-09)
+
+Kafka UI chạy **chỉ đọc** (`KAFKA_CLUSTERS_0_READONLY=true`, spec 00 H4; CD-Q8): nút Produce không dùng được (API trả 405). Gửi message bằng console producer có sẵn trong container `kafka`, đúng như test `tests/e2e/chuyen-di.js` (`kafkaProduce`):
+
+```
+docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 --topic trip.status-changed --property parse.key=true --property key.separator=<TAB>
+```
+
+Rồi gõ (dán) **một dòng** `<key><TAB><nội dung JSON>` và Enter, `Ctrl+D` để thoát. Key và JSON chép nguyên từ Kafka UI → topic → **Messages** (cùng key thì vào cùng partition, cùng `event_id` thì là event lặp thật). AC-TB-09 đổi thành `--topic driver.application-reviewed` (K7). Với bên nghe, message gửi bằng cách này không khác message do service phát.
+
+Lệnh dài, **chỉ dùng cho test-agent và khi luyện tập, không dùng khi thi**; khi vấn đáp giải thích bằng lời (06 mục 7).
 
 ### 8.1 Chuỗi gõ tay khi thi
 
@@ -504,4 +517,5 @@ Sinh viên chốt **2026-10-05** theo đề xuất của BA. Hành vi của spec
 | CD-Q4 | Booking sau khi chuyến bị hủy vẫn `DRIVER_ASSIGNED` (R13) — chấp nhận? | (a) Giữ; (b) thêm Booking nghe K5 | **Đã chốt (a)** (sinh viên 2026-10-05) — không thêm đường giao tiếp không có FR. Câu trả lời vấn đáp: *"Booking là yêu cầu đặt xe; nhiệm vụ của nó kết thúc khi đã bàn giao cho một chuyến (`DRIVER_ASSIGNED`). Từ đó trạng thái thật của chuyến — kể cả `CANCELED` — nằm ở Trip, xem bằng `GET /api/v1/trips/{id}`. Cho Booking nghe thêm `trip.status-changed` chỉ để chép lại trạng thái là thêm một đường giao tiếp không có FR nào cần."* | — |
 | CD-Q5 | Hết hạn / hết lượt thanh toán sinh **hai** thông báo (`PAYMENT_CANCELED` từ K6, `BOOKING_CANCELED` từ K4) | (a) Giữ cả hai (hai đối tượng khác nhau); (b) bỏ thông báo khi K4 `canceled_by = system` | **Đã chốt (a)** (sinh viên 2026-10-05) | — |
 | CD-Q6 | Thêm RTM29 cho FR21–FR24 vào `srs.md`? | (a) Thêm; (b) để nguyên | **Đã chốt (a)** (sinh viên 2026-10-05); đã thêm RTM29 vào `srs.md` | — |
+| CD-Q8 (M1 trong báo cáo `docs/test-reports/2026-10-07-hoi-quy-toan-he-thong.md`) | Spec 00 H4 đặt Kafka UI chỉ đọc, nhưng AC-HT-04, AC-HT-05, AC-TB-09 ghi "Kafka UI → Produce" | (a) Giữ Kafka UI chỉ đọc, gửi lặp bằng `kafka-console-producer.sh`; (b) bỏ chỉ đọc để Produce trên Kafka UI | **Đã chốt (a)** (sinh viên 2026-10-07). Lý do: mục chấm 7 chỉ cần **xem** được event; chỉ đọc thì không ai gửi nhầm event giả vào hệ thống khi demo. Đánh đổi: gửi lặp phải dùng lệnh dài trong container `kafka` (mục 8.0), không dùng khi thi; vấn đáp giải thích bằng lời (06 mục 7). Đã sửa AC-HT-04, AC-HT-05, AC-TB-09 | — |
 | CD-Q7 | Admin có được hủy chuyến (FR31) không? | (a) Không, 403 như 04 mục 3; (b) thiết kế thêm | **Đã chốt (a)** (sinh viên 2026-10-05) trong phạm vi 30 mục (Q45): admin gọi A29 → 403. **Vẫn hỏi lại giảng viên** khi có dịp | GV |
