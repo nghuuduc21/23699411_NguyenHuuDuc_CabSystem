@@ -1,6 +1,7 @@
 // Spec 12-13-21-23 — phần đăng ký tài xế bằng OTP, nộp hồ sơ, admin duyệt / từ chối.
 // Mục chấm 21, 22, bổ trợ 23 (bật khi chưa duyệt), 24 (số giấy phép mã hóa), 26, 28.
-// Không đổi seed: AC-TX-15 (từ chối) làm trên hồ sơ tạo mới thay cho TX7 (cùng nhánh code RejectDriver);
+// Không đổi seed: AC-TX-15 (từ chối) làm trên hồ sơ tạo mới thay cho TX7 (cùng nhánh code RejectDriver); chuỗi trên TX7
+// của spec (AC-TX-15 → 34 → 35 → 36, nộp lại FR43) nằm ở 13-tai-xe-nop-lai.test.js.
 // TX7 chỉ được đọc. Dữ liệu tạo ra (tài khoản 0599…, OTP, hồ sơ, xe) được xóa ở hook `after`.
 // AC-TX-18 (dừng Kafka) nằm ở 90-dung-service.test.js.
 import { test, after } from 'node:test';
@@ -386,7 +387,7 @@ test('AC-TX-16 (mục 22, 409): duyệt lại hồ sơ đã duyệt; từ chối
   assert.deepEqual(b.body, { error: 'APPLICATION_ALREADY_REVIEWED' });
 });
 
-test('AC-TX-15 (mục 22): A16 từ chối hồ sơ PENDING kèm reason → 200 REJECTED + reason; Kafka result REJECTED, không có lý do; KH1 xem → 404, AD1 thấy reason; không nộp lại được', async () => {
+test('AC-TX-15 (mục 22): A16 từ chối hồ sơ PENDING kèm reason → 200 REJECTED + reason; Kafka result REJECTED, không có lý do; KH1 xem → 404, AD1 và chủ thấy reason; nộp lại → 200 resubmitted (FR43)', async () => {
   const E = await newDriverWithApplication(t);
   const reason = 'thieu giay to';
   const ad = await tokenOf(SEED.AD1);
@@ -406,12 +407,19 @@ test('AC-TX-15 (mục 22): A16 từ chối hồ sơ PENDING kèm reason → 200 
   const a = await call('GET', `/drivers/${E.driver_id}`, { token: ad });
   assert.equal(a.body.approval_status, 'REJECTED');
   assert.equal(a.body.reason, reason);
-  const resubmit = await call('POST', '/drivers', { token: E.token, body: { name: 'Lai', license: 'GPLX-55', plate: newPlate() } });
-  assert.equal(resubmit.status, 409);
-  assert.deepEqual(resubmit.body, { error: 'DRIVER_ALREADY_EXISTS' });
+  // Hồ sơ REJECTED chưa được bật ONLINE.
   const on = await call('PATCH', '/drivers/me', { token: E.token, body: { status: 'ONLINE', lat: 21.03, lng: 105.85 } });
   assert.equal(on.status, 409);
   assert.deepEqual(on.body, { error: 'DRIVER_NOT_APPROVED' });
+  // FR43 (đổi 2026-10-05): tài xế bị từ chối xem lý do ở A14 của chính mình và NỘP LẠI được bằng A11 → 200.
+  const own = await call('GET', `/drivers/${E.driver_id}`, { token: E.token });
+  assert.equal(own.status, 200, own.text);
+  assert.equal(own.body.approval_status, 'REJECTED');
+  assert.equal(own.body.reason, reason);
+  const resubmit = await call('POST', '/drivers', { token: E.token, body: { name: 'Lai', license: 'GPLX-55', plate: newPlate() } });
+  assert.equal(resubmit.status, 200, resubmit.text);
+  assert.equal(resubmit.body.resubmitted, true);
+  assert.equal(resubmit.body.approval_status, 'PENDING');
 });
 
 // ---------- Mục 23 sau khi duyệt ----------

@@ -71,7 +71,10 @@ test('AC-DX-04 (mục 14, restart): restart booking, payment, trip → seed khô
   assert.equal(bookingsDb('select count(*) from bookings where booking_id < 1000'), '7');
   assert.equal(paymentsDb('select count(*) from payments where payment_id < 1000'), '7');
   assert.equal(tripsDb('select count(*) from trips where trip_id < 1000'), '3');
-  assert.equal(tripsDb('select count(*) from trip_status_history where trip_id < 1000'), '11');
+  // 11 dòng lịch sử seed (T3, T4 đủ 5 bước, T5 một bước). Spec 17-18 (mục 18) hủy chuyến seed 5 → thêm đúng một dòng
+  // ACCEPTED → CANCELED (không phải seed); không tính dòng đó, và không có cặp (chuyến, trạng thái) nào lặp.
+  assert.equal(tripsDb("select count(*) from trip_status_history where trip_id < 1000 and to_status <> 'CANCELED'"), '11');
+  assert.equal(tripsDb('select count(*) - count(distinct (trip_id, to_status)) from trip_status_history where trip_id < 1000'), '0');
 });
 
 test('AC-DX-18 (mục 15, NFR15): booking SEARCHING có Offer PENDING; restart booking-service → Offer cũ vẫn PENDING, không có Offer thứ hai', async () => {

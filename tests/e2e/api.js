@@ -130,8 +130,26 @@ export function psqlTable(container, db, table) {
 }
 
 // Đọc mọi message của một topic qua API của Kafka UI (chính API giao diện web dùng).
+// Kafka UI trả TỐI ĐA 100 message mỗi lần gọi dù `limit` lớn hơn (phát hiện 2026-10-07: topic trip.status-changed có
+// 132 message thì message mới nhất không được trả). Vì vậy đọc TỪNG partition, từng trang 100 message, từ offsetMin
+// đến offsetMax (seekType=OFFSET&seekTo=<partition>::<offset> chỉ đọc partition đó).
 export async function kafkaMessages(topic) {
-  const url = `${KAFKA_UI_URL}/api/clusters/cab/topics/${topic}/messages?seekType=BEGINNING&limit=5000`;
+  const info = await (await fetch(`${KAFKA_UI_URL}/api/clusters/cab/topics/${topic}`, { signal: AbortSignal.timeout(15_000) })).json();
+  const out = [];
+  for (const p of info.partitions || []) {
+    let next = p.offsetMin;
+    while (next < p.offsetMax) {
+      const page = await kafkaPage(`${KAFKA_UI_URL}/api/clusters/cab/topics/${topic}/messages?seekType=OFFSET&seekTo=${p.partition}::${next}&limit=100`);
+      const mine = page.filter((m) => m.partition === p.partition && m.offset >= next);
+      if (!mine.length) break;
+      out.push(...mine);
+      next = Math.max(...mine.map((m) => m.offset)) + 1;
+    }
+  }
+  return out.sort((a, b) => (a.timestamp < b.timestamp ? -1 : a.timestamp > b.timestamp ? 1 : a.offset - b.offset));
+}
+
+async function kafkaPage(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   const text = await res.text();
   const out = [];

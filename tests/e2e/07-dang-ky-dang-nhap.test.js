@@ -54,21 +54,17 @@ test('AC-DN-03 (mục 9, 409): số viết dạng +84 trùng số đã có → 4
   assert.deepEqual(r.body, { error: 'PHONE_ALREADY_EXISTS' });
 });
 
-test('AC-DN-03 (mục 9, 409): email trùng → 409 EMAIL_ALREADY_EXISTS (email viết hoa vẫn trùng)', async () => {
-  const email = `qa${Date.now()}@test.vn`;
-  const pa = t.phone(newCustomerPhone());
-  const a = await call('POST', '/accounts', { body: { phone: pa, email, password: SEED_PASSWORD } });
-  assert.equal(a.status, 201, a.text);
-  t.id(a.body.account_id);
-  const pb = t.phone(newCustomerPhone());
-  const b = await call('POST', '/accounts', { body: { phone: pb, email: email.toUpperCase(), password: SEED_PASSWORD } });
-  assert.equal(b.status, 409);
-  assert.deepEqual(b.body, { error: 'EMAIL_ALREADY_EXISTS' });
-  assert.equal(countPhone(pb), 0);
-  // Đăng nhập bằng email (A05 nhận đúng một trong phone / email).
-  const l = await call('POST', '/auth/login', { body: { email, password: SEED_PASSWORD } });
-  assert.equal(l.status, 200, l.text);
-  assert.equal(l.body.account_id, a.body.account_id);
+test('AC-DN-21 (mục 9, 400): A04 kèm "email" → 400 INVALID_INPUT, không tạo tài khoản; bỏ email → 201 (ADR-019)', async () => {
+  const p = t.phone(newCustomerPhone());
+  const a = await call('POST', '/accounts', { body: { phone: p, password: SEED_PASSWORD, email: 'a@b.vn' } });
+  assert.equal(a.status, 400, a.text);
+  assert.deepEqual(a.body, { error: 'INVALID_INPUT' });
+  assert.equal(countPhone(p), 0);
+  const b = await call('POST', '/accounts', { body: { phone: p, password: SEED_PASSWORD } });
+  assert.equal(b.status, 201, b.text);
+  t.id(b.body.account_id);
+  assert.equal(b.body.role, 'customer');
+  assert.equal(countPhone(p), 1);
 });
 
 test('AC-DN-04 (mục 9, 400): thiếu password → 400 INVALID_INPUT', async () => {
@@ -105,14 +101,11 @@ test('AC-DN-04 (mục 9, 400): body không phải JSON → 400 INVALID_JSON; bod
   assert.deepEqual(r2.body, { error: 'INVALID_INPUT' });
 });
 
-test('AC-DN-05 (mục 9, 400): phone "12345" → INVALID_PHONE; email "abc" → INVALID_EMAIL; password "123" → INVALID_PASSWORD', async () => {
+test('AC-DN-05 (mục 9, 400): phone "12345" → INVALID_PHONE; password "123" → INVALID_PASSWORD', async () => {
   const a = await call('POST', '/accounts', { body: { phone: '12345', password: SEED_PASSWORD } });
   assert.equal(a.status, 400);
   assert.deepEqual(a.body, { error: 'INVALID_PHONE' });
   const p = t.phone(newCustomerPhone());
-  const b = await call('POST', '/accounts', { body: { phone: p, email: 'abc', password: SEED_PASSWORD } });
-  assert.equal(b.status, 400);
-  assert.deepEqual(b.body, { error: 'INVALID_EMAIL' });
   const c = await call('POST', '/accounts', { body: { phone: p, password: '123' } });
   assert.equal(c.status, 400);
   assert.deepEqual(c.body, { error: 'INVALID_PASSWORD' });
@@ -156,7 +149,7 @@ test('AC-DN-08 (mục 10, 401): sai mật khẩu và số chưa đăng ký → c
   assert.equal(a.text, b.text);
 });
 
-test('AC-DN-09 (mục 10, 400): thiếu password → 400 INVALID_INPUT; có cả phone lẫn email → 400 INVALID_INPUT', async () => {
+test('AC-DN-09 (mục 10, 400): thiếu password → 400 INVALID_INPUT; thiếu phone → 400 INVALID_INPUT', async () => {
   const a = await call('POST', '/auth/login', { body: { phone: SEED.KH1 } });
   assert.equal(a.status, 400);
   assert.deepEqual(a.body, { error: 'INVALID_INPUT' });
@@ -197,6 +190,26 @@ test('Spec 09-10 mục 8.1: hai lần đăng nhập ra hai jti khác nhau', asyn
   assert.notEqual(a, b);
 });
 
+test('AC-DN-22 (mục 10, 400): đăng nhập bằng email, hoặc phone kèm email → 400 INVALID_INPUT cả hai', async () => {
+  const a = await call('POST', '/auth/login', { body: { email: 'kh1@cab.vn', password: SEED_PASSWORD } });
+  assert.equal(a.status, 400, a.text);
+  assert.deepEqual(a.body, { error: 'INVALID_INPUT' });
+  assert.equal(a.body.token, undefined);
+  const b = await call('POST', '/auth/login', { body: { phone: SEED.KH1, email: 'kh1@cab.vn', password: SEED_PASSWORD } });
+  assert.equal(b.status, 400, b.text);
+  assert.deepEqual(b.body, { error: 'INVALID_INPUT' });
+});
+
+test('AC-DN-23 (migration): schema_migrations có 003_bo-email-accounts.sql; accounts không còn cột email', () => {
+  const mig = psql('auth-db', 'auth', 'table schema_migrations');
+  assert.match(mig, /003_bo-email-accounts\.sql/);
+  const cols = psql('auth-db', 'auth', "select column_name from information_schema.columns where table_schema = 'public' and table_name = 'accounts' order by ordinal_position").split(/\r?\n/);
+  assert.ok(!cols.includes('email'), `accounts còn cột email: ${cols.join(',')}`);
+  assert.ok(cols.includes('phone') && cols.includes('password_hash'));
+  // version là khóa chính: khởi động lại không chạy lại migration (nếu chạy lại sẽ lỗi trùng khóa → service không lên).
+  assert.equal(psql('auth-db', 'auth', "select count(*) from schema_migrations where version like '003%'"), '1');
+});
+
 // ---------- Mục 25 ----------
 test('AC-DN-12 (mục 25): password "\' OR \'1\'=\'1" → 401 INVALID_CREDENTIALS', async () => {
   const r = await call('POST', '/auth/login', { body: { phone: SEED.KH1, password: "' OR '1'='1" } });
@@ -208,9 +221,10 @@ test('AC-DN-13 (mục 25): phone "\' OR 1=1 --" → 400 INVALID_PHONE; sau đó 
   const r = await call('POST', '/auth/login', { body: { phone: "' OR 1=1 --", password: 'x' } });
   assert.equal(r.status, 400);
   assert.deepEqual(r.body, { error: 'INVALID_PHONE' });
+  // ADR-019: A05 không còn field email → field lạ là INVALID_INPUT (không còn INVALID_EMAIL).
   const e = await call('POST', '/auth/login', { body: { email: "' OR 1=1 --", password: 'x' } });
   assert.equal(e.status, 400);
-  assert.deepEqual(e.body, { error: 'INVALID_EMAIL' });
+  assert.deepEqual(e.body, { error: 'INVALID_INPUT' });
   const ok = await call('POST', '/auth/login', { body: { phone: SEED.KH1, password: SEED_PASSWORD } });
   assert.equal(ok.status, 200);
   assert.ok(Number(psql('auth-db', 'auth', 'select count(*) from accounts')) >= 13, 'bảng accounts mất dữ liệu');

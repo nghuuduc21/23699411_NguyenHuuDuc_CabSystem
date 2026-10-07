@@ -410,7 +410,7 @@ test('AC-DX-23 (mục 16, D8, gRPC nội bộ): ReserveDriver(11, B) ×2 → BUS
   assert.equal(driversDb('select availability from drivers where driver_id = 11'), 'ONLINE');
 });
 
-test('AC-DX-24 (mục 16, T1, gRPC nội bộ): CreateTrip hai lần cùng booking, cùng tài xế → cùng trip_id, created true rồi false, Kafka một message; tài xế khác → BOOKING_ALREADY_ASSIGNED; không system → FORBIDDEN', async () => {
+test('AC-DX-24 (mục 16, T1, gRPC nội bộ): CreateTrip hai lần cùng booking, cùng tài xế → cùng trip_id, created true rồi false, Kafka một message; tài xế khác → BOOKING_ALREADY_ASSIGNED; không x-role → IDENTITY_MISSING, x-role sai → FORBIDDEN (DX22)', async () => {
   const B = 800000 + Math.floor(Math.random() * 1000);
   const req = {
     booking_id: B, customer_id: 1, driver_id: 11, vehicle_type: 'CAR_4', pickup_lat: P0[0], pickup_lng: P0[1],
@@ -433,9 +433,11 @@ test('AC-DX-24 (mục 16, T1, gRPC nội bộ): CreateTrip hai lần cùng booki
     await sleep(2000);
     const k5 = (await kafkaNew('trip.status-changed', snapK5)).filter((m) => m.content?.data?.booking_id === B);
     assert.equal(k5.length, 1, `Kafka chỉ một message ACCEPTED cho booking ${B}, có ${k5.length}`);
-    // Không có metadata x-role: AC-DX-24 và bảng rpc mục 5.3 ghi PERMISSION_DENIED / FORBIDDEN.
+    // DX22 (chốt 2026-10-05): thiếu x-role → UNAUTHENTICATED / IDENTITY_MISSING; x-role sai (customer) → FORBIDDEN.
     const d = tripRpc(req, {});
-    assert.deepEqual(d.error && [d.error.status, d.error.details], ['PERMISSION_DENIED', 'FORBIDDEN']);
+    assert.deepEqual(d.error && [d.error.status, d.error.details], ['UNAUTHENTICATED', 'IDENTITY_MISSING']);
+    const f = tripRpc(req, { 'x-role': 'customer', 'x-account-id': '1' });
+    assert.deepEqual(f.error && [f.error.status, f.error.details], ['PERMISSION_DENIED', 'FORBIDDEN']);
   } finally {
     tripsDb(`delete from trip_status_history where trip_id in (select trip_id from trips where booking_id = ${B}); delete from trips where booking_id = ${B}`);
   }
