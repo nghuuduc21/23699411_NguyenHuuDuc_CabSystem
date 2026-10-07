@@ -16,6 +16,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Nghiệp vụ: BG01–06, BR, FR01–FR43, BRULE01–18, NFR01–17, UC01–UC33, AC01–AC30, RTM01–RTM30 | `srs.md` | Có, đã rà |
 | 30 mục phiếu chấm | `docs/study/00-ban-do-phieu-cham.md` | Có |
 | Truy vết yêu cầu → mục chấm; quyết định nghiệp vụ đã chốt | `docs/study/01-nghiep-vu-va-truy-vet.md` | Có |
+| Cẩm nang hệ thống: chức năng và API theo role, đường đi của request trong code, cấu trúc source, công nghệ, máy trạng thái, tình huống sự cố, lệnh vận hành | `docs/study/02-cam-nang-he-thong.md` | Có |
 | Thiết kế tham chiếu đã được giảng viên duyệt (kiến trúc, bảng) và điều chỉnh của giảng viên | `docs/reference/thiet-ke-da-duyet.md` + hai ảnh cùng thư mục | Có |
 | Bounded context, aggregate, quy tắc | `docs/design/01-bounded-contexts.md` | Có |
 | Service, đường giao tiếp, topic Kafka, nhiệm vụ Gateway | `docs/design/02-kien-truc-giao-tiep.md` | Có |
