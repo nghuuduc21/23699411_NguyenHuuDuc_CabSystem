@@ -3,6 +3,7 @@
 > Nguồn: `srs.md` (FR, BRULE, UC), `docs/design/01`–`04`, `CLAUDE.md`. Cập nhật 2026-10-03.
 > Mã API (A01–A39) theo `04-api.md` (tên trường ngắn — đồng bộ 2026-10-03: QT01–QT09). **Đồng bộ 04 lần 4 (ADR-018):** cột Software dùng đường dẫn `/api/v1/…`, đổi trạng thái bằng `PATCH` + `status`; mã API và rpc không đổi; mã gRPC giữa service (S2–S7; S1 đã bỏ) và topic Kafka (K1–K7) theo `02-kien-truc-giao-tiep.md`.
 > Sửa 2026-10-03 theo góp ý giảng viên: QT01 chỉ tạo tài khoản, QT04 thêm bước tạo hồ sơ (ADR-013); QT05, QT10, QT16, QT17 theo cách giả lập hệ thống ngoài mới (ADR-014); ma trận 4.1, 4.2. Cùng ngày: QT09 ghi rõ đặt xe không cần hồ sơ (Q56); QT10 thêm `simulate_result: "MANUAL"` (Q57). Sửa lần 3 theo luật thi: D1 (số điện thoại, email lưu rõ — ADR-012), D14 (HS256 — ADR-016), QT02, QT08, QT12, QT21 (seed theo quy luật, lệnh gõ tay, 14 biến môi trường).
+> **Sửa 2026-10-14 (theo yêu cầu giảng viên, ADR-021 thay ADR-019):** QT01, QT02 — khách, admin đăng ký / đăng nhập bằng email, tài xế bằng số điện thoại, nhóm route `/api/v1/auth/…`; QT04 — hồ sơ có số điện thoại bắt buộc, không còn email; QT05 — `auth/otp`, `auth/driver-register`; QT08 — xem tài xế theo mã chỉ admin và chính tài xế; QT12 — danh sách booking theo mã khách; SW4, D1, D3.
 
 ## 0. Mô hình 5 thành phần
 
@@ -104,7 +105,7 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 | **SW1** | Ứng dụng client (khách, tài xế, admin). Khi chấm: **Postman** | H1, H2, H3 | Gửi request REST/JSON kèm token đến Gateway |
 | **SW2** | **API Gateway** (Node.js) | H4 | Kiểm tra JWT, kiểm tra role, rate limit, đăng xuất, đổi REST → gRPC, health check |
 | **SW3** | `auth-service` | H4 | Tài khoản, mật khẩu băm, đăng nhập, cấp JWT, OTP |
-| **SW4** | `customer-service` | H4 | Hồ sơ khách hàng do khách tạo sau khi đăng nhập (mã hóa họ tên, ngày sinh; email tùy chọn lưu rõ — ADR-019). Không gọi và không bị service nào gọi |
+| **SW4** | `customer-service` | H4 | Hồ sơ khách hàng do khách tạo sau khi đăng nhập (mã hóa họ tên, ngày sinh; số điện thoại liên hệ bắt buộc, lưu rõ — ADR-021). Không gọi và không bị service nào gọi |
 | **SW5** | `driver-service` | H4 | Hồ sơ tài xế, xe, duyệt hồ sơ, Online/Offline, vị trí, tìm tài xế trong 1 km, giữ chỗ tài xế |
 | **SW6** | `booking-service` | H4 | Booking, tính quãng đường ước tính, ghép tài xế, lời mời, phân công |
 | **SW7** | `trip-service` | H4 | Chuyến đi, trình tự trạng thái, hủy chuyến, lịch sử trạng thái |
@@ -121,9 +122,9 @@ Khi demo, mọi máy chủ (H4–H8) là container Docker chạy trên **một l
 
 | Mã | Dữ liệu | Thuộc service | Lưu ở | Dữ liệu chính |
 |---|---|---|---|---|
-| **D1** | `accounts` | auth | H5 (auth-db) | Mã tài khoản (số nguyên), số điện thoại (lưu rõ, không trùng — ADR-012), mật khẩu băm scrypt, role, trạng thái. Không có email (2026-10-05 — ADR-019) |
+| **D1** | `accounts` | auth | H5 (auth-db) | Mã tài khoản (số nguyên), **email** (khách, admin) hoặc **số điện thoại** (tài xế) — đúng một định danh theo role, lưu rõ, không trùng (ADR-012, ADR-021), mật khẩu băm scrypt, role, trạng thái |
 | **D2** | `otp_verifications` | auth | H5 (auth-db) | OTP băm, hạn, số lần thử |
-| **D3** | `customer_profiles` | customer | H5 (customer-db) | Họ tên (bắt buộc), ngày sinh (tùy chọn), đều mã hóa. Có thể chưa có dòng cho một tài khoản |
+| **D3** | `customer_profiles` | customer | H5 (customer-db) | Họ tên (bắt buộc), ngày sinh (tùy chọn) — mã hóa; số điện thoại liên hệ (bắt buộc, lưu rõ, không UNIQUE — 2026-10-14). Có thể chưa có dòng cho một tài khoản |
 | **D4** | `drivers`, `vehicles`, `vehicle_types` | driver | H5 (driver-db) | Hồ sơ, số giấy phép (mã hóa), trạng thái duyệt, Online/Offline, vị trí hiện tại; xe, biển số, loại xe |
 | **D5** | `bookings` | booking | H5 (booking-db) | Điểm đón, điểm đến, loại xe, phương thức, quãng đường ước tính, số tiền cước, trạng thái, lý do hủy |
 | **D6** | `driver_offers`, `driver_assignments` | booking | H5 (booking-db) | Lời mời cho từng tài xế, hạn trả lời, kết quả; phân công cuối cùng kèm mã chuyến |
@@ -158,20 +159,20 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách nhập số điện thoại, mật khẩu (không có email — ADR-019). <br> 2. Hệ thống kiểm tra dữ liệu; số điện thoại đã có → từ chối (409). <br> 3. Auth băm mật khẩu, tạo tài khoản role `customer`. Đăng ký công khai **không** tạo được role khác. <br> 4. Trả về tài khoản (không có mật khẩu). **Chưa có hồ sơ**: khách tạo hồ sơ sau khi đăng nhập (QT04). Auth không gọi service nào (ADR-013). |
+| **Procedures** | 1. Khách nhập **email**, mật khẩu (ADR-021). <br> 2. Hệ thống kiểm tra dữ liệu; email đã có → từ chối (409). <br> 3. Auth băm mật khẩu, tạo tài khoản role `customer`. Đăng ký công khai **không** tạo được role khác. <br> 4. Trả về tài khoản (không có mật khẩu). **Chưa có hồ sơ**: khách tạo hồ sơ sau khi đăng nhập (QT04). Auth không gọi service nào (ADR-013). |
 | **People** | P1 Khách hàng |
 | **Hardware** | H1 gửi request · H4 xử lý · H5 lưu tài khoản (auth-db) |
-| **Software** | SW1 → SW2 `POST /api/v1/accounts` (A04) → SW3 `RegisterCustomer` → SW11 |
+| **Software** | SW1 → SW2 `POST /api/v1/auth/register` (A04) → SW3 `RegisterCustomer` → SW11 |
 | **Data** | Tạo D1 `accounts` |
 
 ### QT02 — Đăng nhập
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Người dùng nhập số điện thoại và mật khẩu. <br> 2. Auth tìm tài khoản theo số điện thoại lưu rõ, có ràng buộc không trùng; so mật khẩu với bản băm. <br> 3. Sai thông tin → 401; tài khoản bị khóa → từ chối (Exception UC02). <br> 4. Đúng → cấp JWT chứa mã tài khoản, role, mã token, hạn. <br> 5. Chuỗi SQL injection như `' OR 1=1 --` không đăng nhập được vì truy vấn dùng tham số (mục 25). |
+| **Procedures** | 1. Khách, admin nhập **email** và mật khẩu; tài xế nhập **số điện thoại** và mật khẩu (BRULE19). Gửi cả hai hoặc không gửi định danh nào → 400. <br> 2. Auth tìm tài khoản theo định danh lưu rõ, có ràng buộc không trùng; so mật khẩu với bản băm. <br> 3. Sai thông tin → 401; tài khoản bị khóa → từ chối (Exception UC02). <br> 4. Đúng → cấp JWT chứa mã tài khoản, role, mã token, hạn. <br> 5. Chuỗi SQL injection như `' OR 1=1 --` ở ô email bị từ chối vì sai định dạng (400); ở ô mật khẩu không đăng nhập được vì truy vấn dùng tham số (401) (mục 25). |
 | **People** | P1, P2, P3 |
 | **Hardware** | H1/H2/H3 nhận và **lưu token** · H4 · H5 đọc auth-db |
-| **Software** | SW1 → SW2 `POST /api/v1/auth/login` (A05, body `phone` + `password`) → SW3 `Login` → SW11 |
+| **Software** | SW1 → SW2 `POST /api/v1/auth/login` (A05, body `email` + `password`, hoặc `phone` + `password` với tài xế) → SW3 `Login` → SW11 |
 | **Data** | Đọc D1 · Tạo D14 (token, không lưu ở server) |
 
 ### QT03 — Đăng xuất
@@ -188,10 +189,10 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | Tiền điều kiện: khách đã đăng nhập (QT02). <br> 1. Khách mở màn hình hồ sơ. Chưa có hồ sơ → 404 (chưa có). <br> 2. **Tạo hồ sơ**: khách nhập họ tên (bắt buộc), ngày sinh (tùy chọn). Customer lấy `customer_id` = mã tài khoản trong token, không nhận mã từ client; mã hóa rồi lưu. Đã có hồ sơ → 409 (BRULE18). <br> 3. **Xem**: khách xem hồ sơ của mình (theo mã hoặc `/me`); admin xem được mọi hồ sơ (mục 11). Khách xem hồ sơ người khác → 403. Customer giải mã họ tên, ngày sinh rồi trả về. <br> 4. **Sửa**: chỉ hồ sơ của mình; chưa có → 404; văn bản chứa `<` hoặc `>` bị từ chối 400 (chống XSS, mục 26). Customer mã hóa lại trước khi lưu. <br> Customer không gọi Auth: token đã đủ để biết ai đang thao tác (ADR-013). |
+| **Procedures** | Tiền điều kiện: khách đã đăng nhập (QT02). <br> 1. Khách mở màn hình hồ sơ. Chưa có hồ sơ → 404 (chưa có). <br> 2. **Tạo hồ sơ**: khách nhập họ tên và số điện thoại liên hệ (bắt buộc), ngày sinh (tùy chọn). Customer lấy `customer_id` = mã tài khoản trong token, không nhận mã từ client; mã hóa rồi lưu. Đã có hồ sơ → 409 (BRULE18). <br> 3. **Xem**: khách xem hồ sơ của mình (theo mã hoặc `/me`); admin xem được mọi hồ sơ (mục 11). Khách xem hồ sơ người khác → 403. Customer giải mã họ tên, ngày sinh rồi trả về. <br> 4. **Sửa**: chỉ hồ sơ của mình; chưa có → 404; văn bản chứa `<` hoặc `>` bị từ chối 400 (chống XSS, mục 26). Customer mã hóa lại trước khi lưu. <br> Customer không gọi Auth: token đã đủ để biết ai đang thao tác (ADR-013). |
 | **People** | P1 (chủ hồ sơ: tạo, xem, sửa), P3 (chỉ xem) |
 | **Hardware** | H1/H3 · H4 · H5 customer-db (dữ liệu nằm trên đĩa ở dạng **mã hóa**, mục 24) |
-| **Software** | SW2 `POST /api/v1/customers` (A37, body `name`, `dob`), `GET /api/v1/customers/me` (A38), `GET /api/v1/customers/{id}` (A09), `PATCH /api/v1/customers/me` (A10) → SW4 `CreateCustomer`, `GetCustomer`, `UpdateCustomer` |
+| **Software** | SW2 `POST /api/v1/customers` (A37, body `name`, `phone`, `dob`), `GET /api/v1/customers/me` (A38), `GET /api/v1/customers/{id}` (A09), `PATCH /api/v1/customers/me` (A10) → SW4 `CreateCustomer`, `GetCustomer`, `UpdateCustomer` |
 | **Data** | Tạo, đọc, sửa D3. Khóa mã hóa lấy từ biến môi trường của customer-service |
 
 ### QT05 — Đăng ký tài xế
@@ -201,7 +202,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 | **Procedures** | 1. Tài xế nhập số điện thoại, xin OTP. <br> 2. Auth tạo OTP, lưu bản băm kèm hạn; kênh gửi giả lập **ghi log** mã OTP, và khi `SIMULATION_MODE=true` thì **trả luôn mã trong response** để Postman dùng tiếp (ADR-014). <br> 3. Tài xế nhập OTP và thông tin tài khoản; OTP đúng và còn hạn → Auth tạo tài khoản role `driver` và **trả luôn token** (không cần đăng nhập riêng). <br> 4. Tài xế dùng token đó nộp hồ sơ cá nhân và xe. <br> 5. Hồ sơ ở trạng thái **chờ duyệt** (`PENDING`). <br> 6. Bị admin từ chối → tài xế xem lý do ở hồ sơ của mình rồi **nộp lại bằng cùng thao tác nộp hồ sơ** → hồ sơ về `PENDING` (FR43, thêm 2026-10-05). |
 | **People** | P2 Tài xế |
 | **Hardware** | H2 · H4 · H5 auth-db (tài khoản, OTP), driver-db (hồ sơ, xe) |
-| **Software** | SW2 A07 `POST /api/v1/otps`, A08 `POST /api/v1/driver-accounts`, A11 `POST /api/v1/drivers` → SW3 `RequestDriverOtp`, `RegisterDriver` → SW5 `SubmitApplication` · SW14 kênh OTP giả lập (log) |
+| **Software** | SW2 A07 `POST /api/v1/auth/otp`, A08 `POST /api/v1/auth/driver-register`, A11 `POST /api/v1/drivers` → SW3 `RequestDriverOtp`, `RegisterDriver` → SW5 `SubmitApplication` · SW14 kênh OTP giả lập (log) |
 | **Data** | Tạo D2, D1 (role `driver`), D4 (`drivers` với `approval_status = PENDING`, `vehicles`) |
 
 ### QT06 — Duyệt hồ sơ tài xế
@@ -228,8 +229,8 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Xem tài xế theo mã (mục 12): khách thấy phần công khai; tài xế thấy đủ hồ sơ của mình; admin thấy đủ. <br> 2. Tìm tài xế quanh một tọa độ (mục 13): lọc tài xế Online, đúng loại xe, trong bán kính 1 km; sắp theo khoảng cách; có `limit` và phân trang. <br> 3. Khoảng cách tính bằng công thức trên hai cột tọa độ, không dùng PostGIS (ADR-011). |
-| **People** | P1, P3 (tìm quanh tọa độ); P1, P2, P3 (xem theo mã) |
+| **Procedures** | 1. Xem tài xế theo mã (mục 12, sửa 2026-10-14): **admin** xem đủ mọi hồ sơ; **tài xế** chỉ xem hồ sơ của mình (mã khác → 403); khách không xem được (403) — khách thấy tài xế của chuyến mình qua QT13. <br> 2. Tìm tài xế quanh một tọa độ (mục 13): lọc tài xế Online, đúng loại xe, trong bán kính 1 km; sắp theo khoảng cách; có `limit` và phân trang. <br> 3. Khoảng cách tính bằng công thức trên hai cột tọa độ, không dùng PostGIS (ADR-011). |
+| **People** | P1, P3 (tìm quanh tọa độ); P2, P3 (xem theo mã) |
 | **Hardware** | H1/H3 · H4 · H5 driver-db |
 | **Software** | SW2 A14 `GET /api/v1/drivers/{id}`, A12 `GET /api/v1/drivers?lat&lng&vehicle&page&limit` (bán kính 1 km là hằng số, không có tham số) → SW5 `GetDriver`, `FindNearbyDrivers` |
 | **Data** | Đọc D4. Seed TX1–TX8 (mã 11–18) ở các trạng thái khác nhau; tại điểm mẫu P0 (10.82, 106.68) tìm thấy TX1–TX4 (file 03 mục 14) |
@@ -238,7 +239,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách chọn điểm đón, điểm đến, loại xe, phương thức thanh toán. Điều kiện chỉ là đã đăng nhập bằng tài khoản `customer` (số điện thoại ở Auth) và đủ bốn dữ liệu này; **không cần đã tạo hồ sơ** (QT04), Booking không gọi Customer (Q56, 2026-10-03). <br> 2. Booking tính quãng đường ước tính = khoảng cách đường thẳng × 1,3 (đơn vị mét). <br> 3. Booking gọi Payment (S4, gRPC đồng bộ): Payment áp bảng giá, tính **cước cố định** = giá mở cửa + đơn giá/km × quãng đường, làm tròn lên 1.000 đ, không thấp hơn cước tối thiểu (BRULE08); tạo thanh toán ở trạng thái chờ. <br> 4. Booking lưu yêu cầu kèm số tiền: **tiền mặt** → trạng thái đang tìm tài xế, chuyển sang QT11; **điện tử** → trạng thái chờ thanh toán, chuyển sang QT10. <br> 5. Booking phát K1; Notification báo khách "đã nhận yêu cầu". |
+| **Procedures** | 1. Khách chọn điểm đón, điểm đến, loại xe, phương thức thanh toán. Điều kiện chỉ là đã đăng nhập bằng tài khoản `customer` (email ở Auth) và đủ bốn dữ liệu này; **không cần đã tạo hồ sơ** (QT04), Booking không gọi Customer (Q56, 2026-10-03). <br> 2. Booking tính quãng đường ước tính = khoảng cách đường thẳng × 1,3 (đơn vị mét). <br> 3. Booking gọi Payment (S4, gRPC đồng bộ): Payment áp bảng giá, tính **cước cố định** = giá mở cửa + đơn giá/km × quãng đường, làm tròn lên 1.000 đ, không thấp hơn cước tối thiểu (BRULE08); tạo thanh toán ở trạng thái chờ. <br> 4. Booking lưu yêu cầu kèm số tiền: **tiền mặt** → trạng thái đang tìm tài xế, chuyển sang QT11; **điện tử** → trạng thái chờ thanh toán, chuyển sang QT10. <br> 5. Booking phát K1; Notification báo khách "đã nhận yêu cầu". |
 | **People** | P1 |
 | **Hardware** | H1 (GPS điểm đón) · H4 · H5 booking-db, payment-db · H7 |
 | **Software** | SW2 `POST /api/v1/bookings` (A19, body `from`, `to`, `vehicle`, `pay`) → SW6 `CreateBooking` → SW8 `CreatePayment` (S4) → SW13 K1 → SW9 |
@@ -268,10 +269,10 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Khách xem danh sách booking **của mình**, lọc theo trạng thái, mới nhất trước, có `limit` và phân trang (mục 14). <br> 2. Khách xem chi tiết một booking của mình; admin xem được mọi booking. |
+| **Procedures** | 1. Xem danh sách booking **theo mã khách** (mục 14, sửa 2026-10-14): khách chỉ mã của mình (mã khác → 403), admin mọi mã; lọc theo trạng thái, mới nhất trước, có `limit` và phân trang. <br> 2. Khách xem chi tiết một booking của mình; admin xem được mọi booking. |
 | **People** | P1, P3 |
 | **Hardware** | H1/H3 · H4 · H5 booking-db |
-| **Software** | SW2 A20 `GET /api/v1/bookings?status&page&limit`, A21 `GET /api/v1/bookings/{id}` → SW6 `ListBookings`, `GetBooking` |
+| **Software** | SW2 A20 `GET /api/v1/customers/{id}/bookings?status&page&limit`, A21 `GET /api/v1/bookings/{id}` → SW6 `ListBookings`, `GetBooking` |
 | **Data** | Đọc D5. Seed B1–B7 của KH1 (mã 1–7, file 03 mục 14) |
 
 ### QT13 — Thực hiện và theo dõi chuyến đi
@@ -358,7 +359,7 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Gõ tay hai lệnh: `cp .env.example .env` rồi `docker compose up -d --build`; liệt kê container bằng `docker compose ps` (mục 5). Đặt lại dữ liệu: `docker compose down -v` rồi dựng lại. <br> 2. `kafka-init` tạo sẵn 7 topic khi khởi động. <br> 3. Khi `SIMULATION_MODE=true`, mỗi service tự seed theo quy luật dễ nhớ, cùng mật khẩu `SEED_PASSWORD`: khách `090000000n` (mã n), tài xế `091000000n` (mã 10 + n) đứng quanh điểm mẫu P0 (10.82, 106.68), admin `0999999999` (mã 99), booking B1–B7 (file 03 mục 14). <br> 4. Kiểm tra sức khỏe: `/health` (Gateway còn sống), `/ready` (Gateway sẵn sàng), `/health/services` (8 service) (mục 6). <br> 5. Mở Kafka UI xem topic, event và consumer (mục 7). <br> 6. Kiểm tra `.gitignore` và `.env`: không đưa file chứa mật khẩu, khóa lên GitHub (mục 2). |
+| **Procedures** | 1. Gõ tay hai lệnh: `cp .env.example .env` rồi `docker compose up -d --build`; liệt kê container bằng `docker compose ps` (mục 5). Đặt lại dữ liệu: `docker compose down -v` rồi dựng lại. <br> 2. `kafka-init` tạo sẵn 7 topic khi khởi động. <br> 3. Khi `SIMULATION_MODE=true`, mỗi service tự seed theo quy luật dễ nhớ, cùng mật khẩu `SEED_PASSWORD`: khách `khn@cab.vn` (mã n, số hồ sơ `090000000n`), tài xế `091000000n` (mã 10 + n) đứng quanh điểm mẫu P0 (10.82, 106.68), admin `admin@cab.vn` (mã 99), booking B1–B7 (file 03 mục 14; sửa 2026-10-14). <br> 4. Kiểm tra sức khỏe: `/health` → `healthy` (Gateway còn sống), `/ready` → `ready` / `not_ready` (Gateway sẵn sàng), `/health/services` → mỗi service `healthy` / `unhealthy` (mục 6; chữ chốt theo giảng viên 2026-10-14). <br> 5. Mở Kafka UI xem topic, event và consumer (mục 7). <br> 6. Kiểm tra `.gitignore` và `.env`: không đưa file chứa mật khẩu, khóa lên GitHub (mục 2). |
 | **People** | P4 Quản trị hệ thống (khi chấm: sinh viên) |
 | **Hardware** | Máy chủ (laptop 16 GB) · H4–H8 |
 | **Software** | SW15 Docker Compose · SW2 A01 `/health`, A02 `/ready`, A03 `/health/services` · SW13 Kafka UI · Git |

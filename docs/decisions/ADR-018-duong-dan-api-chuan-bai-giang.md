@@ -1,6 +1,7 @@
 # ADR-018 — Đường dẫn API theo chuẩn bài giảng: `/api/v1/{resource}/{id}`, đổi trạng thái bằng `PATCH`
 
 - Ngày: 2026-10-03. Trạng thái: **Đã chấp nhận** — cấu trúc đường dẫn, "không động từ", `PATCH` + `status` do giảng viên / sinh viên chốt (`CLAUDE.md`, dòng "Đường dẫn và tên trường API"). Cách gộp nhiều mã vào một đường dẫn, tên `accounts` / `otps` / `driver-accounts` / `payment-callbacks`, hai ngoại lệ `auth/login`, `auth/logout` là BA đề xuất (`docs/design/04` P19–P24).
+- **Sửa 2026-10-14 (theo yêu cầu giảng viên, ADR-021):** nhóm xác thực gom về **`/api/v1/auth/…`**: A04 `POST /api/v1/auth/register` (thay `/accounts`), A07 `POST /api/v1/auth/otp` (thay `/otps`), A08 `POST /api/v1/auth/driver-register` (thay `/driver-accounts`), cùng `auth/login`, `auth/logout`. Ngoại lệ có chủ đích giờ là **cả nhóm `auth`** (năm route), không chỉ hai. Mục chấm 14 dùng tài nguyên lồng `GET /api/v1/customers/{id}/bookings` (thay `GET /api/v1/bookings`). Các quy tắc khác của ADR này giữ nguyên.
 - Thay cho: quyết định "bỏ tiền tố `/api/v1`" và các đường dẫn có động từ của `docs/design/04` lần 3 (P12, P16).
 - Liên quan: `docs/design/04` mục 1.9, 1.10, 2, 5, 8; `docs/design/06`; spec 00, 09-10, 11; ADR-015.
 
@@ -26,8 +27,8 @@ Chọn **B**.
 | Method | Chỉ `GET`, `POST`, `PATCH` |
 | Đổi trạng thái | `PATCH /api/v1/{resource}/{id}` + `{"status": …}` (kèm `reason` khi hủy). Duyệt hồ sơ tài xế dùng `approval_status` vì tài xế có hai trạng thái độc lập |
 | Tìm, lọc | Query: `GET /api/v1/drivers?lat=10.82&lng=106.68&limit=2` |
-| Hành động khó biểu diễn | Thành tài nguyên được tạo: `POST /api/v1/accounts`, `/otps`, `/driver-accounts`, `/payments/{id}/transactions`, `/payment-callbacks` |
-| Ngoại lệ có động từ | Chỉ `POST /api/v1/auth/login`, `POST /api/v1/auth/logout` — quy ước phổ biến; không có bản ghi nào được tạo |
+| Hành động khó biểu diễn | Thành tài nguyên được tạo: `/payments/{id}/transactions`, `/payment-callbacks`. ~~`/accounts`, `/otps`, `/driver-accounts`~~ (chuyển vào nhóm `auth` 2026-10-14) |
+| Ngoại lệ có động từ | **Nhóm `/api/v1/auth/…`** (sửa 2026-10-14): `register`, `login`, `logout`, `otp`, `driver-register` — quy ước phổ biến, giảng viên yêu cầu gom một nhóm |
 | Mã API | Giữ A01–A39; mã = một thao tác = một rpc; nhiều mã chung một đường dẫn |
 
 ## Vì sao

@@ -5,6 +5,7 @@
 > Phụ thuộc: **spec 00**, **09-10**, **12-13-21-23**, **14-15-16-19-30** (đã code ở `116e16e`: bảng `trips`, `trip_status_history` đủ cột; rpc `CreateTrip`; K5 `ACCEPTED`; K1–K4, K6; `ReleaseDriver`; seed B1–B7, T3–T5).
 > Ngoài phạm vi: A26 `ListTrips` (Q32 — làm sau 30 mục); S6 `GetDriverSummary` (FR14, mục 8.1); admin hủy chuyến (FR31, Q45); A34–A36 (spec 20).
 > **Sửa 2026-10-05 lần 2 (sinh viên chốt, FR43):** nội dung thông báo `APPLICATION_REJECTED` đổi thành "Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại." (mục 2.7) vì tài xế nay nộp lại được (spec 12-13-21-23 mục 2.6). Chống lặp ở consumer giữ nguyên (Payment, Driver bằng trạng thái; Notification bằng UNIQUE `event_id`, `recipient_id`; không bảng event đã xử lý — 02 mục 6.4). AC đổi: AC-TB-03; AC mới: AC-TB-09.
+> **Ghi chú 2026-10-14 (theo yêu cầu giảng viên, không đổi hành vi spec này):** mọi bước "A14 `drivers/{id}`" trong AC của spec này (AC-CD-04, AC-CD-12, AC-CD-15, AC-HT-01, AC-HT-06) dùng token **`[AD1]`** hoặc token của **chính tài xế** đó — khách gọi A14 nay bị 403 (spec 12-13-21-23 mục 4.5). Token khách lấy bằng A05 email (`kh1@cab.vn`); tài xế bằng số (spec 09-10). Tab GET của mục 16 đang ở URL `customers/2/bookings?…` (mục 14 đổi đường dẫn).
 > **Sửa 2026-10-07 (sinh viên chốt M1 của báo cáo hồi quy, CD-Q8):** giữ Kafka UI chỉ đọc; AC-HT-04, AC-HT-05, AC-TB-09 gửi message lặp bằng `kafka-console-producer.sh` trong container `kafka` (mục 8.0) thay cho "Kafka UI → Produce". Hành vi hệ thống không đổi.
 > Ký hiệu: **[ĐC]** đã chốt; **[BA]** BA chọn (gom ở mục 9). Mã AC: **AC-CD** (chuyến, hủy), **AC-HT** (hoàn tiền, tài xế rảnh), **AC-TB** (thông báo).
 
@@ -441,7 +442,7 @@ Lệnh dài, **chỉ dùng cho test-agent và khi luyện tập, không dùng kh
 | Mục | # | Request | Kết quả | Thời gian |
 |---|---|---|---|---|
 | **16** | 1 | Tab chuyến: `PATCH`, URL `offers/1000`, body `{"status":"ACCEPTED"}` (spec 14) | 200 `ACCEPTED`, `DRIVER_ASSIGNED`, `trip_id` 1000 | ~10 s |
-| | 2 | Tab GET (đang `[KH1]`, URL `bookings?limit=2&page=2` của mục 14): sửa URL thành `notifications` | 200 `data[0]` `TRIP_ACCEPTED`, `data[1]` `BOOKING_CREATED` | ~5 s + nói ~10 s → **~26 s, Sát** |
+| | 2 | Tab GET (đang `[KH1]`, URL `customers/2/bookings?…` của mục 14 — đường dẫn đổi 2026-10-14): sửa URL thành `notifications` | 200 `data[0]` `TRIP_ACCEPTED`, `data[1]` `BOOKING_CREATED` | ~5 s + nói ~10 s → **~26 s, Sát** |
 | **17** | 1 | Tab chuyến: URL `trips/1000`, body `{"status":"COMPLETED"}` | **409 `INVALID_STATUS_TRANSITION`** | ~6 s |
 | | 2–5 | Sửa một từ: `ARRIVED` → `PICKED_UP` → `IN_PROGRESS` → `COMPLETED` | 200 ×4; lần cuối `history` 5 mục | 4 × ~4 s + nói ~8 s → **~30 s, Sát** (như 06) |
 | | (6) | (tùy chọn) Tab GET → Send | `PAYMENT_COMPLETED`, `TRIP_COMPLETED` (tiền mặt đã ghi nhận) | +5 s |

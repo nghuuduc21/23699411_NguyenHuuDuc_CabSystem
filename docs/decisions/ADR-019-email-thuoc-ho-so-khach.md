@@ -1,6 +1,8 @@
 # ADR-019 — Email thuộc hồ sơ khách hàng, không thuộc tài khoản
 
-- Ngày: 2026-10-05. Trạng thái: **Đã chấp nhận** (sinh viên chốt 2026-10-05). Sửa một phần ADR-012 (phạm vi "lưu rõ" của email) và quyết định D7 ở `docs/design/03` mục 16.1.
+> **Bị thay thế (superseded) 2026-10-14 bởi ADR-021** — theo yêu cầu giảng viên 2026-10-14: khách và admin đăng ký / đăng nhập bằng email ở tài khoản; số điện thoại của khách chuyển vào hồ sơ; tài xế vẫn dùng số điện thoại. Nội dung dưới đây giữ để đối chiếu lịch sử, **không còn hiệu lực**.
+
+- Ngày: 2026-10-05. Trạng thái: ~~Đã chấp nhận~~ **Bị thay thế bởi ADR-021** (sinh viên chốt 2026-10-05). Sửa một phần ADR-012 (phạm vi "lưu rõ" của email) và quyết định D7 ở `docs/design/03` mục 16.1.
 - Liên quan: `srs.md` FR26, FR27, UC01, UC02, UC03; `docs/design/01` A2, A8, C6, C7 (Q59); `docs/design/03` mục 3.1, 4.1, 11.4, 14, 15; `docs/design/04` A04, A05, A09, A10, A37, A38, mục 1.8; spec `09-10`, `11`; mục chấm 9, 10, 11, 24.
 
 ## Bối cảnh

@@ -157,9 +157,9 @@ Bước 6: Business Process
 6. Quản lý người dùng và vận hành
 | Mã       | Functional Requirement       | Diễn giải                                                                                          |
 | -------- | ---------------------------- | -------------------------------------------------------------------------------------------------- |
-| **FR26** | **Đăng ký tài khoản và đăng nhập** | Khách hàng tự đăng ký **tài khoản** bằng số điện thoại và mật khẩu. Đăng ký chỉ tạo tài khoản, **chưa tạo hồ sơ cá nhân** (hồ sơ: FR27). Tài xế đăng ký theo luồng riêng (FR39). Khách hàng, tài xế và Admin đăng nhập bằng **số điện thoại** và mật khẩu và được xác thực tài khoản. (Sửa 2026-10-05: tài khoản không còn email; email là thông tin liên hệ trong hồ sơ khách — FR27, ADR-019.) |
-| **FR27** | **Quản lý hồ sơ khách hàng** | Sau khi đăng nhập, khách hàng mở màn hình hồ sơ để **tạo** hồ sơ cá nhân (họ tên bắt buộc; ngày sinh, email tùy chọn), sau đó xem và cập nhật hồ sơ của mình. Chưa tạo hồ sơ thì hệ thống báo chưa có hồ sơ. Admin xem được hồ sơ khách hàng. |
-| **FR28** | **Quản lý hồ sơ tài xế**     | Hệ thống cho phép quản lý thông tin tài xế và trạng thái hoạt động.                                |
+| **FR26** | **Đăng ký tài khoản và đăng nhập** | Khách hàng tự đăng ký **tài khoản** bằng **email** và mật khẩu. Đăng ký chỉ tạo tài khoản, **chưa tạo hồ sơ cá nhân** (hồ sơ: FR27). Tài xế đăng ký theo luồng riêng bằng số điện thoại và OTP (FR39). Khách hàng và Admin đăng nhập bằng **email** và mật khẩu; tài xế đăng nhập bằng **số điện thoại** và mật khẩu (BRULE19). (Sửa 2026-10-14 theo yêu cầu giảng viên — ADR-021, thay bản 2026-10-05 "mọi role đăng nhập bằng số điện thoại" của ADR-019.) |
+| **FR27** | **Quản lý hồ sơ khách hàng** | Sau khi đăng nhập, khách hàng mở màn hình hồ sơ để **tạo** hồ sơ cá nhân (họ tên và **số điện thoại liên hệ** bắt buộc; ngày sinh tùy chọn), sau đó xem và cập nhật hồ sơ của mình. Chưa tạo hồ sơ thì hệ thống báo chưa có hồ sơ. Admin xem được hồ sơ khách hàng. (Sửa 2026-10-14: hồ sơ có số điện thoại, không còn email — ADR-021.) |
+| **FR28** | **Quản lý hồ sơ tài xế**     | Hệ thống cho phép quản lý thông tin tài xế và trạng thái hoạt động. Hồ sơ tài xế theo mã chỉ **Admin** (mọi tài xế) và **chính tài xế đó** được xem; khách hàng xem thông tin tài xế của chuyến mình qua thông tin chuyến (FR14). (Sửa 2026-10-14 theo yêu cầu giảng viên.) |
 | **FR29** | **Quản lý phương tiện**      | Hệ thống cho phép quản lý thông tin phương tiện của tài xế.                                        |
 | **FR30** | **Giám sát chuyến đi**       | Operator có thể xem danh sách và trạng thái các chuyến đang diễn ra.                               |
 | **FR31** | **Xử lý chuyến bị lỗi**      | Operator có thể kiểm tra và hỗ trợ xử lý các trường hợp chuyến gặp sự cố.                          |
@@ -172,7 +172,7 @@ Bước 6: Business Process
 | -------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | **FR35** | **Tạo yêu cầu đặt xe**                  | Hệ thống nhận điểm đón, điểm đến, loại xe và phương thức thanh toán; tạo Booking kèm cước cố định. Tiền mặt: tìm tài xế ngay. Điện tử: Booking chờ thanh toán thành công rồi mới tìm tài xế. |
 | **FR36** | **Hủy yêu cầu đặt xe / hủy chuyến**     | Khách hàng hủy kèm lý do, trước khi chuyến bắt đầu; hệ thống chuyển trạng thái sang CANCELED và thông báo cho các bên liên quan. |
-| **FR37** | **Xem danh sách yêu cầu đặt xe**        | Khách hàng xem danh sách Booking của mình, có giới hạn số dòng (limit) và phân trang (paging).                         |
+| **FR37** | **Xem danh sách yêu cầu đặt xe**        | Xem danh sách Booking **theo mã khách hàng**, có giới hạn số dòng (limit) và phân trang (paging). Khách hàng chỉ xem theo mã của mình; Admin xem theo mã bất kỳ. (Sửa 2026-10-14 theo yêu cầu giảng viên.) |
 | **FR38** | **Bật / tắt trạng thái nhận chuyến**    | Tài xế chuyển Online / Offline; hệ thống ghi nhận và chỉ tìm tài xế đang Online.                                        |
 | **FR39** | **Đăng ký và duyệt hồ sơ tài xế**       | Tài xế xác thực số điện thoại bằng OTP, gửi hồ sơ cá nhân và xe; hồ sơ ở trạng thái chờ duyệt đến khi Admin duyệt hoặc từ chối. |
 | **FR40** | **Hoàn tiền**                           | Với thanh toán điện tử đã thành công, hệ thống hoàn đủ tiền khi chuyến không được thực hiện: khách hủy, không tìm được tài xế, hoặc tài xế hủy chuyến đã nhận. |
@@ -202,6 +202,7 @@ Bước 6: Business Process
 | **BRULE16** | Chỉ hủy được trước khi chuyến bắt đầu                   | Khách hàng và tài xế chỉ hủy được khi chuyến chưa bắt đầu (chưa đón khách).                                        |
 | **BRULE17** | Thanh toán điện tử có hạn chờ và giới hạn số lần thử    | Khách hàng có tối đa 10 phút và 3 lần thử để thanh toán. Hết hạn hoặc hết lượt mà chưa thành công thì yêu cầu đặt xe bị hủy. |
 | **BRULE18** | Mỗi tài khoản khách hàng có nhiều nhất một hồ sơ, do chính chủ tạo và sửa | Hồ sơ gắn với tài khoản đang đăng nhập; không ai tạo hay sửa hồ sơ thay cho tài khoản khác; tạo hồ sơ lần hai bị từ chối. Admin chỉ được xem. |
+| **BRULE19** | Mỗi tài khoản đăng nhập bằng đúng một định danh theo vai trò | Tài xế đăng nhập bằng số điện thoại (đã xác thực bằng OTP khi đăng ký); khách hàng và Admin đăng nhập bằng email. Email và số điện thoại đăng nhập không trùng giữa các tài khoản. Số điện thoại của khách hàng là thông tin liên hệ trong hồ sơ, không dùng để đăng nhập. (Thêm 2026-10-14 theo yêu cầu giảng viên — ADR-021.) |
 
 
 2. Exception – Các trường hợp ngoại lệ
@@ -299,11 +300,12 @@ UC01 – Đăng ký tài khoản
 | **Tên**                   | Đăng ký tài khoản |
 | **Actor**                 | Customer |
 | **Mục tiêu**              | Khách hàng có tài khoản để đăng nhập |
-| **Pre-condition**         | Chưa có tài khoản với số điện thoại này |
+| **Pre-condition**         | Chưa có tài khoản với email này |
 | **Trigger**               | Khách hàng chọn "Đăng ký" |
-| **Post-condition**        | Có một tài khoản role `customer`. **Chưa có hồ sơ cá nhân**; khách tạo hồ sơ sau khi đăng nhập (UC03) |
-| **Main Flow**             | 1. Khách hàng nhập số điện thoại, mật khẩu. <br> 2. Hệ thống kiểm tra dữ liệu và kiểm tra trùng. <br> 3. Hệ thống tạo tài khoản role `customer`. <br> 4. Hệ thống báo đăng ký thành công; khách hàng đăng nhập (UC02). |
-| **Exception**             | Thiếu dữ liệu hoặc sai định dạng → thông báo lỗi. <br> Số điện thoại đã có → từ chối, không tạo tài khoản. |
+| **Post-condition**        | Có một tài khoản role `customer` định danh bằng email (BRULE19). **Chưa có hồ sơ cá nhân**; khách tạo hồ sơ sau khi đăng nhập (UC03) |
+| **Main Flow**             | 1. Khách hàng nhập email, mật khẩu. <br> 2. Hệ thống kiểm tra dữ liệu và kiểm tra trùng. <br> 3. Hệ thống tạo tài khoản role `customer`. <br> 4. Hệ thống báo đăng ký thành công; khách hàng đăng nhập (UC02). |
+| **Exception**             | Thiếu dữ liệu hoặc sai định dạng → thông báo lỗi. <br> Email đã có → từ chối, không tạo tài khoản. |
+| **Ghi chú**               | Sửa 2026-10-14 theo yêu cầu giảng viên (ADR-021): đăng ký bằng email thay số điện thoại |
 
 UC03 – Tạo và cập nhật hồ sơ cá nhân
 | Thành phần                | Nội dung |
@@ -315,8 +317,9 @@ UC03 – Tạo và cập nhật hồ sơ cá nhân
 | **Pre-condition**         | Khách hàng đã đăng nhập (UC02) |
 | **Trigger**               | Khách hàng mở màn hình hồ sơ |
 | **Post-condition**        | Hồ sơ của chính tài khoản đang đăng nhập được tạo hoặc cập nhật (BRULE18) |
-| **Main Flow**             | 1. Khách hàng mở màn hình hồ sơ. <br> 2. Chưa có hồ sơ: hệ thống báo chưa có, khách hàng nhập họ tên (bắt buộc), ngày sinh và email (tùy chọn) và lưu → hồ sơ được tạo. <br> 3. Đã có hồ sơ: hệ thống hiển thị hồ sơ; khách hàng sửa và lưu. |
-| **Exception**             | Thiếu họ tên, sai định dạng ngày sinh hoặc email, văn bản chứa mã HTML → thông báo lỗi. <br> Tạo hồ sơ khi đã có → từ chối (BRULE18). <br> Sửa khi chưa có hồ sơ → báo chưa có hồ sơ. <br> Xem hoặc sửa hồ sơ của người khác → từ chối. |
+| **Main Flow**             | 1. Khách hàng mở màn hình hồ sơ. <br> 2. Chưa có hồ sơ: hệ thống báo chưa có, khách hàng nhập họ tên và số điện thoại liên hệ (bắt buộc), ngày sinh (tùy chọn) và lưu → hồ sơ được tạo. <br> 3. Đã có hồ sơ: hệ thống hiển thị hồ sơ; khách hàng sửa và lưu (số điện thoại sửa được, không xóa được). |
+| **Exception**             | Thiếu họ tên hoặc số điện thoại, sai định dạng ngày sinh hoặc số điện thoại, văn bản chứa mã HTML → thông báo lỗi. <br> Tạo hồ sơ khi đã có → từ chối (BRULE18). <br> Sửa khi chưa có hồ sơ → báo chưa có hồ sơ. <br> Xem hoặc sửa hồ sơ của người khác → từ chối. |
+| **Ghi chú**               | Sửa 2026-10-14 theo yêu cầu giảng viên (ADR-021): hồ sơ có số điện thoại (bắt buộc, không duy nhất), không còn email |
 
 UC02 – Đăng nhập
 | Thành phần                | Nội dung                                                                                                                                                                                                                              |
@@ -328,8 +331,8 @@ UC02 – Đăng nhập
 | **Pre-condition**         | Người dùng đã có tài khoản                                                                                                                                                                                                            |
 | **Trigger**               | Người dùng nhập thông tin đăng nhập                                                                                                                                                                                                   |
 | **Post-condition**        | Người dùng đăng nhập thành công và được cấp quyền tương ứng                                                                                                                                                                           |
-| **Main Flow**             | 1. Người dùng nhập số điện thoại và mật khẩu. <br> 2. Hệ thống kiểm tra thông tin. <br> 3. Hệ thống xác thực tài khoản. <br> 4. Hệ thống tạo phiên đăng nhập. <br> 5. Người dùng được chuyển đến giao diện phù hợp với vai trò. |
-| **Alternative/Exception** | Thông tin đăng nhập không chính xác → hệ thống thông báo lỗi. <br> Tài khoản bị khóa → từ chối đăng nhập và thông báo cho người dùng.                                                                                                 |
+| **Main Flow**             | 1. Người dùng nhập định danh và mật khẩu: Customer và Operator nhập **email**; Driver nhập **số điện thoại** (BRULE19). <br> 2. Hệ thống kiểm tra thông tin. <br> 3. Hệ thống xác thực tài khoản. <br> 4. Hệ thống tạo phiên đăng nhập. <br> 5. Người dùng được chuyển đến giao diện phù hợp với vai trò. |
+| **Alternative/Exception** | Thông tin đăng nhập không chính xác → hệ thống thông báo lỗi. <br> Nhập cả email lẫn số điện thoại, hoặc không nhập định danh nào → thông báo lỗi. <br> Tài khoản bị khóa → từ chối đăng nhập và thông báo cho người dùng. (Sửa 2026-10-14 — ADR-021.) |
 
 UC04 – Đặt xe
 | Thành phần           | Nội dung                                                                                                                                                                                                                                         |
@@ -437,7 +440,7 @@ UC22 – Giám sát chuyến đi
 | **AC14** | Rating             | Customer đánh giá sau khi hoàn thành        |
 | **AC15** | Operator           | Operator có quyền xem/giám sát chuyến       |
 | **AC16** | Hủy chuyến         | Chuyến chuyển CANCELED; các bên được báo    |
-| **AC17** | Danh sách booking  | Trả đúng booking của khách, có limit/paging |
+| **AC17** | Danh sách booking  | Trả đúng booking theo mã khách, có limit/paging; khách xem mã khác của mình bị từ chối, Admin xem được mọi mã (sửa 2026-10-14) |
 | **AC18** | Nhận chuyến        | Trạng thái Online/Offline được ghi nhận     |
 | **AC19** | Đăng ký tài xế     | Hồ sơ được tạo ở trạng thái chờ duyệt       |
 | **AC20** | Duyệt hồ sơ        | Trạng thái hồ sơ đổi; tài xế nhận kết quả   |
@@ -447,10 +450,12 @@ UC22 – Giám sát chuyến đi
 | **AC24** | Tài xế hủy         | Chuyến chuyển CANCELED; khách được báo và được hoàn tiền |
 | **AC25** | Hạn thanh toán     | Quá 10 phút hoặc 3 lần thử thất bại: booking bị hủy |
 | **AC26** | Tính cước          | Cước đúng công thức FR16 và không đổi sau khi đặt |
-| **AC27** | Đăng ký khách      | Tài khoản `customer` được tạo và đăng nhập được; trùng số điện thoại bị từ chối; chưa có hồ sơ |
-| **AC28** | Tạo hồ sơ khách    | Sau khi đăng nhập tạo được hồ sơ của chính mình; tạo lần hai bị từ chối; xem trước khi tạo → không tìm thấy |
+| **AC27** | Đăng ký khách      | Tài khoản `customer` được tạo bằng email và đăng nhập được bằng email; trùng email bị từ chối; chưa có hồ sơ (sửa 2026-10-14) |
+| **AC28** | Tạo hồ sơ khách    | Sau khi đăng nhập tạo được hồ sơ của chính mình với họ tên và số điện thoại; thiếu số điện thoại bị từ chối; tạo lần hai bị từ chối; xem trước khi tạo → không tìm thấy (sửa 2026-10-14) |
 | **AC29** | Xem / sửa hồ sơ    | Chủ hồ sơ xem và sửa được; Admin xem được; người khác bị từ chối |
 | **AC30** | Nộp lại hồ sơ tài xế | Hồ sơ bị từ chối nộp lại được và trở về chờ duyệt, lý do từ chối cũ bị xóa; hồ sơ đang chờ duyệt hoặc đã duyệt nộp lại bị từ chối |
+| **AC31** | Xem tài xế theo mã | Admin xem được mọi tài xế; tài xế chỉ xem được hồ sơ của mình; khách hàng bị từ chối (thêm 2026-10-14) |
+| **AC32** | Đăng nhập theo vai trò | Khách hàng, Admin đăng nhập bằng email; tài xế bằng số điện thoại; gửi cả hai hoặc thiếu cả hai định danh bị từ chối; chuỗi SQL injection trong định danh không đăng nhập được (thêm 2026-10-14) |
 
 RTM cho CAB System
 | RTM       | Business Goal | Business Requirement      | Functional Requirement                | Business Rule | Use Case          | Acceptance Criteria |
@@ -481,10 +486,11 @@ RTM cho CAB System
 | **RTM24** | BG03          | BR07 – Tài xế thực hiện chuyến | FR41 – Tài xế hủy chuyến đã nhận | BRULE16        | UC32              | AC24                |
 | **RTM25** | BG04          | BR04 – Thanh toán         | FR18 – Thanh toán điện tử trả trước   | BRULE17        | UC14, UC15        | AC25                |
 | **RTM26** | BG05          | BR05 – Thông tin khách hàng | FR42 – Đăng xuất                    | —              | UC33              | —                   |
-| **RTM27** | BG05          | BR05 – Thông tin khách hàng | FR26 – Đăng ký tài khoản, đăng nhập | —              | UC01, UC02        | AC27                |
+| **RTM27** | BG05          | BR05 – Thông tin khách hàng | FR26 – Đăng ký tài khoản, đăng nhập | BRULE19        | UC01, UC02        | AC27, AC32          |
 | **RTM28** | BG03          | BR05 – Thông tin khách hàng | FR27 – Quản lý hồ sơ khách hàng     | BRULE18        | UC03, UC19        | AC28, AC29          |
 | **RTM29** | BG03          | BR10 – Thông báo          | FR21–FR24 – Gửi thông báo (đặt xe, tài xế nhận chuyến, trạng thái chuyến, thanh toán) | — | UC16 | AC16, AC20 |
 | **RTM30** | BG02          | BR08 – Tài xế, phương tiện | FR43 – Nộp lại hồ sơ tài xế bị từ chối | BRULE12      | UC29, UC30        | AC30                |
+| **RTM31** | BG02          | BR08 – Tài xế, phương tiện | FR28 – Quản lý hồ sơ tài xế (xem theo mã) | BRULE12     | UC20, UC21        | AC31                |
 
 
 ```mermaid

@@ -2,6 +2,7 @@
 
 > Vòng 2, viết 2026-10-04. Mục chấm **14, 15, 16, 19, 30**; nền cho **17, 18** (chuyến, hủy, hoàn tiền), bổ trợ **7** (message K1, K2, K5, K6 trên Kafka UI), **28** (tài xế đặt xe → 403). FR01–FR11, FR16, FR18–FR20, FR35, FR37.
 > Đầu vào: `CLAUDE.md` (Quyết định nghiệp vụ "Cước", "Thanh toán", "Ghép tài xế", "Điều kiện đặt xe"; Quyết định kỹ thuật "Tài xế nhận chuyến", "Đặt xe → cước và thanh toán", "Kết quả thanh toán", "Tính cước", "Khóa chính", "Phát event Kafka", "Hệ thống ngoài", "Lỗi sai trạng thái"; Ràng buộc khi thi); `srs.md` (FR01–FR11, FR16, FR18–FR20, FR35, FR37, BRULE01–08, BRULE13, BRULE17, UC04–UC09, UC13–UC15, UC18, UC24, AC01–AC09, AC12, AC13, AC17, AC21, AC25, AC26, RTM01–RTM08, RTM11, RTM13, RTM14, RTM17, RTM19, RTM22, RTM25); `docs/design/01` B1–B18, M1–M13, T1, T4, T8, D8, D9; `docs/design/02` G4, G6, S2–S5, K1–K6, mục 4.6, 6, 8.2, 8.3; `docs/design/03` mục 6, 7, 8, 11.3, 13, 14; `docs/design/04` A19–A25, A30–A32, mục 1, 1.4, 1.8, 1.10, 2.7, 3, 4, 5; `docs/design/06` mục 14, 15, 16, 19, 30; ADR-008, ADR-009, ADR-014, ADR-015, ADR-017, ADR-018.
+> **Sửa 2026-10-14 (theo yêu cầu giảng viên, sinh viên chốt) — chỉ phần A20 (mục 14):** danh sách booking **theo mã khách**: **`GET /api/v1/customers/{id}/bookings?status&page&limit`**, thay `GET /api/v1/bookings` (bỏ route cũ để chỉ còn một cách). Khách chỉ xem mã của mình (mã khác → 403 `NOT_OWNER`, so trước khi đọc database); admin xem mọi mã; tài xế → 403 `FORBIDDEN`. Vẫn do `booking-service` xử lý (Gateway định tuyến theo bảng route). Proto: `ListBookingsRequest` thêm `int64 customer_id = 4`. Token khách lấy bằng A05 `{"email":"kh1@cab.vn",…}` (spec 09-10). Mục sửa: 1, 2.6, 4.3, 5.1, 8, 9. AC đổi: AC-DX-01, 02, 03; AC mới: AC-DX-26 … AC-DX-28. Phần còn lại của spec không đổi.
 > Phụ thuộc: **spec 00**, **spec 09-10** (token, xác thực Gateway mục 4.1, seed tài khoản), **spec 12-13-21-23** (`driver.proto`, bảng `drivers`, `FindNearbyDrivers`, seed TX1–TX8).
 > Ngoài phạm vi (spec sau): A22 hủy booking, A26–A29 chuyến (mục 17, 18); `payment-service` nghe K3 / K4 / K5 để hoàn tiền, ghi nhận tiền mặt; `driver-service` nghe K5; `notification-service` nghe K1–K6, A33; `GetDriverSummary` (S6); seed `ratings` (mục 20).
 > Ký hiệu: **[ĐC]** đã chốt; **[BA]** BA chọn (gom ở mục 9).
@@ -10,7 +11,7 @@
 
 | Mục chấm | BG | BR | FR | BRULE / quy tắc | UC | AC / RTM | NFR |
 |---|---|---|---|---|---|---|---|
-| 14 Booking của khách, limit + paging, seed ≥ 5 | BG03 | BR03 | FR37 | B14 | UC18 | AC17 / RTM19 | NFR08 |
+| 14 Booking của khách theo mã, limit + paging, seed ≥ 5 | BG03 | BR03 | FR37 | B14, BRULE12 | UC18 | AC17 / RTM19 | NFR07, NFR08 |
 | 15 Đặt xe → tìm tài xế → gửi Offer | BG01 | BR01, BR02 | FR01–FR06, FR16, FR35 | BRULE01–04, BRULE08, BRULE13; B1–B5, B10, B15; M1 | UC04, UC05, UC06, UC07 | AC01–AC05, AC26 / RTM01–RTM05, RTM11, RTM17 | NFR01, NFR02 |
 | 15 (phụ) Từ chối, hết hạn, không có tài xế | BG01 | BR02 | FR08, FR09, FR10 | BRULE05–07, BRULE15; B6, B7 | UC06, UC09 | AC07–AC09, AC23 / RTM06–RTM08 | NFR05 |
 | 16 Tài xế nhận chuyến | BG01, BG03 | BR02 | FR07, FR11 | B8, B9, B11, B12, B17; D8; T1, T8 | UC08 | AC06 / RTM05 | NFR14 |
@@ -69,7 +70,7 @@ Vì sao giữ khóa Booking trong lúc gọi S3, S5 [BA DX1]: hủy (spec 18) v�
 
 ### 2.6 UC18, UC24 — Xem danh sách booking (A20), booking (A21), thanh toán (A30), Offer (A23)
 
-Chỉ đọc. Khách chỉ thấy của mình (B14); admin xem được A21, A30; tài xế chỉ thấy Offer của mình.
+Chỉ đọc. A20 (sửa 2026-10-14): danh sách theo mã khách — khách chỉ mã của mình, admin mọi mã (B14). Admin xem được A21, A30; tài xế chỉ thấy Offer của mình.
 
 ## 3. Service tham gia
 
@@ -131,25 +132,30 @@ Như spec 12-13-21-23 mục 4.1 (field / query lạ → 400 `INVALID_INPUT`; enu
 
 "Trùng", "không tìm thấy" không áp dụng (tạo mới, khách đặt nhiều booking được).
 
-### 4.3 A20 `GET /api/v1/bookings?status&page&limit` — booking của tôi (mục 14)
+### 4.3 A20 `GET /api/v1/customers/{customer_id}/bookings?status&page&limit` — booking theo mã khách (mục 14) — sửa 2026-10-14
 
 | | |
 |---|---|
-| Token / role | Có / `customer` |
-| rpc | `ListBookings` (lọc `customer_id = x-account-id`) |
+| Vì sao đường dẫn này | Giảng viên yêu cầu xem booking **theo mã khách** (2026-10-14). Danh sách booking của một khách là **tài nguyên con** của khách đó (04 R2: `/{resource}/{id}/{sub-resource}`). Đường dẫn bắt đầu bằng `customers` nhưng **dữ liệu thuộc Booking** → bảng route của Gateway trỏ sang `booking-service` (`customer-service` không tham gia, không có lời gọi mới giữa service). Bỏ `GET /api/v1/bookings` để chỉ còn một cách |
+| Token / role | Có / `customer` (chỉ mã của mình), `admin` (mọi mã) |
+| rpc | `ListBookings` với `customer_id` = mã trong đường dẫn |
+| Kiểm tra ở Gateway | Mã khớp `^[1-9][0-9]{0,15}$`, sai (`abc`, `me`, `1 OR 1=1`) → 400 `INVALID_ID`; role `driver` → 403 `FORBIDDEN` |
+| Kiểm tra ở `booking-service` | `x-role = customer` và `customer_id` ≠ `x-account-id` → 403 `NOT_OWNER` **ngay, không đọc database** (như A09 — B14) [BA DX23]; `admin` bỏ qua; sau đó `SELECT … WHERE customer_id = $1 …` |
 | Query cho phép | `status` (một trong 5 trạng thái Booking), `page`, `limit` |
 | Thứ tự | `created_at` giảm dần, rồi `booking_id` giảm dần |
-| Response 200 | `{ "data": [ { "booking_id": 7, "status": "PENDING_PAYMENT", "vehicle": "CAR_7", "pay": "ONLINE", "fare": 56000, "created_at": "…" }, { "booking_id": 6, … } ], "pagination": { "page": 1, "limit": 2, "total": 7, "total_pages": 4 } }` |
+| Response 200 | `{ "data": [ { "booking_id": 7, "status": "PENDING_PAYMENT", "vehicle": "CAR_7", "pay": "ONLINE", "fare": 56000, "created_at": "…" }, { "booking_id": 6, … } ], "pagination": { "page": 1, "limit": 2, "total": 7, "total_pages": 4 } }` (không đổi) |
 
-| Đường lỗi | HTTP | Mã |
-|---|---|---|
-| 401 các loại | 401 | như A19 |
-| Role `driver`, `admin` | 403 | `FORBIDDEN` |
-| `status` lạ; query lạ | 400 | `INVALID_INPUT` |
-| `page` / `limit` sai (`limit=abc`, `0`, `51`) | 400 | `INVALID_PAGINATION` |
-| Service dừng | 503 | `SERVICE_UNAVAILABLE` |
+| Đường lỗi | HTTP | Mã | Ai trả |
+|---|---|---|---|
+| 401 các loại | 401 | như A19 | Gateway |
+| Role `driver` | 403 | `FORBIDDEN` | Gateway |
+| Mã khách sai định dạng | 400 | `INVALID_ID` | Gateway |
+| Khách gọi mã **khác** mã của mình | 403 | `NOT_OWNER` | Service |
+| `status` lạ; query lạ | 400 | `INVALID_INPUT` | Gateway |
+| `page` / `limit` sai (`limit=abc`, `0`, `51`) | 400 | `INVALID_PAGINATION` | Gateway |
+| Service dừng | 503 | `SERVICE_UNAVAILABLE` | Gateway |
 
-Không có booking → 200 `data: []`, `total: 0`.
+"Không tìm thấy": mã không có booking (kể cả mã khách không tồn tại, khi admin gọi) → 200 `data: []`, `total: 0` — **không có 404** vì `booking-service` không biết khách nào tồn tại và không gọi `customer-service` (Q56) [BA DX24]. "Trùng" không áp dụng. Đường cũ `GET /api/v1/bookings` → 404 `ROUTE_NOT_FOUND` (`POST /api/v1/bookings` — A19 — giữ nguyên).
 
 ### 4.4 A21 `GET /api/v1/bookings/{booking_id}` — xem booking
 
@@ -307,7 +313,7 @@ Gateway nạp proto với `longs: Number`, `defaults: false`, `oneofs: true` (fi
 | `Booking` | `int64 booking_id = 1; string status = 2; string vehicle = 3; string pay = 4; int32 distance_m = 5; int32 fare = 6; int64 payment_id = 7; optional string payment_expires_at = 8; repeated double from = 9; repeated double to = 10; optional string from_address = 11; optional string to_address = 12; optional int64 driver_id = 13; optional int64 trip_id = 14; optional string canceled_by = 15; optional string cancel_reason = 16; optional string created_at = 17;` — mỗi rpc chỉ điền field của response tương ứng (mục 4); `payment_expires_at` chỉ có ở A19 (DX19) |
 | `Pagination` | `int32 page = 1; int32 limit = 2; int32 total = 3; int32 total_pages = 4;` |
 | `CreateBookingRequest` | `repeated double from = 1; repeated double to = 2; string vehicle = 3; string pay = 4; optional string from_address = 5; optional string to_address = 6;` |
-| `ListBookingsRequest` → `ListBookingsResponse` | `optional string status = 1; int32 page = 2; int32 limit = 3;` → `repeated Booking data = 1; Pagination pagination = 2;` |
+| `ListBookingsRequest` → `ListBookingsResponse` | `optional string status = 1; int32 page = 2; int32 limit = 3; int64 customer_id = 4;` (**thêm `customer_id` 2026-10-14** — mã trong đường dẫn; số mới, không đổi số cũ) → `repeated Booking data = 1; Pagination pagination = 2;` |
 | `GetBookingRequest` | `int64 booking_id = 1;` |
 | `Offer` | `int64 offer_id = 1; int64 booking_id = 2; int32 distance_m = 3; string status = 4; string expires_at = 5; repeated double from = 6; repeated double to = 7; string pay = 8; int32 fare = 9;` |
 | `ListOffersRequest` → `ListOffersResponse` | `optional string status = 1; int32 page = 2; int32 limit = 3;` → `repeated Offer data = 1; Pagination pagination = 2;` |
@@ -318,7 +324,7 @@ Gateway nạp proto với `longs: Number`, `defaults: false`, `oneofs: true` (fi
 | rpc | Ai gọi | Role (`x-role`) | Lỗi (status → `details`) |
 |---|---|---|---|
 | `CreateBooking` | GW (A19) | `customer` | `UNAUTHENTICATED` → `IDENTITY_MISSING`; `PERMISSION_DENIED` → `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT` / `INVALID_COORDINATES` / `TEXT_CONTAINS_HTML` / `SAME_PICKUP_AND_DESTINATION`; `UNAVAILABLE` (S4 lỗi); `INTERNAL` |
-| `ListBookings` | GW (A20) | `customer` | `IDENTITY_MISSING`; `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT` / `INVALID_PAGINATION`; `INTERNAL` |
+| `ListBookings` | GW (A20) | `customer`, **`admin`** (sửa 2026-10-14) | `IDENTITY_MISSING`; `FORBIDDEN` (`driver`); `PERMISSION_DENIED` → **`NOT_OWNER`** (`customer`, `customer_id` ≠ `x-account-id`); `INVALID_ARGUMENT` → `INVALID_INPUT` (gồm `customer_id` ≤ 0) / `INVALID_PAGINATION`; `INTERNAL` |
 | `GetBooking` | GW (A21) | `customer`, `admin` | `IDENTITY_MISSING`; `FORBIDDEN`; `NOT_FOUND` → `BOOKING_NOT_FOUND`; `PERMISSION_DENIED` → `NOT_OWNER`; `INTERNAL` |
 | `ListOffers` | GW (A23) | `driver` | `IDENTITY_MISSING`; `FORBIDDEN`; `INVALID_ARGUMENT` → `INVALID_INPUT` / `INVALID_PAGINATION`; `INTERNAL` |
 | `AcceptOffer` | GW (A24) | `driver` | `IDENTITY_MISSING`; `FORBIDDEN`; `NOT_FOUND` → `OFFER_NOT_FOUND`; `PERMISSION_DENIED` → `NOT_OWNER`; `FAILED_PRECONDITION` → `INVALID_STATUS_TRANSITION` / `OFFER_EXPIRED` / `DRIVER_NOT_AVAILABLE`; `UNAVAILABLE` (S3 / S5 lỗi); `INTERNAL` |
@@ -551,9 +557,12 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23 đạt; `docker compose down 
 
 | AC | Mục | Given | When | Then |
 |---|---|---|---|---|
-| AC-DX-01 | 14 | Seed | A20 `?limit=2` `[KH1]`; thêm `&page=2` | 200 booking 7, 6; `pagination` `{1, 2, 7, 4}`; trang 2: 5, 4 (AC17) |
-| AC-DX-02 | 14 | Seed | A20 `[KH1]` `?status=canceled`; A20 `[KH2]` | `total = 2` (B6 rồi B1); `data: []`, `total = 0` (B14) |
-| AC-DX-03 | 14 (400/401/403) | — | `?limit=abc`; `?limit=51`; `?page=0`; `?status=XYZ`; `?sort=asc`; không token; `[TX1]`; `[AD1]` | 400 `INVALID_PAGINATION` ×3; 400 `INVALID_INPUT` ×2; 401 `TOKEN_MISSING`; 403 `FORBIDDEN` ×2 |
+| AC-DX-01 (**đổi 2026-10-14**) | 14 | Seed | A20 `GET /api/v1/customers/1/bookings?limit=2` `[KH1]`; thêm `&page=2` | 200 booking 7, 6; `pagination` `{1, 2, 7, 4}`; trang 2: 5, 4 (AC17) |
+| AC-DX-02 (**đổi 2026-10-14**) | 14 | Seed | `customers/1/bookings?status=canceled` `[KH1]`; `customers/2/bookings` `[KH2]` | `total = 2` (B6 rồi B1); `data: []`, `total = 0` (B14) |
+| AC-DX-03 (**đổi 2026-10-14**) | 14 (400/401/403) | — | `customers/1/bookings` với `?limit=abc`; `?limit=51`; `?page=0`; `?status=XYZ`; `?sort=asc` `[KH1]`; không token; `[TX1]` | 400 `INVALID_PAGINATION` ×3; 400 `INVALID_INPUT` ×2; 401 `TOKEN_MISSING`; 403 `FORBIDDEN` (admin **không** còn 403 — xem AC-DX-27) |
+| AC-DX-26 (mới 2026-10-14) | 14 (403) | Seed | `customers/2/bookings?limit=2` `[KH1]`; `customers/999/bookings` `[KH1]` | 403 `NOT_OWNER` cả hai (so mã trước khi đọc database — không lộ khách 999 có tồn tại không) (AC17) |
+| AC-DX-27 (mới 2026-10-14) | 14 | Seed | `customers/1/bookings?limit=2` `[AD1]`; `customers/999/bookings` `[AD1]` | 200 như AC-DX-01; 200 `data: []`, `total = 0` (không 404) |
+| AC-DX-28 (mới 2026-10-14) | 14 (400/404) | — | `customers/abc/bookings` `[KH1]`; `customers/me/bookings` `[KH1]`; `GET /api/v1/bookings?limit=2` `[KH1]` (đường cũ) | 400 `INVALID_ID`; 400 `INVALID_ID`; 404 `ROUTE_NOT_FOUND` |
 | AC-DX-04 | 14 | Seed | `docker exec booking-db psql -U cab -d booking -c "table bookings"`; tương tự `payments` ở `payment-db`, `trips` ở `trip-db`; `docker compose restart booking-service payment-service trip-service` rồi đếm lại | 7, 7, 3 dòng; sau restart vẫn 7, 7, 3; `trip_status_history` 11 dòng (không nhân đôi) |
 | AC-DX-05 | 15 | Seed, chưa đặt xe | A19 `{"from":[10.82,106.68],"to":[10.83,106.69]}` `[KH1]` | 201 `booking_id` 1000, `SEARCHING`, `vehicle` `CAR_4`, `pay` `CASH`, `distance_m` 2026 (± 3), **`fare` 45000**, `payment_id` 1000; Kafka UI `booking.created` có message key `1000`, không có tọa độ (AC01) |
 | AC-DX-06 | 15 | Sau AC-DX-05, ≈ 1 s | A23 `GET /api/v1/offers` `[TX1]` | 200 một Offer `offer_id` 1000, `booking_id` 1000, `distance_m` 111, `PENDING`, `expires_at` ≈ +300 s, `pay` `CASH`, `fare` 45000; Kafka `booking.offer-created` có `driver_id` 11 (AC03, AC05; TX2 xe máy, TX5 Offline, TX6 bận, TX8 xa đều bị loại) |
@@ -591,13 +600,13 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23 đạt; `docker compose down 
 | AC-TT-13 | 30 (NFR05) | `docker compose stop booking-service` | A31 trên một payment `ONLINE` `PENDING` (khóa mới); `start booking-service`; ≈ 2 s sau A21 | 200 `COMPLETED` (Payment không lỗi theo Booking); booking `SEARCHING` (K6 được xử lý khi Booking chạy lại) |
 | AC-TT-14 | 7 | Sau các AC trên | Kafka UI xem một message mỗi topic K1–K6 | Đúng phong bì `event_id`, `event_type` = tên topic, `occurred_at`, `data` theo mục 6; không họ tên, số điện thoại, tọa độ, địa chỉ |
 
-Tổng: **39 tiêu chí** (25 AC-DX, 14 AC-TT).
+Tổng: **42 tiêu chí** (28 AC-DX, 14 AC-TT) — thêm AC-DX-26 … 28 ngày 2026-10-14.
 
 Chuỗi gõ tay khi thi (khớp 06 mục 14, 15, 16, 19, 30 và 04 mục 5; dùng lại tab; `(…)` = tùy chọn; thời gian gồm cả giải thích theo 06 mục 5):
 
 | Mục | Request | Kết quả | Thời gian |
 |---|---|---|---|
-| 14 | Tab GET (mục 13): `drivers?…` → `bookings?limit=2` → thêm `&page=2` | 7, 6; `total` 7, `total_pages` 4; 5, 4 | ~18 s, Ổn |
+| 14 (**đổi 2026-10-14**) | Tab GET (mục 13, `[KH1]`): `drivers?…` → `customers/1/bookings?limit=2` → thêm `&page=2` → sửa `customers/1` thành `customers/2` → (tab admin `[AD1]`: `customers/1/bookings?limit=2`) | 7, 6; `total` 7, `total_pages` 4; 5, 4; 403 `NOT_OWNER`; (200 như request 1) | ~22 s, Ổn |
 | 15 | `POST localhost:3000/api/v1/bookings` `[KH1]` `{"from":[10.82,106.68],"to":[10.83,106.69]}` (**tab đặt xe**) → nhân bản tab: `GET`, URL `offers`, `[TX1]` (**tab chuyến**) | 201 `SEARCHING`, `CAR_4`, `CASH`, **`fare` 45000**, `booking_id` 1000; 200 Offer 1000 `PENDING`, `distance_m` 111 | ~32 s, **Sát** |
 | 16 | Tab chuyến: `PATCH`, URL `offers/1000`, body `{"status":"ACCEPTED"}` → (tab GET `notifications` — spec Notification) | 200 `ACCEPTED`, `DRIVER_ASSIGNED`, **`trip_id` 1000** | ~18 s, Ổn |
 | 19 | `POST localhost:3000/api/v1/payments/7/transactions` `[KH1]`, `Idempotency-Key:k1`, `{"simulate_result":"MANUAL"}` → nhân bản: URL `payment-callbacks`, **No Auth**, `X-Callback-Secret:cab-secret`, `{"txn_id":"SIM-7-1"}` → (tab GET `bookings/7`) | 200 `PENDING`, `SIM-7-1`; 200 `SUCCEEDED`, **`COMPLETED`**; (`SEARCHING`) | ~42 s, **Vượt** (Q64); dự phòng: chỉ request 1, bỏ body → 200 `COMPLETED` ~25 s |
@@ -605,7 +614,7 @@ Chuỗi gõ tay khi thi (khớp 06 mục 14, 15, 16, 19, 30 và 04 mục 5; dùn
 
 Ràng buộc thứ tự: 13, 14 trước 15 (TX1 rảnh, `total` 7); 16 trong 300 s sau 15; **19 → 30 liền nhau** (sau 300 s không ai nhận B7 thì `NO_DRIVER_FOUND`, Payment 7 sẽ `REFUNDED` khi spec 18 xong); 15 dùng TX1 (`CAR_4`), 19 dùng TX4 (`CAR_7`) nên không tranh nhau.
 
-Kết quả mong đợi theo phiếu chấm: **14** — chỉ booking của khách trong token, `limit` + `page` + `total`, seed 7 booking; **15** — đặt xe trả cước cố định ngay, tài xế rảnh gần nhất đúng loại xe nhận Offer (thấy bằng A23 và trên Kafka UI); **16** — tài xế nhận → booking `DRIVER_ASSIGNED`, có `trip_id`, Trip `ACCEPTED`, event K5; **19** — thanh toán online, callback từ ngoài → Payment `COMPLETED`, booking chuyển sang tìm tài xế; **30** — gửi lại thanh toán hoặc callback → response cũ, không giao dịch / event mới.
+Kết quả mong đợi theo phiếu chấm: **14** — booking theo mã khách (`customers/{id}/bookings`), khách chỉ mã của mình (mã khác 403), admin mọi mã, `limit` + `page` + `total`, seed 7 booking; **15** — đặt xe trả cước cố định ngay, tài xế rảnh gần nhất đúng loại xe nhận Offer (thấy bằng A23 và trên Kafka UI); **16** — tài xế nhận → booking `DRIVER_ASSIGNED`, có `trip_id`, Trip `ACCEPTED`, event K5; **19** — thanh toán online, callback từ ngoài → Payment `COMPLETED`, booking chuyển sang tìm tài xế; **30** — gửi lại thanh toán hoặc callback → response cũ, không giao dịch / event mới.
 
 ### 8.1 Có thể làm sau (vượt phiếu chấm)
 
@@ -649,6 +658,8 @@ Kết quả mong đợi theo phiếu chấm: **14** — chỉ booking của khá
 | DX19 | **A21 không trả `payment_expires_at`** (sinh viên chốt 2026-10-05). Hạn thanh toán xem ở A19 (lúc đặt) và A30 (`expires_at`) | Booking không lưu hạn thanh toán; muốn trả ở A21 thì phải lưu trùng cột của Payment hoặc gọi thêm S4 mỗi lần xem | Mục 4.4, 5.1, AC-DX-25 |
 | DX20 | **A24 khi S3 lỗi** (sinh viên chốt 2026-10-05): S3 trả `FAILED_PRECONDITION` **hoặc `NOT_FOUND`** → 409 `DRIVER_NOT_AVAILABLE`. S3 lỗi hạ tầng / quá deadline → gọi `ReleaseDriver` phòng khi (không biết đã giữ hay chưa) rồi 503 `SERVICE_UNAVAILABLE`; Offer vẫn `PENDING` | `ReleaseDriver` lặp an toàn (DX6) nên gọi thừa không hại; tài xế không bị kẹt `BUSY` nếu lần giữ thực ra đã thành công | Mục 2.3, 5.6 |
 | DX21 | **Chống lặp A31 so đúng body đã gửi** (sinh viên chốt 2026-10-05): body rỗng (hash của `{}`) và `{"simulate_result":"SUCCESS"}` là **hai nội dung khác nhau** → cùng khóa thì 409 `IDEMPOTENCY_KEY_REUSED`. Chỉ chuẩn hóa chữ hoa / thứ tự khóa / khoảng trắng, **không** điền giá trị mặc định trước khi băm | Đúng định nghĩa "cùng request" của 04 mục 1.4; không phải đoán ý client | Mục 4.8 bước 3 |
+| DX23 (2026-10-14) | A20: khách gọi mã khác → 403 `NOT_OWNER` **trước khi đọc database** | Mã khách dễ đoán; không lộ "khách này có booking không" — cùng quy tắc A09, A14 | Mục 4.3 |
+| DX24 (2026-10-14) | A20: admin hỏi mã không có booking → 200 rỗng, **không 404** | Booking không biết khách nào tồn tại; gọi Customer để kiểm thì thêm một đường giao tiếp không FR nào cần (Q56) | Mục 4.3 |
 | DX22 | **rpc nội bộ gọi thiếu `x-role`** (`CreatePayment`, `CreateTrip`, `ReserveDriver`, `ReleaseDriver`) → `UNAUTHENTICATED` `IDENTITY_MISSING`; `x-role` sai → `PERMISSION_DENIED` `FORBIDDEN` (sinh viên chốt 2026-10-05, đồng nhất với AC-DX-23 và code) | Một quy tắc cho mọi rpc: thiếu danh tính khác sai quyền, như 401 / 403 ở Gateway | Mục 5.2–5.5, AC-DX-23, AC-DX-24 |
 
 ### 9.2 Chỗ thiết kế chưa khớp hoặc thiếu (ghi lại, không tự sửa design)

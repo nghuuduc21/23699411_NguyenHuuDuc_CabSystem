@@ -3,6 +3,7 @@
 > Vòng 2, viết 2026-10-05. Mục chấm **20, 29**; bổ trợ **26** (nhận xét là văn bản tự do), **28** (tài xế / admin gửi đánh giá → 403), **3** (Gateway có rate limit). FR25; NFR04, NFR06, NFR14, NFR17.
 > Đầu vào: `CLAUDE.md` (Quyết định kỹ thuật "Redis dừng", "Khóa chính", "Lỗi sai trạng thái"; quy tắc "Redis ở Gateway"; Ràng buộc khi thi); `srs.md` (BG03, BG05, BR11, FR25, BRULE11, UC17, AC14, RTM15, NFR04, NFR06, NFR14); `docs/design/01` mục 6.8 (V1–V5), R10, R11; `docs/design/02` mục 2.2, G8, G10, S7, mục 9; `docs/design/03` mục 10, 12, 13, 14; `docs/design/04` A34–A36, mục 1, 1.5, 1.6, 1.10, 3, 4, 5; `docs/design/06` mục 20, 29; ADR-007, ADR-010, ADR-015, ADR-018.
 > Phụ thuộc: **spec 00** (Redis, Compose, `.env.example` có 3 biến `RATE_LIMIT_*`), **spec 09-10** (xác thực Gateway mục 4.1, seed tài khoản, tab đăng nhập), **spec 14-15-16-19-30** (bảng `trips`, seed T3, T4, T5, quy ước `x-role: system` mục 5.5), **spec 17-18** (đang viết — trình tự trạng thái chuyến, giá trị `COMPLETED`).
+> **Sửa 2026-10-14 (theo yêu cầu giảng viên, sinh viên chốt) — chỉ phần rate limit (mục 29):** bốn route công khai đổi đường dẫn sang nhóm `auth` (ADR-021): A04 `POST /api/v1/auth/register`, A05 `POST /api/v1/auth/login`, A07 `POST /api/v1/auth/otp`, A08 `POST /api/v1/auth/driver-register` — vẫn **một bộ đếm IP chung**, ngưỡng không đổi. Chuỗi demo mục 29 bấm Send ở tab đăng nhập KH1 với body **email** `{"email":"kh1@cab.vn","password":"12345678"}`. Mục sửa: 4.4, 5.4 (bảng route), 8 (AC-GH-01, 03, 07 đổi; AC-GH-09, 10 mới), chuỗi gõ tay. Phần đánh giá (mục 20) không đổi.
 > Ngoài phạm vi: API liệt kê đánh giá; tài xế đánh giá khách; sửa / xóa đánh giá (không FR nào yêu cầu).
 > Ký hiệu: **[ĐC]** đã chốt; **[BA]** BA chọn (gom ở mục 9).
 
@@ -127,7 +128,7 @@ Response 429: body `{ "error": "RATE_LIMITED" }`, vẫn có `X-Request-Id`, `nos
 
 | Nhóm | Route | Đếm theo | Ngưỡng (`.env.example`) |
 |---|---|---|---|
-| Công khai | A04 `POST /api/v1/accounts`, A05 `POST /api/v1/auth/login`, A07 `POST /api/v1/otps`, A08 `POST /api/v1/driver-accounts` | IP — **một bộ đếm chung** cho cả bốn route | `RATE_LIMIT_PUBLIC_MAX` = 5 / 10 s |
+| Công khai (đường dẫn đổi 2026-10-14) | A04 `POST /api/v1/auth/register`, A05 `POST /api/v1/auth/login`, A07 `POST /api/v1/auth/otp`, A08 `POST /api/v1/auth/driver-register` | IP — **một bộ đếm chung** cho cả bốn route | `RATE_LIMIT_PUBLIC_MAX` = 5 / 10 s |
 | Có token | Mọi route có `roles` (gồm A06 đăng xuất, A34–A36) | `account_id` (`sub` của token **đã xác thực**) — một bộ đếm chung cho mọi route | `RATE_LIMIT_ACCOUNT_MAX` = 30 / 10 s |
 | Không đếm | A01–A03 health; A32 callback; đường dẫn không tồn tại (404 `ROUTE_NOT_FOUND`) | — | — |
 
@@ -196,7 +197,7 @@ Cài đặt: `SELECT trip_id, status, customer_id, driver_id FROM trips WHERE tr
 | Spam trong lúc bị chặn | Vẫn `INCR` (số đếm tăng) nhưng **không** kéo dài cửa sổ | Hết `Retry-After` giây là gọi lại được, dù có spam |
 | Redis lỗi / quá 500 ms | Cho qua, **không** header `RateLimit-*`; log `warn` `rate_limit_skipped` kèm `request_id` (như token.js khi không tra được danh sách thu hồi) [ĐC] | `CLAUDE.md` "Redis dừng" |
 | Log khi chặn | `info` `rate_limited` kèm `scope` (`ip` / `account`), `account_id` (nếu có), `path`, `request_id`. **Không** ghi IP, token | NFR10; không log dữ liệu cá nhân |
-| Bảng route | Thêm một cột `rateLimit: 'ip' \| 'account' \| 'none'` vào bảng route (`src/routes.js`); route có `roles` mặc định `account`, A04/A05/A07/A08 `ip`, health và A32 `none` | Một chỗ khai báo, test-agent đọc được |
+| Bảng route | Thêm một cột `rateLimit: 'ip' \| 'account' \| 'none'` vào bảng route (`src/routes.js`); route có `roles` mặc định `account`, A04/A05/A07/A08 (`auth/register`, `auth/login`, `auth/otp`, `auth/driver-register` — đổi 2026-10-14) `ip`, health và A32 `none`. `auth/logout` (A06) có token → `account` | Một chỗ khai báo, test-agent đọc được |
 | Biến môi trường | `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_PUBLIC_MAX`, `RATE_LIMIT_ACCOUNT_MAX` (đã đọc trong `config.js`) | 03 mục 13 |
 
 ## 6. Giao tiếp giữa các service
@@ -281,29 +282,31 @@ Tiền điều kiện: spec 00, 09-10, 14-15-16-19-30 đạt; với AC-DG-08 c�
 | AC-DG-12 | 20 (S7) | Test gọi thẳng `trip-service:50055` trong mạng Compose (cổng riêng từ 2026-10-05, ADR-020) | `GetTripForRating(4)` với `x-role: system`; `(999)`; `(0)`; không `x-role`; `x-role: customer` | `{ trip_id: 4, status: "COMPLETED", customer_id: 1, driver_id: 13 }`; `NOT_FOUND` `TRIP_NOT_FOUND`; `INVALID_ARGUMENT` `INVALID_INPUT`; `UNAUTHENTICATED` `IDENTITY_MISSING`; `PERMISSION_DENIED` `FORBIDDEN` |
 | AC-DG-13 | 20 (seed) | Sau AC-DG-01 | Đếm `ratings`, xem `driver_ratings`; `docker compose restart rating-service`; đếm lại | Số dòng và số liệu **y hệt trước restart** (không nhân đôi seed, không ghi đè `driver_ratings` đã cộng khi demo) |
 | AC-DG-14 | 7, 4 | Sau AC-DG-01 | Kafka UI | Không có topic nào của `rating-service`; không có message mới khi tạo đánh giá |
-| AC-GH-01 | 29 | Không request công khai nào trong 10 s trước | A05 tab đăng nhập KH1 bấm Send **6 lần liên tục** (< 10 s) | Lần 1–5: 200, `RateLimit-Limit: 5`, `RateLimit-Remaining` 4, 3, 2, 1, 0, `RateLimit-Reset` 1–10. Lần 6: **429 `{ "error": "RATE_LIMITED" }`**, `Retry-After` 1–10, `RateLimit-Remaining: 0`, có `X-Request-Id`; log Gateway có `rate_limited` `scope: ip`. Unit test Gateway: khi vượt ngưỡng, handler gọi gRPC **không** được gọi |
+| AC-GH-01 (**đổi 2026-10-14**: body email) | 29 | Không request công khai nào trong 10 s trước | A05 tab đăng nhập KH1 (`{"email":"kh1@cab.vn","password":"12345678"}`) bấm Send **6 lần liên tục** (< 10 s) | Lần 1–5: 200, `RateLimit-Limit: 5`, `RateLimit-Remaining` 4, 3, 2, 1, 0, `RateLimit-Reset` 1–10. Lần 6: **429 `{ "error": "RATE_LIMITED" }`**, `Retry-After` 1–10, `RateLimit-Remaining: 0`, có `X-Request-Id`; log Gateway có `rate_limited` `scope: ip`. Unit test Gateway: khi vượt ngưỡng, handler gọi gRPC **không** được gọi |
 | AC-GH-02 | 29 | Ngay sau AC-GH-01 | Bấm Send liên tục thêm 5 lần trong `Retry-After` giây; chờ đến hết `Retry-After` của lần 6; Send | 429 cả 5 lần; `Retry-After` **giảm dần**, không quay lại 10 (spam không kéo dài cửa sổ); lần cuối 200, `RateLimit-Remaining: 4` |
-| AC-GH-03 | 29 | Ngay sau AC-GH-01 (IP đang bị chặn) | A04 `POST /api/v1/accounts` số mới; A07 `POST /api/v1/otps`; A38 `GET /api/v1/customers/me` `[KH1]` (token có sẵn); A01 `/health`; A05 kèm header `X-Forwarded-For: 1.2.3.4` | 429; 429 (chung bộ đếm IP); **200** kèm `RateLimit-Limit: 30` (bộ đếm tài khoản riêng); 200 không có header `RateLimit-*`; 429 (không tin header) |
+| AC-GH-03 (**đổi 2026-10-14**: đường dẫn) | 29 | Ngay sau AC-GH-01 (IP đang bị chặn) | A04 `POST /api/v1/auth/register` email mới; A07 `POST /api/v1/auth/otp`; A08 `POST /api/v1/auth/driver-register`; A38 `GET /api/v1/customers/me` `[KH1]` (token có sẵn); A01 `/health`; A05 kèm header `X-Forwarded-For: 1.2.3.4` | 429; 429; 429 (chung bộ đếm IP); **200** kèm `RateLimit-Limit: 30` (bộ đếm tài khoản riêng); 200 không có header `RateLimit-*`; 429 (không tin header) |
 | AC-GH-04 | 29 | — | A32 `POST /api/v1/payment-callbacks` `{"txn_id":"SIM-999-1"}` gửi 10 lần liên tục | 401 / 404 cả 10 lần, **không** 429, không header `RateLimit-*` |
 | AC-GH-05 | 29 (tài khoản) | `.env`: `RATE_LIMIT_ACCOUNT_MAX=3`, `docker compose up -d` | A38 `[KH1]` ×4 liên tục; ngay sau A38 `[KH2]`; A06 `[KH1]` | 200 ×3, lần 4 429 `scope: account`; KH2 200 (tài khoản khác); 429 (A06 chung bộ đếm tài khoản). Trả `.env` về 30 |
 | AC-GH-06 | 29 (thứ tự) | Như AC-GH-05, KH1 đang bị chặn | A38 không token; A38 token KH1 sửa một ký tự; A19 `POST /api/v1/bookings` `[KH1]` không body | 401 `TOKEN_MISSING`; 401 `TOKEN_INVALID` (401 trước 429 — GH2); 429 (429 trước 403 / 400) |
 | AC-GH-07 | 29 (Redis dừng) | `docker compose stop redis` | A05 KH1 ×7 liên tục; `docker compose logs gateway` | 200 cả 7, **không** header `RateLimit-*`; log có `warn` `rate_limit_skipped` kèm `request_id`. `start redis`, chờ 2 s, Send ×6 → lần 6 429 |
 | AC-GH-08 | 29 (Redis) | Trong AC-GH-01 | `docker exec redis redis-cli --scan --pattern "rl:*"`; `docker exec redis redis-cli ttl <key>` | Có `rl:ip:<ip>`; TTL 1–10; sau 10 s key biến mất |
+| AC-GH-09 (mới 2026-10-14) | 29 | Không request công khai nào trong 10 s trước | Xen kẽ 6 request công khai: A04 `auth/register` (email mới), A05 email KH1, A07 `auth/otp`, A08 `auth/driver-register` (OTP sai), A05 tài xế `{"phone":"0910000001",…}`, A05 email KH1 | Lần 1–5 trả kết quả nghiệp vụ của từng route (201 / 200 / 201 / 400 / 200); lần 6: 429 — bốn route mới **chung một** bộ đếm IP; request lỗi nghiệp vụ (400) vẫn bị đếm |
+| AC-GH-10 (mới 2026-10-14) | 29 | IP đang bị chặn (sau AC-GH-01) | `POST /api/v1/accounts` (đường cũ) | 404 `ROUTE_NOT_FOUND`, **không** 429 — đường không tồn tại không bị đếm (mục 4.4) |
 
-Tổng: **22 tiêu chí** (14 AC-DG, 8 AC-GH).
+Tổng: **24 tiêu chí** (14 AC-DG, 10 AC-GH).
 
 Chuỗi gõ tay khi thi (khớp 06 mục 20, 29 và 04 mục 5; thời gian gồm cả giải thích theo 04 mục 5.4):
 
 | Mục | Request | Kết quả | Thời gian |
 |---|---|---|---|
 | 20 | Tab mới: `POST localhost:3000/api/v1/ratings`, `[KH1]` (copy token từ tab đăng nhập KH1), body `{"trip_id":4,"score":5}` → Send lại y hệt → (tùy chọn) sửa `"trip_id":5` | 201 `trip_id` 4, `driver_id` 13, `driver_avg` 5, `driver_count` 1; 409 `RATING_ALREADY_EXISTS`; (409 `TRIP_NOT_COMPLETED`) | Gõ ~17 s + gửi lại ~2 s + nói ~6 s = **~25 s, Ổn** |
-| 29 | Tab đăng nhập KH1 (`POST …/api/v1/auth/login`, mục 10) → bấm **Send** (hoặc **Ctrl+Enter**) 6 lần liên tục → mở tab **Headers** của response | Lần 1–5: 200; lần 6: **429 `RATE_LIMITED`**; Headers: `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0` | Bấm ~4 s + mở Headers ~4 s + nói ~10 s = **~18 s, Ổn** |
+| 29 (**đổi 2026-10-14**: body email) | Tab đăng nhập KH1 (`POST …/api/v1/auth/login` `{"email":"kh1@cab.vn","password":"12345678"}`, mục 10) → bấm **Send** (hoặc **Ctrl+Enter**) 6 lần liên tục → mở tab **Headers** của response | Lần 1–5: 200; lần 6: **429 `RATE_LIMITED`**; Headers: `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0` | Bấm ~4 s + mở Headers ~4 s + nói ~10 s = **~18 s, Ổn** |
 
 Phù hợp luật thi mục 29: **không** dùng Collection Runner (Runner cần collection lưu sẵn — luật cấm) và không script; chỉ bấm Send trên tab đã gõ ở mục 10. Tab đăng nhập gửi sai mật khẩu vẫn được (401 cũng bị đếm) — lần 6 vẫn 429.
 
 Ràng buộc thứ tự: **20 sau 17** (nếu muốn demo thêm trip 1000) và **trước 18** (T5 còn `ACCEPTED` cho phần tùy chọn — 04 mục 5.5); **29 làm cuối** (khóa route công khai theo IP tối đa 10 giây: đăng nhập lấy token trong lúc đó bị 429); trước khi làm 29 đừng gửi request công khai nào trong 10 giây (nếu không, 429 đến sớm hơn lần 6 — vẫn đúng, nhưng phải giải thích).
 
-Câu nói (bổ sung 06): **20** — "Rating hỏi Trip bằng gRPC chuyến đã `COMPLETED` chưa và có phải của tôi không; lưu đánh giá và cộng điểm tài xế trong một giao dịch; UNIQUE `trip_id` nên mỗi chuyến một đánh giá". **29** — "Gateway đếm bằng Redis: route công khai theo IP, 5 lần mỗi 10 giây, để chặn dò mật khẩu; route có token theo tài khoản, 30 lần. Cửa sổ bắt đầu từ request đầu tiên, `Retry-After` cho biết bao lâu nữa gọi lại được. Redis dừng thì cho qua và ghi log".
+Câu nói (bổ sung 06): **20** — "Rating hỏi Trip bằng gRPC chuyến đã `COMPLETED` chưa và có phải của tôi không; lưu đánh giá và cộng điểm tài xế trong một giao dịch; UNIQUE `trip_id` nên mỗi chuyến một đánh giá". **29** — "Gateway đếm bằng Redis: bốn route công khai của nhóm `auth` (đăng ký, đăng nhập, xin OTP, đăng ký tài xế) chung một bộ đếm theo IP, 5 lần mỗi 10 giây, để chặn dò mật khẩu và spam đăng ký; route có token theo tài khoản, 30 lần. Cửa sổ bắt đầu từ request đầu tiên, `Retry-After` cho biết bao lâu nữa gọi lại được. Redis dừng thì cho qua và ghi log".
 
 Kết quả mong đợi theo phiếu chấm: **20** — đánh giá được lưu, response có `trip_id` (liên kết với chuyến), gửi lại bị 409; **29** — gửi liên tục bị chặn bằng 429 kèm `Retry-After`, do Gateway + Redis làm, không request nào tới service.
 

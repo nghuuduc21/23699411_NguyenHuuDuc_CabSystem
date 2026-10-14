@@ -9,6 +9,7 @@
 > **Sửa 2026-10-03** theo góp ý giảng viên: **bỏ đường S1** (`auth-service` → `customer-service` `CreateProfile`) — ADR-013 thay ADR-004. **Giữ nguyên mã S2–S7**, không đánh số lại, để không phải đổi mã ở file 03, 04, 05 và ADR; mã S1 bỏ trống, không dùng lại. Hệ thống ngoài giả lập đơn giản: callback xác thực bằng khóa bí mật trong header, bỏ chữ ký HMAC — ADR-014. Đóng Q43, Q50. Cùng ngày đóng Q56 (Booking không gọi Customer — mục 9), Q57 (`simulate_result: "MANUAL"` — mục 4.5, 8.2), Q58.
 > **Sửa 2026-10-03 lần 3 (ADR-018):** chỉ đổi **nhãn đường dẫn REST** trong mục 7 và sơ đồ trình tự mục 8 theo file 04 lần 4 (`/api/v1/…`, đổi trạng thái bằng `PATCH` + `status`). **Không đổi đường giao tiếp, rpc hay topic nào.**
 > **Sửa 2026-10-05:** mỗi service một **cổng gRPC riêng** 50051–50058 (mục 2.3, ADR-020 — sửa lỗi L3); ghi rõ cách chống lặp event ở từng consumer (mục 6.4 — không có bảng event đã xử lý); A04 không còn email (ADR-019); A11 dùng cả cho nộp lại hồ sơ bị từ chối (FR43). **Không đổi đường giao tiếp, rpc hay topic nào.**
+> **Sửa 2026-10-14 (theo yêu cầu giảng viên, ADR-021 thay ADR-019):** tài khoản có email (khách, admin) hoặc số điện thoại (tài xế); hồ sơ khách có số điện thoại liên hệ, không còn email (mục 2.1); nhóm route xác thực `/api/v1/auth/…` (sơ đồ 8.1); danh sách booking theo mã khách `/api/v1/customers/{id}/bookings` vẫn do `booking-service` xử lý (G4); giá trị health đổi chữ (`healthy` / `unhealthy`, mục 2.2). **Không đổi đường giao tiếp, rpc hay topic nào** — Auth và Customer vẫn không gọi nhau.
 > **Chưa chốt:** chỗ ghi **[GĐ-n]** là *giả định tạm*, liệt kê ở mục 11.
 > **Đồng bộ 2026-10-02 lần 4** (cùng lúc viết file 03, 04): Booking tính quãng đường, Payment tính cước (đóng Q38, GĐ-13); hạn thanh toán BRULE17 → K6 có thêm `CANCELED`; Redis dừng thì cho qua (đóng Q39); đăng xuất ở Gateway theo FR42 (đóng Q40); tìm tài xế bằng Haversine (ADR-011). Chỉ sửa các dòng bị ảnh hưởng.
 
@@ -62,8 +63,8 @@ Trả lời nhận xét "không phải service nào cũng giao tiếp cả đồ
 |---|---|---|---|
 | `gateway` | Xem 2.2 | Mục chấm 3, 6, 8, 27, 28, 29 | **Có — 3000** |
 | `redis` | Bộ đếm rate limit; danh sách token đã thu hồi. **Chỉ Gateway dùng**; không chứa dữ liệu nghiệp vụ | Mục chấm 29; NFR06; `CLAUDE.md` | Không |
-| `auth-service` | Tài khoản (số điện thoại + mật khẩu, không email — ADR-019), đăng nhập bằng số điện thoại, cấp JWT, OTP, role. Đăng ký khách chỉ tạo tài khoản | FR26, FR32, FR39 | Không |
-| `customer-service` | Hồ sơ khách hàng (họ tên, ngày sinh, email): khách tạo sau khi đăng nhập, xem, sửa | FR27, BRULE18 | Không |
+| `auth-service` | Tài khoản: khách, admin định danh bằng **email**; tài xế bằng **số điện thoại** (BRULE19, ADR-021); đăng nhập, cấp JWT, OTP, role. Đăng ký khách chỉ tạo tài khoản | FR26, FR32, FR39 | Không |
+| `customer-service` | Hồ sơ khách hàng (họ tên, ngày sinh, **số điện thoại liên hệ**): khách tạo sau khi đăng nhập, xem, sửa | FR27, BRULE18 | Không |
 | `driver-service` | Hồ sơ tài xế, xe, duyệt hồ sơ, nộp lại hồ sơ bị từ chối, Online/Offline, vị trí, tìm tài xế quanh tọa độ, giữ chỗ tài xế | FR02–FR04, FR13, FR28, FR29, FR38, FR39, FR43 | Không |
 | `booking-service` | Booking kèm cước, chờ thanh toán, danh sách booking, ghép tài xế (Offer, đếm giờ, phân công), hủy khi chưa có tài xế | FR01, FR05–FR11, FR35–FR37 | Không |
 | `trip-service` | Trip, trình tự trạng thái, lịch sử, hủy chuyến (khách, tài xế), theo dõi, giám sát | FR11, FR12, FR14, FR15, FR30, FR36, FR41 | Không |
@@ -110,7 +111,7 @@ Mỗi service nghe gRPC ở **một cổng riêng**, chỉ trong mạng Compose 
 | 4 | Rate limiting | Đếm request trong Redis theo IP (route công khai) hoặc theo tài khoản. Vượt → 429 | Mục 29 |
 | 5 | Routing | Đổi REST/JSON → gRPC; đổi gRPC status → HTTP theo bảng trong `CLAUDE.md` (gồm `FAILED_PRECONDITION` → 409) | Mục 3, 4, 8 |
 | 6 | Log | Ghi method, đường dẫn, mã trả về, thời gian, mã request. Không ghi mật khẩu, token, dữ liệu cá nhân | NFR10, NFR08 |
-| 7 | Health | `/health`, `/ready` (gồm cả Redis), `/health/services` (hỏi health của cả 8 service qua gRPC) | Mục 6 |
+| 7 | Health | `/health` → `{"status":"healthy"}`; `/ready` (gồm cả Redis) → `ready` / `not_ready`; `/health/services` (hỏi health của cả 8 service qua gRPC) → mỗi service `healthy` / `unhealthy` (chữ chốt theo yêu cầu giảng viên 2026-10-14; file 04 A01–A03) | Mục 6 |
 | 8 | Kiểm tra hình thức đầu vào | Thiếu trường, sai kiểu → 400 trước khi gọi service | Mục 25, 26 |
 
 Vì sao Redis mà không đếm trong bộ nhớ Gateway: bộ đếm và danh sách thu hồi phải **còn sau khi Gateway khởi động lại** và **dùng chung** nếu chạy nhiều bản Gateway; Redis có sẵn lệnh tăng số kèm hạn tự xóa. Chi tiết: ADR-010. Key và thời gian sống: file 03 mục 12.
@@ -192,7 +193,7 @@ Tên rpc là gợi ý ở mức nhóm; spec chốt từng rpc.
 | G1 | `auth-service` | Đăng ký tài khoản khách (chỉ tài khoản), đăng nhập, xin OTP, xác nhận OTP và tạo tài khoản tài xế | FR26, FR39 | 9, 10, 21, 25 |
 | G2 | `customer-service` | **Tạo** hồ sơ của mình (sau khi đăng nhập); xem / sửa hồ sơ của mình; xem khách hàng theo mã | FR27, BRULE18 | 11, 24, 26 |
 | G3 | `driver-service` | Nộp hồ sơ tài xế và xe (và nộp lại khi bị từ chối — cùng rpc); xem tài xế theo mã; tài xế quanh tọa độ; bật / tắt nhận chuyến; gửi vị trí; admin duyệt / từ chối | FR02–FR04, FR13, FR28, FR29, FR38, FR39, FR43 | 12, 13, 21, 22, 23 |
-| G4 | `booking-service` | Tạo booking (trả về cước, mã thanh toán, trạng thái); danh sách booking; xem booking; hủy booking chưa có tài xế; tài xế xem Offer đang chờ **[GĐ-2]**, nhận (trả về mã chuyến), từ chối | FR06–FR08, FR35–FR37 | 14, 15, 16, 18 |
+| G4 | `booking-service` | Tạo booking (trả về cước, mã thanh toán, trạng thái); danh sách booking **theo mã khách** (`/api/v1/customers/{id}/bookings` — đường dẫn bắt đầu bằng `customers` nhưng dữ liệu thuộc Booking nên Gateway định tuyến sang `booking-service`, sửa 2026-10-14); xem booking; hủy booking chưa có tài xế; tài xế xem Offer đang chờ **[GĐ-2]**, nhận (trả về mã chuyến), từ chối | FR06–FR08, FR35–FR37 | 14, 15, 16, 18 |
 | G5 | `trip-service` | Xem chuyến; cập nhật trạng thái; khách hủy chuyến; tài xế hủy chuyến; admin xem danh sách | FR12, FR14, FR30, FR36, FR41 | 17, 18 |
 | G6 | `payment-service` | Xem thanh toán của một booking; nhận callback; thanh toán lại (kèm khóa chống lặp); tra cứu giao dịch | FR18–FR20, UC24 | 19, 30 |
 | G7 | `notification-service` | Xem thông báo của mình | FR21–FR24, UC16 | 16, 18, 22 |
@@ -406,17 +407,17 @@ sequenceDiagram
   participant CU as customer-service
 
   Note over C,A: Mục 9 — đăng ký chỉ tạo tài khoản
-  C->>GW: A04 POST /api/v1/accounts (SĐT, mật khẩu)
+  C->>GW: A04 POST /api/v1/auth/register (email, mật khẩu)
   GW->>A: gRPC RegisterCustomer
   A->>A: kiểm tra trùng, băm mật khẩu, lưu Account role customer
-  alt số điện thoại đã có
+  alt email đã có
     A-->>GW: ALREADY_EXISTS
     GW-->>C: 409
   else thành công
     A-->>GW: account_id
     GW-->>C: 201 (chưa có hồ sơ)
   end
-  C->>GW: A05 POST /api/v1/auth/login
+  C->>GW: A05 POST /api/v1/auth/login (email, mật khẩu)
   GW->>A: gRPC Login
   A-->>GW: JWT (sub = account_id, role = customer)
   GW-->>C: 200
@@ -427,7 +428,7 @@ sequenceDiagram
   GW->>CU: gRPC GetCustomer (metadata x-account-id)
   CU-->>GW: NOT_FOUND
   GW-->>C: 404 CUSTOMER_NOT_FOUND
-  C->>GW: A37 POST /api/v1/customers (họ tên, ngày sinh)
+  C->>GW: A37 POST /api/v1/customers (họ tên, số điện thoại, ngày sinh)
   GW->>CU: gRPC CreateCustomer (metadata x-account-id)
   CU->>CU: customer_id = x-account-id, mã hóa, lưu
   alt đã có hồ sơ

@@ -52,20 +52,20 @@
 // Mỗi cột: [khóa, tên, kiểu, ghi chú tham chiếu service khác]
 const contexts = [
   { n: 1, name: 'Identity & Access', ic: '🔐', svc: 'auth-service', db: 'PostgreSQL · auth-db', span: 4, bg: '#e8f2fd', bd: '#4a90d9',
-    rel: '<code>accounts</code> là tài khoản chung cho ba vai trò. OTP gắn theo số điện thoại (đăng ký tài xế).',
+    rel: '<code>accounts</code> là tài khoản chung cho ba vai trò: khách, admin đăng nhập bằng <code>email</code>; tài xế bằng <code>phone</code> (CHECK đúng một định danh theo role). OTP gắn theo số điện thoại (đăng ký tài xế).',
     tables: [
       { t: 'accounts', hd: '#f9c5c5', cols: [
-        ['PK', 'account_id', 'bigint'], ['UK', 'phone', 'text'], ['', 'password_hash', 'text'],
+        ['PK', 'account_id', 'bigint'], ['UK', 'email', 'text'], ['UK', 'phone', 'text'], ['', 'password_hash', 'text'],
         ['', 'role', 'text'], ['', 'status', 'text']] },
       { t: 'otp_verifications', hd: '#d9c5f9', cols: [
         ['PK', 'otp_id', 'bigint'], ['', 'phone', 'text'], ['', 'otp_hash', 'text'], ['', 'purpose', 'text'],
         ['', 'expires_at', 'timestamptz'], ['', 'attempt_count', 'smallint'], ['', 'consumed_at', 'timestamptz']] },
     ] },
   { n: 2, name: 'Customer', ic: '👥', svc: 'customer-service', db: 'PostgreSQL · customer-db', span: 2, bg: '#e9f8ea', bd: '#3fae4a',
-    rel: '<code>customer_id</code> = <code>account_id</code> lấy từ token. Hồ sơ do khách tự tạo sau khi đăng nhập; auth và customer không gọi nhau.',
+    rel: '<code>customer_id</code> = <code>account_id</code> lấy từ token. Hồ sơ do khách tự tạo sau khi đăng nhập; <code>phone</code> là số liên hệ (bắt buộc, không UNIQUE); auth và customer không gọi nhau.',
     tables: [
       { t: 'customer_profiles', hd: '#f9c5c5', cols: [
-        ['PK', 'customer_id', 'bigint', 'auth'], ['', 'full_name_enc', 'bytea'], ['', 'date_of_birth_enc', 'bytea'], ['', 'email', 'text']] },
+        ['PK', 'customer_id', 'bigint', 'auth'], ['', 'full_name_enc', 'bytea'], ['', 'date_of_birth_enc', 'bytea'], ['', 'phone', 'text']] },
     ] },
   { n: 3, name: 'Driver & Vehicle', ic: '🚗', svc: 'driver-service', db: 'PostgreSQL · driver-db', span: 6, bg: '#fff6e0', bd: '#e0a100',
     rel: '<code>drivers</code> 1 — 1 <code>vehicles</code> · <code>vehicle_types</code> 1 — n <code>vehicles</code> · <code>driver_id</code> = <code>account_id</code>. Tìm tài xế trong 1 km: tính khoảng cách trên <code>current_lat</code>, <code>current_lng</code>.',

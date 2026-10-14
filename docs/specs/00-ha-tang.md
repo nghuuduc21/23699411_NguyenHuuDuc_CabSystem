@@ -2,6 +2,7 @@
 
 > Vòng 2, viết 2026-10-03; **sửa 2026-10-03 theo luật thi** (gõ tay mọi request và lệnh, không mở tài liệu): bỏ `scripts/`, `.env.example` có sẵn giá trị dùng được, biến môi trường còn 14, user database `cab`, Redis không mật khẩu, bỏ outbox, đặt lại dữ liệu bằng `down -v`, rút gọn tiêu chí chấp nhận. **Đồng bộ với 04 lần 3:** Gateway đọc body JSON bất kể `Content-Type`, lệnh `psql` dạng `table <bảng>`, tạo `.env` bằng `cp`. **Đồng bộ với 04 lần 4 (ADR-018):** route nghiệp vụ dưới `/api/v1/`; ba endpoint health ở ngoài tiền tố; `GET` bỏ qua body; đóng H-Q4 (giảng viên cho phép khóa mẫu trong `.env.example`). **Sửa 2026-10-04 theo phản hồi dev-agent sau khi dựng thật:** healthcheck gọi `127.0.0.1`; H-Q1 thêm trường hợp MongoDB của Windows; ghi nhận chi tiết code đã chọn (H10–H12, mục 3.2, 3.5, 4).
 > **Sửa 2026-10-05 (sinh viên chốt, sửa lỗi L3) — ADR-020:** mỗi service một **cổng gRPC riêng**: auth 50051, customer 50052, driver 50053, booking 50054, trip 50055, payment 50056, notification 50057, rating 50058 (mục 2.1, 3.1, 3.2, 3.5, H1). Ghi rõ quy ước chống lặp event (mục 3.3). AC mới: AC-HT-14, AC-HT-15; AC đổi: AC-HT-11.
+> **Sửa 2026-10-14 (theo yêu cầu giảng viên, sinh viên chốt):** giá trị trả về của ba endpoint health phải **đúng chữ**: `/health` → `{"status":"healthy"}`; `/ready` → `{"status":"ready","checks":…}` / 503 `{"status":"not_ready",…}`; `/health/services` → `{"status":"healthy","services":{…:"healthy"}}` / 503 `{"status":"unhealthy","services":{…,"rating-service":"unhealthy"}}`. Mục sửa: 2.2, A01–A03, AC-HT-05/06/07 (đổi), AC-HT-16, AC-HT-17 (mới), H13. Code Gateway phải đổi (`src/health.js`); `healthcheck.js` của Docker không đổi (chỉ xét mã HTTP).
 > Mục chấm **1, 2, 5, 6, 7, 8**.
 > Đầu vào: `CLAUDE.md` (Quy tắc kiến trúc, Quyết định kỹ thuật, Ràng buộc khi chấm, Ràng buộc khi thi, Cấu trúc thư mục, Quy ước code); `docs/design/02` mục 2, 6, 7; `docs/design/03` mục 1.1, 1.3, 11.3, 12, **13**, **14**; `docs/design/04` mục 1, 2.1; ADR-010, ADR-014, ADR-015, ADR-016, ADR-017.
 > Phạm vi: khung **chạy được, chưa có nghiệp vụ**. Mỗi service: khởi động → nối database của mình → chạy migration → chạy seed (nếu bật) → trả lời health gRPC. Gateway: ba endpoint health và bảng đổi lỗi gRPC → HTTP dùng chung cho các spec sau.
@@ -37,8 +38,8 @@ Không có UC: đây là phần nền mà mọi UC dựa vào.
 | | Nội dung |
 |---|---|
 | Tác nhân | Người chấm qua Postman (không token) |
-| Luồng chính | A01 → 200; A02 → 200 khi Redis trả lời; A03 → Gateway gọi song song `Health/Check` tới 8 service (deadline 1 000 ms, hằng số) → 200 khi cả 8 `SERVING` |
-| Ngoại lệ | Redis dừng → A02 trả 503 (A01 vẫn 200). Một service dừng hoặc mất database → A03 trả 503, body ghi rõ service nào |
+| Luồng chính | A01 → 200 `healthy`; A02 → 200 `ready` khi Redis trả lời; A03 → Gateway gọi song song `Health/Check` tới 8 service (deadline 1 000 ms, hằng số) → 200 `healthy` khi cả 8 trả `SERVING` |
+| Ngoại lệ | Redis dừng → A02 trả 503 `not_ready` (A01 vẫn 200). Một service dừng hoặc mất database → A03 trả 503 `unhealthy`, body ghi rõ service nào `unhealthy` |
 
 ## 3. Thành phần tham gia và hạ tầng
 
@@ -218,7 +219,7 @@ Hành vi chạy [BA, khớp code đã dựng]:
 |---|---|---|
 | Nối database | Thử lại **15 lần, cách 2 giây** (hằng số); hết lượt → thoát 1 | Database có thể chậm vài giây dù đã healthy; 30 giây đủ, quá thì để Compose khởi động lại |
 | Dừng | Service và Gateway bắt `SIGTERM` (và `SIGINT`), đóng kết nối rồi thoát ngay | `docker compose stop` (mục 6) xong ngay, không chờ hết 10 giây rồi bị `SIGKILL` |
-| Gateway nối lại gRPC | Kênh gRPC thử nối lại nhanh: chờ ban đầu 0,5 giây, tối đa 2 giây | Sau `docker compose start rating-service`, `/health/services` về `SERVING` trong 1–2 giây, không phải chờ mặc định tới 2 phút |
+| Gateway nối lại gRPC | Kênh gRPC thử nối lại nhanh: chờ ban đầu 0,5 giây, tối đa 2 giây | Sau `docker compose start rating-service`, `/health/services` về `healthy` trong 1–2 giây, không phải chờ mặc định tới 2 phút |
 
 Kiểm tra khi khởi động (`config.js`): thiếu biến bắt buộc → thoát 1; `*_DATA_KEY` giải base64 không ra đúng 32 byte → thoát 1; `JWT_SECRET` < 32 ký tự → thoát 1; `SIMULATION_MODE=true` → log `warn` "đang chạy chế độ giả lập". Log chỉ nêu tên biến, không nêu giá trị.
 
@@ -269,13 +270,15 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 
 | Token | Response |
 |---|---|
-| Không | 200 `{ "status": "UP" }` |
+| Không | 200 `{ "status": "healthy" }` (sửa 2026-10-14; trước: `UP`) |
 
 ### A02 `GET /ready`
 
 | Token | Kiểm tra | 200 | 503 |
 |---|---|---|---|
-| Không | Redis `PING` trong 500 ms; đã tạo 8 client gRPC | `{ "status": "READY", "checks": { "redis": "UP", "grpc_clients": "UP" } }` | `{ "status": "NOT_READY", "checks": { "redis": "DOWN", … } }` — Gateway vẫn phục vụ request khác |
+| Không | Redis `PING` trong 500 ms; đã tạo 8 client gRPC | `{ "status": "ready", "checks": { "redis": "healthy", "grpc_clients": "healthy" } }` | `{ "status": "not_ready", "checks": { "redis": "unhealthy", "grpc_clients": "healthy" } }` — Gateway vẫn phục vụ request khác |
+
+Giá trị trong `checks` dùng cùng hai chữ `healthy` / `unhealthy` như A03 [BA H13] (trước: `UP` / `DOWN`).
 
 ### A03 `GET /health/services`
 
@@ -283,9 +286,10 @@ Giữ nội dung hiện có (`node_modules/`, `.env`, `.env.*`, `!.env.example`,
 |---|---|
 | Token | Không |
 | Cách làm | Gọi **song song** `grpc.health.v1.Health/Check` (`service: ""`) tới 8 service, deadline 1 000 ms mỗi lời |
-| Giá trị mỗi service | `SERVING`; `NOT_SERVING` (trả lời nhưng mất database); `UNREACHABLE` (không kết nối được / quá deadline) |
-| 200 | Cả 8 `SERVING`: `{ "status": "UP", "services": { "auth-service": "SERVING", …, "rating-service": "SERVING" } }` |
-| 503 | Có service khác `SERVING`: `{ "status": "DEGRADED", "services": { …, "rating-service": "UNREACHABLE" } }` |
+| Giá trị mỗi service (sửa 2026-10-14) | **`healthy`** khi service trả `SERVING`; **`unhealthy`** khi trả `NOT_SERVING` (mất database), không kết nối được, hoặc quá deadline. Lý do cụ thể (`NOT_SERVING` / `UNREACHABLE` / `DEADLINE_EXCEEDED`) ghi vào log `warn` của Gateway kèm tên service, **không** trả ra ngoài [BA H13] |
+| 200 | Cả 8 `healthy`: `{ "status": "healthy", "services": { "auth-service": "healthy", "customer-service": "healthy", "driver-service": "healthy", "booking-service": "healthy", "trip-service": "healthy", "payment-service": "healthy", "notification-service": "healthy", "rating-service": "healthy" } }` |
+| 503 | Có ít nhất một `unhealthy`: `{ "status": "unhealthy", "services": { …7 dòng "healthy", "rating-service": "unhealthy" } }` |
+| Thứ tự key | Theo thứ tự 8 service trong `CLAUDE.md` (auth … rating) để người chấm đọc nhanh |
 
 Ba endpoint health **nằm ngoài `/api/v1`** (04 mục 1.9: không phải tài nguyên nghiệp vụ; healthcheck Docker gọi `/health` cố định), không token, không rate limit; body không theo dạng `{ "error": … }` vì là báo cáo trạng thái.
 
@@ -361,19 +365,21 @@ Tiền điều kiện chung: `.env` sao chép từ `.env.example`; `docker compo
 | AC-HT-02 | 2 | Repo đã push | `git ls-files .env .env.example` | Chỉ in `.env.example`; `.gitignore` có dòng `.env` |
 | AC-HT-03 | 2 (lỗi) | `.env` thiếu `CUSTOMER_DATA_KEY` | `docker compose up -d customer-service` | Container thoát mã 1; `docker compose logs customer-service` có tên biến, không có giá trị khóa |
 | AC-HT-04 | 5 | Compose đã lên | `docker compose ps -a` | Đủ 21 container mục 3.2; 20 `running (healthy)`; `kafka-init` `exited (0)`; 8 container database riêng |
-| AC-HT-05 | 6 | Mọi thứ healthy | `GET /health`; `GET /ready`; `GET /health/services` | 200 `UP`; 200 `READY`; 200 `UP` với 8 service `SERVING` |
-| AC-HT-06 | 6 (503) | `docker compose stop rating-service` | `GET /health/services` | 503 `DEGRADED`, `rating-service = "UNREACHABLE"`, 7 service còn lại `SERVING` |
-| AC-HT-07 | 6 (503) | `docker compose stop redis` | `GET /ready` rồi `GET /health` | `/ready` 503, `redis = "DOWN"`; `/health` vẫn 200 |
+| AC-HT-05 (**đổi 2026-10-14**) | 6 | Mọi thứ healthy | `GET /health`; `GET /ready`; `GET /health/services` | 200 body **đúng** `{"status":"healthy"}`; 200 `{"status":"ready","checks":{"redis":"healthy","grpc_clients":"healthy"}}`; 200 `"status":"healthy"` và đủ 8 key `auth-service` … `rating-service` đều `"healthy"` |
+| AC-HT-06 (**đổi 2026-10-14**) | 6 (503) | `docker compose stop rating-service` | `GET /health/services` | 503 `{"status":"unhealthy","services":{…}}`, `rating-service = "unhealthy"`, 7 service còn lại `"healthy"`; log Gateway có dòng `warn` nêu `rating-service` và lý do |
+| AC-HT-07 (**đổi 2026-10-14**) | 6 (503) | `docker compose stop redis` | `GET /ready` rồi `GET /health` | `/ready` 503 `{"status":"not_ready","checks":{"redis":"unhealthy",…}}`; `/health` vẫn 200 `{"status":"healthy"}` |
+| AC-HT-16 (mới 2026-10-14) | 6 (503) | `docker compose stop customer-db` (service còn chạy, mất database) | `GET /health/services` | 503 `"status":"unhealthy"`, `customer-service = "unhealthy"` (cùng chữ với service dừng hẳn); body **không** có `NOT_SERVING`, `UNREACHABLE`, `SERVING`, `UP`, `DOWN`, `DEGRADED`. `start customer-db` → sau vài giây lại 200 `healthy` |
+| AC-HT-17 (mới 2026-10-14) | 6 | Mọi thứ healthy | Ba endpoint health | Mọi giá trị trạng thái là **chữ thường** đúng một trong `healthy`, `unhealthy`, `ready`, `not_ready`; không còn chữ cũ `UP`, `READY`, `SERVING`, `DEGRADED` |
 | AC-HT-08 | 404 | — | `GET /api/v1/khong-co`; `GET /api/health` | 404 `{ "error": "ROUTE_NOT_FOUND" }` cả hai (health chỉ có ở `/health`) |
 | AC-HT-09 | 7 | Compose đã lên | Mở `http://localhost:8080` → cluster `cab` → Topics | Đủ 7 topic mục 3.3, không topic nghiệp vụ nào khác (topic nội bộ `__…` được phép) |
 | AC-HT-10 | 8 | Compose đã lên | `docker compose ps -a` | Chỉ `gateway` có `0.0.0.0:3000->3000` và `kafka-ui` có `0.0.0.0:8080->8080`; container khác không có `->` |
 | AC-HT-11 (**đổi 2026-10-05**) | 8 (lỗi) | Compose đã lên | Postman gọi thẳng `http://localhost:50051`, `http://localhost:50058`, `http://localhost:5432` | Lỗi kết nối (không có response) với **mọi** cổng gRPC 50051–50058 (trước đây chỉ thử 50051) |
 | AC-HT-12 | Đặt lại | Đã demo, dữ liệu đổi | `docker compose down -v` rồi `docker compose up -d --build` | Hệ thống lên lại healthy; seed về trạng thái đầu; `docker compose restart auth-service` sau đó không nhân đôi seed |
-| AC-HT-14 (mới 2026-10-05) | 5, 6 | Compose đã lên | `docker compose logs <service>` từng service (dòng khởi động); `docker exec gateway printenv` lọc `_GRPC_ADDR` | Mỗi service log nghe đúng cổng của mình (auth 50051 … rating 50058); 8 biến `*_GRPC_ADDR` ở Gateway mang đúng `<tên>:<cổng>`; booking có `DRIVER_`, `PAYMENT_`, `TRIP_GRPC_ADDR`, trip có `DRIVER_GRPC_ADDR`, rating có `TRIP_GRPC_ADDR` đúng cổng; `GET /health/services` 200 với 8 `SERVING` |
-| AC-HT-15 (mới 2026-10-05, lỗi L3) | 6 | Mọi thứ healthy | `docker compose restart customer-service rating-service` (hoặc dừng / bật lần lượt vài service để Docker cấp lại IP), chờ healthy, rồi `GET /health/services` và gọi một API của từng service bị restart (ví dụ A09 `customers/1` `[KH1]`, A36 `ratings?driver_id=11`) | 200 với 8 `SERVING`; mỗi API trả dữ liệu của **đúng** service (không có lỗi `UNIMPLEMENTED` / 503 do kênh nối nhầm service) |
+| AC-HT-14 (mới 2026-10-05) | 5, 6 | Compose đã lên | `docker compose logs <service>` từng service (dòng khởi động); `docker exec gateway printenv` lọc `_GRPC_ADDR` | Mỗi service log nghe đúng cổng của mình (auth 50051 … rating 50058); 8 biến `*_GRPC_ADDR` ở Gateway mang đúng `<tên>:<cổng>`; booking có `DRIVER_`, `PAYMENT_`, `TRIP_GRPC_ADDR`, trip có `DRIVER_GRPC_ADDR`, rating có `TRIP_GRPC_ADDR` đúng cổng; `GET /health/services` 200 với 8 `healthy` (chữ đổi 2026-10-14) |
+| AC-HT-15 (mới 2026-10-05, lỗi L3) | 6 | Mọi thứ healthy | `docker compose restart customer-service rating-service` (hoặc dừng / bật lần lượt vài service để Docker cấp lại IP), chờ healthy, rồi `GET /health/services` và gọi một API của từng service bị restart (ví dụ A09 `customers/1` `[KH1]`, A36 `ratings?driver_id=11`) | 200 với 8 `healthy` (chữ đổi 2026-10-14); mỗi API trả dữ liệu của **đúng** service (không có lỗi `UNIMPLEMENTED` / 503 do kênh nối nhầm service) |
 | AC-HT-13 | Quy ước | Unit test Gateway | Service giả trả `NOT_FOUND` + `"CUSTOMER_NOT_FOUND"`; `INVALID_ARGUMENT` + `"INVALID_INPUT"`; `INTERNAL` + `"lỗi gì đó"` | 404 `CUSTOMER_NOT_FOUND`; 400 `INVALID_INPUT`; 503 `SERVICE_UNAVAILABLE` |
 
-Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư mục; mục 2 — `.env` không có trên Git; mục 5 — 21 container và vai trò; mục 6 — ba request đều 200; mục 7 — Kafka UI thấy 7 topic (message có sau spec 15); mục 8 — chỉ hai cổng, gọi thẳng thất bại.
+Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư mục; mục 2 — `.env` không có trên Git; mục 5 — 21 container và vai trò; mục 6 — ba request đều 200 với đúng chữ `healthy` / `ready` / `healthy` (8 service `healthy`), service dừng → 503 `unhealthy`; mục 7 — Kafka UI thấy 7 topic (message có sau spec 15); mục 8 — chỉ hai cổng, gọi thẳng thất bại.
 
 ### 8.1 Có thể làm sau (vượt phiếu chấm)
 
@@ -381,7 +387,7 @@ Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư
 |---|---|
 | Gửi vào topic chưa đăng ký bằng `kafka-console-producer.sh` → `UNKNOWN_TOPIC_OR_PARTITION` | Lệnh dài; cấu hình `AUTO_CREATE=false` đã đủ để giải thích |
 | Kafka UI chỉ đọc: không xóa topic, không gửi message | Không thuộc mục chấm |
-| `docker compose stop customer-db` → `customer-service = NOT_SERVING` | AC-HT-06 đã phủ đường 503 |
+| ~~`docker compose stop customer-db` → `customer-service = NOT_SERVING`~~ | Đã đưa vào AC-HT-16 (2026-10-14) với chữ `unhealthy` |
 | Kiểm tra từng header bảo vệ, log JSON từng trường | Header đã là quy định ở mục 4; kiểm tra chi tiết ở spec 11 (mục 26) nếu cần |
 | `docker compose config` so `DATABASE_URL` từng service; `printenv` từng service | AC-HT-04 đã cho thấy database riêng |
 | Kết nối từ bên trong mạng `cab-net` tới `auth-service:50051` (… `rating-service:50058`) | Không thuộc mục chấm |
@@ -396,6 +402,7 @@ Kết quả mong đợi theo phiếu chấm: mục 1 — nói được cây thư
 |---|---|---|
 | ~~H1~~ | **Đổi 2026-10-05 (ADR-020):** trước đây mọi service nghe cùng 50051; nay mỗi service một cổng 50051–50058 vì lỗi L3 (kênh gRPC nối nhầm service sau khi Docker cấp lại IP) | Hằng số cổng ở từng service, `healthcheck.js`, `*_GRPC_ADDR` trong `compose.yaml` |
 | H2 | Healthcheck Docker bằng `node src/healthcheck.js` thay cho `grpc_health_probe` | Dockerfile |
+| H13 (2026-10-14) | Chữ ra ngoài chỉ có `healthy` / `unhealthy` (từng service, `checks` của `/ready`, tổng của `/health/services`) và `ready` / `not_ready` (tổng của `/ready`); gộp `NOT_SERVING` / `UNREACHABLE` thành `unhealthy`, lý do ghi log. Vì sao: giảng viên yêu cầu đúng chữ; người gọi chỉ cần biết dùng được hay không. Đánh đổi: muốn biết vì sao hỏng phải xem `docker compose logs gateway` | Mục A01–A03; `gateway/src/health.js` |
 | H3 | Gateway không chờ service healthy (`service_started`) | `depends_on` |
 | H4 | 3 partition mỗi topic; Kafka UI chỉ đọc | `kafka-init`, env Kafka UI |
 | H5 | Redis không mật khẩu, không volume, `noeviction` (03 mục 13 đã bỏ `REDIS_PASSWORD`) | Lệnh Redis |
