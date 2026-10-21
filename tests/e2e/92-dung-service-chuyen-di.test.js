@@ -166,11 +166,11 @@ test('AC-DG-13 (mục 20, seed): restart rating-service → số dòng ratings v
   assert.deepEqual(snap(), before);
 });
 
-test('AC-HT-15 (spec 00, mục 6, ADR-020): restart customer + rating; rồi dừng cả hai và bật NGƯỢC thứ tự (đổi IP) → /health/services 8 SERVING; A09, A36 trả đúng dữ liệu ngay lần gọi đầu', async () => {
+test('AC-HT-15 (spec 00, mục 6, ADR-020): restart customer + rating; rồi dừng cả hai và bật NGƯỢC thứ tự (đổi IP) → /health/services 8 healthy; A09, A36 trả đúng dữ liệu ngay lần gọi đầu', async () => {
   const check = async (label) => {
     const h = await fetch('http://localhost:3000/health/services').then((x) => x.json());
-    assert.equal(h.status, 'UP', `${label}: ${JSON.stringify(h)}`);
-    assert.ok(Object.values(h.services).every((s) => s === 'SERVING'), `${label}: ${JSON.stringify(h.services)}`);
+    assert.equal(h.status, 'healthy', `${label}: ${JSON.stringify(h)}`);
+    assert.ok(Object.values(h.services).every((s) => s === 'healthy'), `${label}: ${JSON.stringify(h.services)}`);
     const c = await call('GET', '/customers/1', { token: kh1 });
     assert.equal(c.status, 200, `${label} A09: ${c.status} ${c.text}`);
     assert.equal(c.body.customer_id, 1);

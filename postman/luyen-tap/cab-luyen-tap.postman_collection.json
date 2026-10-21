@@ -1,0 +1,2740 @@
+{
+  "info": {
+    "_postman_id": "d8b26f08-b695-4bb7-83fd-3f8cd3fdb598",
+    "name": "CAB - Luyện tập 30 mục chấm",
+    "description": "Bộ luyện tập theo đúng thứ tự thi (docs/design/06-kich-ban-thi.md mục 3). Mỗi request có: cách gõ khi thi, kết quả, câu nói, code chạy. Hướng dẫn: docs/study/03-luyen-tap-postman.md. KHI THI KHÔNG DÙNG — gõ tay từ đầu.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 · Chuẩn bị (chạy trước mỗi buổi luyện)",
+      "description": "Chạy 5 request này để có sẵn token trong environment. Khi THI thì không có bước này: token lấy bằng copy từ response (Mục 10).\nHệ thống phải vừa `docker compose down -v` → `docker compose up -d --build` để seed sạch (booking mới bắt đầu từ 1000).\nRoute đăng nhập bị giới hạn 5 lần / 10 giây theo IP (Mục 29): nếu gặp 429 thì chờ 10 giây.",
+      "item": [
+        {
+          "name": "Hệ thống sẵn sàng?",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/health/services",
+            "description": "Phải thấy `\"status\":\"healthy\"` và 8 service `healthy`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập KH1 → tok_kh1",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "Khách đăng nhập bằng **email**.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_kh1', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập admin → tok_ad1",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "Admin đăng nhập bằng **email**.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"admin@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_ad1', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập TX1 → tok_tx1",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "Tài xế đăng nhập bằng **số điện thoại**.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0910000001\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_tx1', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Đăng nhập TX6 → tok_tx6",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "TX6 là tài xế của chuyến seed 5 (Mục 18).",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0910000006\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_tx6', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01-05 · Mô tả và terminal (không có request)",
+      "description": "**Mục 1 — Kiến trúc source code:** mở VS Code, chỉ `proto/` (hợp đồng gRPC, mỗi service một file), `services/` (gateway + 8 service, mỗi cái có package.json, Dockerfile, migrations, src riêng), trong `src/`: `domain/` (nghiệp vụ) tách khỏi `grpc/` (giao tiếp) và `*-repo.js` (SQL).\n**Mục 2 — .gitignore/.env:** `cat .gitignore` → có `.env`; `git ls-files .env .env.example` → chỉ in `.env.example`.\n**Mục 3 — Gateway:** cổng duy nhất 3000; JWT HS256, role (403), rate limit Redis (429), REST→gRPC + đổi status, log X-Request-Id. Không nghiệp vụ, không database. Code: `services/gateway/src/app.js` hàm `wrap()`.\n**Mục 4 — IPC:** gRPC mặc định khi cần trả lời ngay (booking→driver/payment/trip, rating→trip); Kafka khi không được chờ/lỗi theo bên nhận hoặc nhiều bên nghe (7 topic). Mở `docs/architecture/kien-truc.png`.\n**Mục 5 — Compose:** `docker compose ps -a` → 21 container (gateway, 8 service, 8 database, redis, kafka, kafka-init Exited 0, kafka-ui).\nChi tiết câu nói: `docs/design/06-kich-ban-thi.md` mục 1–5.",
+      "item": []
+    },
+    {
+      "name": "06 · /health, /ready, /health/services",
+      "description": "Ba đường KHÔNG có /api/v1 (không phải tài nguyên nghiệp vụ). Code: `services/gateway/src/health.js`.",
+      "item": [
+        {
+          "name": "6.1 GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/health",
+            "description": "**Gõ khi thi:** `GET localhost:3000/health`\n**Kết quả:** 200 `{\"status\":\"healthy\"}`\n**Nói:** Gateway còn sống. Docker healthcheck gọi đúng đường này (`compose.yaml`).\n**Code:** `gateway/src/health.js` → `live()`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('healthy', () => pm.expect(pm.response.json().status).to.eql('healthy'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 GET /ready",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/ready",
+            "description": "**Gõ:** sửa tab: `/ready`\n**Kết quả:** 200 `{\"status\":\"ready\",\"checks\":{\"redis\":\"healthy\",\"grpc_clients\":\"healthy\"}}`\n**Nói:** Gateway đủ phụ thuộc CỦA CHÍNH NÓ (Redis, 8 kênh gRPC); thiếu → 503 `not_ready`.\n**Code:** `health.js` → `ready()`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 GET /health/services",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/health/services",
+            "description": "**Gõ:** sửa tab: `/health/services`\n**Kết quả:** 200 `\"status\":\"healthy\"` + 8 service `healthy`.\n**Nói:** Gateway hỏi gRPC Health của 8 service song song, deadline 1 giây. Một service hỏng → tổng `unhealthy`, 503.\n**Thử thêm:** terminal `docker compose stop rating-service` → Send lại → 503, `rating-service: unhealthy` → `docker compose start rating-service`.\n**Code:** `health.js` → `services()` → `grpc/clients.js` `createHealthClients`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 · Mọi request đi qua Gateway",
+      "description": "",
+      "item": [
+        {
+          "name": "8.1 Gọi thẳng auth-service (phải lỗi)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "http://localhost:50051",
+            "description": "**Gõ:** `GET localhost:50051`\n**Kết quả:** Postman báo `Error: connect ECONNREFUSED` (không có response).\n**Nói:** chỉ `gateway` (3000) và `kafka-ui` (8080) có `ports` trong `compose.yaml`. Service nghe 50051–50058 trong mạng `cab-net`, máy ngoài không gọi thẳng được. Chứng minh thêm: `docker compose ps` cột PORTS.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": []
+        }
+      ]
+    },
+    {
+      "name": "09 · Đăng ký khách → đăng nhập được",
+      "description": "Code: `gateway/src/routes.js` (A04) → `auth-service/src/domain/auth.js` `registerCustomer`, `login`. Mật khẩu băm scrypt (`domain/password.js`).",
+      "item": [
+        {
+          "name": "9.1 Đăng ký bằng email",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/register",
+            "description": "**Gõ khi thi:** `POST localhost:3000/api/v1/auth/register` body `{\"email\":\"new1@cab.vn\",\"password\":\"12345678\"}` (khi luyện, email tự sinh để chạy lại không trùng)\n**Kết quả:** 201 `{\"account_id\":1000,\"role\":\"customer\"}`\n**Nói:** theo yêu cầu thầy, xác thực nằm trong nhóm `/api/v1/auth/…`. Chỉ tạo tài khoản `customer` ở auth-service, email chữ thường + UNIQUE, mật khẩu băm scrypt. Hồ sơ (họ tên, số điện thoại) tạo sau khi đăng nhập.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{new_email}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('new_email', 'new' + (Date.now() % 1000000) + '@cab.vn');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.environment.set('new_id', pm.response.json().account_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.2 Đăng nhập bằng tài khoản vừa tạo",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Gõ:** sửa tab: `register` → `login` (body giữ nguyên)\n**Kết quả:** 200 có `token`, `account_id` = mã vừa tạo.\n**Nói:** đăng ký và đăng nhập cùng body nên chỉ sửa URL.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{new_email}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_new', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9.3 (tùy chọn) Đăng ký lại cùng email",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/register",
+            "description": "**Kết quả:** 409 `EMAIL_ALREADY_EXISTS` — email là UNIQUE (`auth-service/migrations/004_email-dang-nhap.sql`).",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{new_email}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10 · Đăng nhập → cấp token (3 role)",
+      "description": "Một API cho 3 role, mỗi role đúng một định danh. Code: `auth.js` `login` → `domain/token.js` ký JWT HS256 (`sub`, `role`, `jti`, `exp`).",
+      "item": [
+        {
+          "name": "10.1 KH1 (email)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Gõ:** tab đăng nhập: body `{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}` — tab này = **tab KH1**\n**Kết quả:** 200 `token`, `role` customer, `account_id` 1, `expires_in` 3600",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_kh1', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.2 Admin (email)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Gõ:** nhân bản tab: `\"email\":\"admin@cab.vn\"` → 200 `role` admin, `account_id` 99",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"admin@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_ad1', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.3 TX1 (số điện thoại)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Gõ:** nhân bản tab, đổi chữ `email` → `phone`: `{\"phone\":\"0910000001\",\"password\":\"12345678\"}`\n**Kết quả:** 200 `role` driver, `account_id` 11\n**Nói:** tài xế dùng số điện thoại vì đã xác thực số bằng OTP khi đăng ký. Database có CHECK theo role.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"0910000001\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_tx1', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.4 (tùy chọn) Gửi cả email lẫn phone",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Kết quả:** 400 `INVALID_INPUT` — phải đúng MỘT định danh (`gateway/src/validate.js` `validateLogin`).",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"phone\":\"0910000001\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.5 (tùy chọn) Sai mật khẩu",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Kết quả:** 401 `INVALID_CREDENTIALS`. Sai mật khẩu và email chưa đăng ký trả CÙNG một lỗi để không lộ ai đã có tài khoản.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"sai\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11 · Xem khách hàng theo mã",
+      "description": "Code: `gateway/src/routes.js` A09 → `customer-service/src/domain/customers.js` `getCustomer` (kiểm chủ) → `profiles-repo.js` → giải mã họ tên bằng `CUSTOMER_DATA_KEY` (`domain/crypto.js`).",
+      "item": [
+        {
+          "name": "11.1 KH1 xem mã 1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/1",
+            "description": "**Gõ:** `GET localhost:3000/api/v1/customers/1`, Bearer [KH1] — tab này = **tab GET**\n**Kết quả:** 200 `{\"customer_id\":1,\"name\":\"Nguyễn Văn An\",\"phone\":\"0900000001\",\"dob\":\"2000-01-01\"}`\n**Nói:** mã của mình = `account_id` khi đăng nhập. Số điện thoại là thông tin LIÊN HỆ nên ở hồ sơ; email là định danh đăng nhập nên ở tài khoản (ADR-021).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11.2 KH1 xem mã 2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/2",
+            "description": "**Gõ:** sửa tab: `/customers/2`\n**Kết quả:** 403 `NOT_OWNER`\n**Nói:** mã là số nguyên nên dễ đoán → mọi API theo mã đều kiểm tra chủ. Gateway chỉ kiểm role; service mới biết ai sở hữu dữ liệu.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11.3 (tùy chọn) Khách mới tạo hồ sơ",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/customers",
+            "description": "**Gõ:** `POST localhost:3000/api/v1/customers`, token khách mục 9, body `{\"name\":\"Pham Duc\",\"phone\":\"0901234567\"}`\n**Kết quả:** 201. Thiếu `phone` → 400; sai dạng → 400 `INVALID_PHONE`.\n**Nói:** không gửi mã: `customer_id` lấy từ token. Phone bắt buộc, không UNIQUE, lưu rõ.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_new}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Pham Duc\",\"phone\":\"0901234567\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12 · Xem tài xế theo mã",
+      "description": "Theo thầy: admin xem mọi mã; tài xế chỉ mã của mình; khách bị 403. Code: `routes.js` A14 roles `['driver','admin']` → `driver-service/src/domain/drivers.js` `getDriver`.",
+      "item": [
+        {
+          "name": "12.1 Khách xem drivers/11",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/11",
+            "description": "**Gõ:** tab GET [KH1]: `drivers/11` → **403 `FORBIDDEN`** — role customer không có trong route, Gateway chặn trước khi gọi service.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.2 Admin xem drivers/11",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/11",
+            "description": "**Gõ:** Duplicate tab, dán token [AD1] — tab mới = **tab admin**\n**Kết quả:** 200 bản đầy đủ: Tài Xế 1, CAR_4, 59A-00001, ONLINE, APPROVED, `license` GPLX-00001, lat, lng\n**Nói:** số giấy phép mã hóa AES-256-GCM trong database (`DRIVER_DATA_KEY`), chỉ giải mã cho admin và chủ.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_ad1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.3 Admin xem drivers/999",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/999",
+            "description": "**Kết quả:** 404 `DRIVER_NOT_FOUND`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_ad1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.4 (tùy chọn) TX1 xem mã mình",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/11",
+            "description": "**Kết quả:** 200 — chính tài xế xem được hồ sơ của mình (và lý do nếu bị từ chối).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.5 (tùy chọn) TX1 xem mã TX2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/12",
+            "description": "**Kết quả:** 403 `NOT_OWNER` — service so mã trước khi đọc database.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "13 · Tài xế quanh tọa độ 1 km, limit + paging",
+      "description": "Làm TRƯỚC mục 15 (TX1 còn rảnh). Code: A12 → `drivers.js` `findNearbyDrivers` → `drivers-repo.js` (khung chữ nhật + Haversine, gần nhất trước).",
+      "item": [
+        {
+          "name": "13.1 limit=2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68&limit=2",
+            "description": "**Gõ:** tab GET [KH1]: `drivers?lat=10.82&lng=106.68&limit=2`\n**Kết quả:** TX1 (≈111 m), TX2 (≈222 m); `total` 4, `total_pages` 2\n**Nói:** seed 8 tài xế, chỉ 4 trong kết quả: TX5 OFFLINE, TX6 bận, TX7 chưa duyệt, TX8 cách 2,2 km.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.2 page=2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68&limit=2&page=2",
+            "description": "**Kết quả:** TX3 (≈334 m), TX4 (≈445 m).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.3 (tùy chọn) lọc CAR_4",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers?lat=10.82&lng=106.68&vehicle=CAR_4",
+            "description": "**Kết quả:** TX1, TX3; `total` 2.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "14 · Booking theo mã khách, limit + paging",
+      "description": "Làm TRƯỚC mục 15 (KH1 đúng 7 booking). Đường dẫn bắt đầu `customers` nhưng Gateway định tuyến sang booking-service. Code: A20 → `booking-service/src/domain/bookings.js` `listBookings`.",
+      "item": [
+        {
+          "name": "14.1 customers/1/bookings?limit=2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/1/bookings?limit=2",
+            "description": "**Kết quả:** booking 7, 6; `total` 7, `total_pages` 4 (mới nhất trước).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14.2 page=2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/1/bookings?limit=2&page=2",
+            "description": "**Kết quả:** booking 5, 4.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14.3 KH1 xem mã 2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/2/bookings",
+            "description": "**Kết quả:** 403 `NOT_OWNER` — so mã trước khi đọc database.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14.4 (tùy chọn) Admin xem mã 1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/1/bookings?limit=2",
+            "description": "**Kết quả:** 200 như 14.1 — admin xem mọi mã.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_ad1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "15 · Đặt xe → tìm tài xế → gửi Offer",
+      "description": "Code: A19 → `bookings.js` `createBooking` → `domain/distance.js` (Haversine ×1,3) → gRPC S4 `CreatePayment` (`payment-service/src/domain/fare.js` tính cước) → `dispatcher.js` (gRPC S2 FindNearbyDrivers, tạo Offer, Kafka K2).",
+      "item": [
+        {
+          "name": "15.1 Đặt xe",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/bookings",
+            "description": "**Gõ:** `POST localhost:3000/api/v1/bookings`, [KH1], body `{\"from\":[10.82,106.68],\"to\":[10.83,106.69]}` — **tab đặt xe**\n**Kết quả:** 201 `SEARCHING`, CAR_4, CASH, **`fare` 45000**, `distance_m` 2026, `booking_id` 1000\n**Nói:** 1.559 m đường thẳng × 1,3 = 2.026 m; 20.000 + 12.000 × 2,026 = 44.312 → làm tròn lên 45.000. Booking gọi gRPC sang Payment để khách thấy giá ngay; tìm tài xế chạy nền.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"from\":[10.82,106.68],\"to\":[10.83,106.69]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.environment.set('booking_id', pm.response.json().booking_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15.2 TX1 xem lời mời",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/offers",
+            "description": "**Gõ:** nhân bản tab: method GET, URL `offers`, [TX1] — **tab chuyến**\n**Kết quả:** Offer `PENDING`, `booking_id` 1000, `distance_m` ≈111, `expires_at` +300 s\n**Nói:** TX1 là tài xế rảnh, đúng loại xe, gần nhất trong 1 km (BRULE01–03).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const o = (pm.response.json().data || []).find(x => String(x.booking_id) === String(pm.environment.get('booking_id')));",
+                  "if (o) pm.environment.set('offer_id', o.offer_id);",
+                  "pm.test('có lời mời cho booking vừa đặt', () => pm.expect(o).to.be.ok);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "16 · Tài xế nhận chuyến",
+      "description": "Trong 5 phút sau 15. Code: A24 → `bookings.js` `acceptOffer`: khóa booking → gRPC S3 ReserveDriver → gRPC S5 CreateTrip → lưu → trip-service phát Kafka K5 → notification lưu `TRIP_ACCEPTED`.",
+      "item": [
+        {
+          "name": "16.1 Nhận lời mời",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/offers/{{offer_id}}",
+            "description": "**Gõ:** tab chuyến: PATCH `offers/1000`, body `{\"status\":\"ACCEPTED\"}`\n**Kết quả:** 200 `ACCEPTED`, `booking_status` DRIVER_ASSIGNED, **`trip_id` 1000**\n**Nói:** đổi trạng thái lời mời → PATCH + status, không có `/accept`. gRPC CreateTrip đồng bộ vì tài xế cần ngay mã chuyến.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ACCEPTED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('trip_id', pm.response.json().trip_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16.2 Khách xem thông báo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/notifications",
+            "description": "**Gõ:** tab GET [KH1]: URL `notifications`\n**Kết quả:** `data[0]` **TRIP_ACCEPTED**, `data[1]` BOOKING_CREATED\n**Nói:** Notification nghe Kafka; Notification lỗi thì nhận chuyến vẫn thành công.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "17 · Cập nhật trạng thái chuyến đúng trình tự",
+      "description": "Cùng đường dẫn `PATCH /api/v1/trips/{mã}`, chỉ đổi `status`. Code: A28 → `trip-service/src/domain/trips.js` `updateTripStatus`.",
+      "item": [
+        {
+          "name": "17.1 Nhảy cóc COMPLETED (phải 409)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/trips/{{trip_id}}",
+            "description": "**Kết quả:** 409 `INVALID_STATUS_TRANSITION` — bảng `NEXT` trong `trip-service/src/domain/rules.js`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"COMPLETED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17.2 ARRIVED",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/trips/{{trip_id}}",
+            "description": "**Gõ:** sửa body `\"ARRIVED\"` → 200",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ARRIVED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17.3 PICKED_UP",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/trips/{{trip_id}}",
+            "description": "→ 200",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"PICKED_UP\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17.4 IN_PROGRESS",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/trips/{{trip_id}}",
+            "description": "→ 200",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"IN_PROGRESS\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17.5 COMPLETED",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/trips/{{trip_id}}",
+            "description": "→ 200, `history` đủ 5. Khoảng 1 giây sau: TX1 về ONLINE (driver nghe Kafka), thanh toán tiền mặt COMPLETED (payment nghe Kafka).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"COMPLETED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 · Kafka (trình duyệt, sau mục 15)",
+      "description": "**Gõ:** trình duyệt `localhost:8080` → cluster `cab` → **Topics** (7 topic) → `booking.offer-created` → **Messages** (có booking_id, driver_id của mục 15). Tab **Consumers**: group mang tên service.\n**Nói:** topic tạo sẵn bởi `kafka-init`; event gửi ngay sau commit (không outbox). Kafka UI chỉ đọc (không có nút Produce) để không ai gửi event giả.",
+      "item": []
+    },
+    {
+      "name": "20 · Đánh giá chuyến",
+      "description": "Chuyến seed 4 (COMPLETED, TX3, chưa đánh giá). Code: A34 → `rating-service/src/domain/ratings.js` `createRating` → gRPC S7 `GetTripForRating` sang trip-service.",
+      "item": [
+        {
+          "name": "20.1 Đánh giá chuyến 4",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/ratings",
+            "description": "**Gõ:** `POST localhost:3000/api/v1/ratings`, [KH1], body `{\"trip_id\":4,\"score\":5}`\n**Kết quả:** 201 `driver_id` 13, `driver_avg` 5, `driver_count` 1\n**Nói:** Rating hỏi Trip bằng gRPC: chuyến có thật, đúng khách, đã xong chưa.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"trip_id\":4,\"score\":5}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20.2 Gửi lại y hệt",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/ratings",
+            "description": "**Kết quả:** 409 `RATING_ALREADY_EXISTS` — UNIQUE `trip_id`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"trip_id\":4,\"score\":5}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20.3 (tùy chọn) Chuyến chưa xong",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/ratings",
+            "description": "**Kết quả:** 409 `TRIP_NOT_COMPLETED` (chuyến 5 đang ACCEPTED).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"trip_id\":5,\"score\":5}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "18 · Hủy chuyến → CANCELED, các bên được báo",
+      "description": "Chuyến seed 5 (KH1, TX6, đã trả online) — chỉ hủy được MỘT lần. Code: A29 → `trips.js` `cancelTrip` → Kafka K5 → payment hoàn tiền, driver trả TX6 về rảnh, notification báo cả hai.",
+      "item": [
+        {
+          "name": "18.1 KH1 hủy chuyến 5",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/trips/5",
+            "description": "**Gõ:** tab GET [KH1]: method PATCH, URL `trips/5`, body `{\"status\":\"CANCELED\",\"reason\":\"ban viec\"}`\n**Kết quả:** 200 `CANCELED`, `canceled_by` customer\n**Nói:** cùng đường dẫn với mục 17. Chỉ hủy được trước khi đón (BRULE16). Kafka vì hủy phải thành công dù Payment đang dừng (NFR05).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"CANCELED\",\"reason\":\"ban viec\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18.2 Khách xem thông báo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/notifications",
+            "description": "**Gõ:** cùng tab: GET `notifications` → `PAYMENT_REFUNDED` (45000) và `TRIP_CANCELED`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18.3 (tùy chọn) TX6 xem thông báo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/notifications",
+            "description": "**Kết quả:** `TRIP_CANCELED` — báo cả tài xế.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx6}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "19 · Thanh toán online + callback → COMPLETED",
+      "description": "Booking/payment seed 7 (CAR_7, ONLINE, 56 000 đ). Làm liền với mục 30.",
+      "item": [
+        {
+          "name": "19.1 Thanh toán MANUAL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "k1"
+              }
+            ],
+            "url": "{{base}}/api/v1/payments/7/transactions",
+            "description": "**Gõ:** `POST localhost:3000/api/v1/payments/7/transactions`, [KH1], Headers (Bulk Edit) `Idempotency-Key:k1`, body `{\"simulate_result\":\"MANUAL\"}`\n**Kết quả:** 200 `status` PENDING, `txn_id` SIM-7-1, `txn_status` PENDING\n**Nói:** mỗi lần thanh toán là một giao dịch mới. Trả trước: trả xong mới tìm tài xế (BRULE13). MANUAL giữ giao dịch chờ để tự gửi callback.\n**Code:** `payment-service/src/domain/payments.js` `payPayment` (khóa dòng → kiểm chủ → tra Idempotency-Key → tạo giao dịch).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"simulate_result\":\"MANUAL\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19.2 Callback cổng thanh toán",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Callback-Secret",
+                "value": "cab-secret"
+              }
+            ],
+            "url": "{{base}}/api/v1/payment-callbacks",
+            "description": "**Gõ:** nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:cab-secret`, body `{\"txn_id\":\"SIM-7-1\"}`\n**Kết quả:** 200 `txn_status` SUCCEEDED, **`status` COMPLETED**\n**Nói:** callback không có token, xác thực bằng khóa bí mật trong header. Payment phát Kafka K6 → Booking chuyển SEARCHING, mời TX4 (CAR_7).\n**Code:** `payments.js` `handleProviderCallback`.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"txn_id\":\"SIM-7-1\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19.3 (tùy chọn) Xem booking 7",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/bookings/7",
+            "description": "**Kết quả:** `SEARCHING` — Booking nghe Kafka K6 rồi bắt đầu tìm tài xế.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "30 · Replay thanh toán → trả response cũ",
+      "description": "Ngay sau mục 19.",
+      "item": [
+        {
+          "name": "30.1 Gửi lại y hệt thanh toán",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "k1"
+              }
+            ],
+            "url": "{{base}}/api/v1/payments/7/transactions",
+            "description": "**Gõ:** tab 19.1 → Send lại\n**Kết quả:** 200 body Y HỆT lần đầu (`PENDING`), header `Idempotency-Replayed: true`, không tạo giao dịch mới.\n**Nói:** response lần đầu lưu trong `idempotency_keys` theo (payment_id, khóa).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"simulate_result\":\"MANUAL\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Idempotency-Replayed', () => pm.expect(pm.response.headers.get('Idempotency-Replayed')).to.eql('true'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "30.2 Gửi lại y hệt callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Callback-Secret",
+                "value": "cab-secret"
+              }
+            ],
+            "url": "{{base}}/api/v1/payment-callbacks",
+            "description": "**Kết quả:** 200 y hệt, `Idempotency-Replayed: true`; không phát lại event.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"txn_id\":\"SIM-7-1\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "30.3 Xem thanh toán 7",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/payments/7",
+            "description": "**Gõ:** sửa tab 19.1: method GET, bỏ `/transactions` → `COMPLETED`, đúng MỘT giao dịch SIM-7-1.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "21 · Đăng ký tài xế (OTP) → hồ sơ chờ duyệt",
+      "description": "Code: `auth.js` `requestDriverOtp` (OTP băm scrypt, hạn 5 phút) → `registerDriver` → `driver-service/src/domain/drivers.js` `submitApplication` (mã hóa số giấy phép).",
+      "item": [
+        {
+          "name": "21.1 Xin OTP",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/otp",
+            "description": "**Gõ:** `POST localhost:3000/api/v1/auth/otp`, body `{\"phone\":\"0911111111\"}` — **tab tài xế** (khi luyện, số tự sinh)\n**Kết quả:** 201 có `otp` (chế độ giả lập trả luôn mã)",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"{{new_phone}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('new_phone', '092' + String(Math.floor(Math.random()*1e7)).padStart(7,'0'));",
+                  "pm.environment.set('new_plate', '59T-' + String(Math.floor(Math.random()*1e5)).padStart(5,'0'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.environment.set('otp', pm.response.json().otp);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21.2 Tạo tài khoản tài xế",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/driver-register",
+            "description": "**Gõ:** sửa tab: URL `auth/driver-register`, body `{\"phone\":\"0911111111\",\"otp\":\"<otp>\",\"password\":\"12345678\"}`\n**Kết quả:** 201 `role` driver kèm **token**",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"{{new_phone}}\",\"otp\":\"{{otp}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.environment.set('tok_txnew', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21.3 Nộp hồ sơ",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers",
+            "description": "**Gõ:** sửa tab: URL `drivers`, Bearer [token vừa nhận], body `{\"name\":\"Tai Xe Moi\",\"license\":\"GPLX-99\",\"plate\":\"59A-99999\"}`\n**Kết quả:** 201 **`approval_status` PENDING** — luôn copy `driver_id` từ response.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_txnew}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Tai Xe Moi\",\"license\":\"GPLX-99\",\"plate\":\"{{new_plate}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.environment.set('driver_new_id', pm.response.json().driver_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "21.4 (tùy chọn) Chưa duyệt mà bật Online",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/me",
+            "description": "**Kết quả:** 409 `DRIVER_NOT_APPROVED` — CHECK trong database: chưa duyệt thì không ONLINE.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_txnew}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ONLINE\",\"lat\":10.82,\"lng\":106.68}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "22 · Admin duyệt / từ chối hồ sơ (+ nộp lại FR43)",
+      "description": "Code: A15/A16 → `drivers.js` `approveDriver` / `rejectDriver` → Kafka K7 → notification `APPLICATION_*`. Nộp lại: A11 → `drivers-repo.js` `saveApplication`.",
+      "item": [
+        {
+          "name": "22.1 Từ chối hồ sơ mới",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/{{driver_new_id}}",
+            "description": "**Gõ:** tab tài xế: PATCH `drivers/D`, [AD1], body `{\"approval_status\":\"REJECTED\",\"reason\":\"anh mo\"}` → 200 REJECTED",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approval_status\":\"REJECTED\",\"reason\":\"anh mo\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22.2 Tài xế xem lý do",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/{{driver_new_id}}",
+            "description": "**Kết quả:** `approval_status` REJECTED, `reason` \"anh mo\". Tài xế còn nhận thông báo APPLICATION_REJECTED.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_txnew}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22.3 Nộp lại (cùng request nộp hồ sơ)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers",
+            "description": "**Kết quả:** **200** `PENDING`, `resubmitted: true` (lần đầu là 201). Đang chờ / đã duyệt mà nộp lại → 409.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_txnew}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Tai Xe Moi\",\"license\":\"GPLX-99\",\"plate\":\"{{new_plate}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22.4 Admin duyệt",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/{{driver_new_id}}",
+            "description": "**Gõ:** body `{\"approval_status\":\"APPROVED\"}`\n**Kết quả:** 200 APPROVED. Duyệt lại lần nữa → 409. Khách/tài xế gọi → 403.\n**Nói:** `approval_status` tách khỏi `status` Online/Offline.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approval_status\":\"APPROVED\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "23 · Tài xế bật / tắt nhận chuyến",
+      "description": "Sau mục 17 (TX1 rảnh). Code: A17/A39 → `drivers.js` `setAvailability`. `me` = mã trong token.",
+      "item": [
+        {
+          "name": "23.1 OFFLINE",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/me",
+            "description": "**Gõ:** tab tài xế: PATCH `drivers/me`, [TX1], body `{\"status\":\"OFFLINE\"}` → 200",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"OFFLINE\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23.2 ONLINE",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/me",
+            "description": "**Gõ:** sửa `\"ONLINE\"` → 200 (dùng lại vị trí cũ). Đang chở khách thì không tắt được (409).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"ONLINE\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "24 · Mã hóa dữ liệu nhạy cảm",
+      "description": "Request + lệnh terminal:\n`docker exec customer-db psql -U cab -d customer -c \"table customer_profiles\"` → `full_name_enc`, `date_of_birth_enc` là `\\x…`, `phone` rõ.\n(tùy chọn) `docker exec auth-db psql -U cab -d auth -c \"table accounts\"` → `password_hash` bắt đầu `scrypt$`.\nCode: `customer-service/src/domain/crypto.js` (AES-256-GCM), `auth-service/src/domain/password.js` (scrypt). Khóa ở `.env`: `CUSTOMER_DATA_KEY`, `DRIVER_DATA_KEY`.",
+      "item": [
+        {
+          "name": "24.1 API trả dữ liệu đã giải mã cho chủ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/1",
+            "description": "**Kết quả:** 200 tên \"Nguyễn Văn An\" (rõ cho đúng chủ). Rồi chạy lệnh psql ở mô tả thư mục.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "25 · SQL injection",
+      "description": "Hai lớp: kiểm định dạng trước khi chạm database; SQL tham số `$1` (`auth-service/src/accounts-repo.js`).",
+      "item": [
+        {
+          "name": "25.1 Injection trong email",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Gõ:** tab đăng nhập KH1: `{\"email\":\"' OR 1=1 --\",\"password\":\"x\"}` → **400 `INVALID_EMAIL`** (không phải email, chặn trước SQL)",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"' OR 1=1 --\",\"password\":\"x\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25.2 Injection trong password",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Gõ:** `{\"email\":\"kh1@cab.vn\",\"password\":\"' OR '1'='1\"}` → 401 `INVALID_CREDENTIALS` (chuỗi chỉ là một giá trị `$1`, mật khẩu so bằng hash). **Nhớ sửa lại** tab KH1 về mật khẩu đúng.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"' OR '1'='1\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25.3 (tùy chọn) Injection trong mã",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/1 OR 1=1",
+            "description": "**Kết quả:** 400 `INVALID_ID` — mã phải là số nguyên (`gateway/src/validate.js` `validateIdParam`).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "26 · XSS",
+      "description": "Code: `gateway/src/validate.js` (`TEXT_CONTAINS_HTML`), header bảo vệ ở `gateway/src/app.js` `securityHeaders`.",
+      "item": [
+        {
+          "name": "26.1 Gửi <script>",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/me",
+            "description": "**Gõ:** tab GET: PATCH `customers/me`, body `{\"name\":\"<script>alert(1)</script>\"}` → 400 `TEXT_CONTAINS_HTML`",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"<script>alert(1)</script>\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26.2 Tên không bị đổi + xem header",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/me",
+            "description": "**Kết quả:** tên vẫn \"Nguyễn Văn An\"; tab Headers của response: `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('nosniff', () => pm.expect(pm.response.headers.get('X-Content-Type-Options')).to.eql('nosniff'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "28 · Sai quyền → 403",
+      "description": "Gateway so role trong token với `roles` của route TRƯỚC khi đọc body (`gateway/src/app.js` bước 6).",
+      "item": [
+        {
+          "name": "28.1 Khách duyệt tài xế",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{base}}/api/v1/drivers/17",
+            "description": "**Gõ:** tab tài xế: URL `drivers/17`, [KH1], xóa body → 403 `FORBIDDEN` (body rỗng vẫn 403).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "28.2 Tài xế đặt xe",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/bookings",
+            "description": "**Gõ:** tab đặt xe: đổi token [TX1] → 403 `FORBIDDEN`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"from\":[10.82,106.68],\"to\":[10.83,106.69]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "27 · JWT bị sửa → 401",
+      "description": "Code: `gateway/src/token.js` `verifyToken` (chỉ nhận HS256, kiểm chữ ký trước hạn). Đăng xuất: `gateway/src/handlers/auth.js` ghi `revoked:{jti}` vào Redis.",
+      "item": [
+        {
+          "name": "27.1 Token bị sửa role → admin",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/me",
+            "description": "**Gõ khi thi:** copy token KH1 → jwt.io → dán → payload sửa `\"role\":\"customer\"` thành `\"role\":\"admin\"` → **không nhập JWT_SECRET** → copy token mới → dán vào Bearer → Send\n(Khi luyện: script tự làm việc sửa này, xem tab Pre-request.)\n**Kết quả:** 401 `TOKEN_INVALID`\n**Nói:** payload chỉ là base64, ai cũng đọc được (nên không chứa email, số điện thoại). Chữ ký HS256 tính bằng `JWT_SECRET`; sửa payload mà không có khóa thì chữ ký không khớp. Rủi ro: ai có khóa thì ký được → khóa chỉ ở auth và Gateway.\n**Dự phòng không mạng:** sửa một ký tự ở GIỮA token → 401.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_sua}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Mô phỏng thao tác trên jwt.io: đổi role trong payload, GIỮ chữ ký cũ (không có JWT_SECRET).",
+                  "const t = pm.environment.get('tok_kh1'); const [h, p, s] = t.split('.');",
+                  "const b64 = p.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((p.length + 3) % 4);",
+                  "const payload = JSON.parse(CryptoJS.enc.Base64.parse(b64).toString(CryptoJS.enc.Utf8));",
+                  "payload.role = 'admin';",
+                  "const np = CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(JSON.stringify(payload))).replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "pm.environment.set('tok_sua', h + '.' + np + '.' + s);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27.2 Không gửi token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/me",
+            "description": "**Gõ:** Authorization → No Auth → 401 `TOKEN_MISSING`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27.3 (tùy chọn) Đăng xuất",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/logout",
+            "description": "→ 200. Token KH1 bị thu hồi.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27.4 (tùy chọn) Dùng token đã đăng xuất",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/customers/me",
+            "description": "→ 401 `TOKEN_REVOKED`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27.5 Đăng nhập lại KH1 (cho mục 29)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "Lấy lại token KH1 sau khi đăng xuất.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.environment.set('tok_kh1', pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "29 · Spam → 429 (làm CUỐI)",
+      "description": "Code: `gateway/src/rate-limit.js` (Redis MULTI: SET NX EX → INCR → TTL). Route công khai: 5 lần / 10 giây theo IP; route có token: 30 lần / 10 giây theo tài khoản.",
+      "item": [
+        {
+          "name": "29.1 Bấm Send 6 lần liên tục",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/auth/login",
+            "description": "**Gõ:** tab đăng nhập KH1, bấm **Send** (hoặc Ctrl+Enter) **6 lần liên tục**, rồi mở tab Headers của response\n**Kết quả:** lần 1–5: 200; lần 6: **429 `RATE_LIMITED`**, `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0`\n**Nói:** cửa sổ bắt đầu từ request đầu tiên; spam không kéo dài cửa sổ; vượt ngưỡng thì request không tới service. Ngưỡng đọc từ `.env` (NFR17). Redis dừng thì cho qua.\n(Runner chỉ gửi 1 lần — mục này phải bấm tay.)",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        }
+      ]
+    }
+  ]
+}

@@ -4,24 +4,43 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BACKEND_SERVICES, GATEWAY_URL, getJson, rawRequest } from './helpers.js';
 
-test('AC-HT-05 (mục 6): GET /health → 200 {"status":"UP"}', async () => {
+test('AC-HT-05 (mục 6): GET /health → 200 {"status":"healthy"}', async () => {
   const r = await getJson(`${GATEWAY_URL}/health`);
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { status: 'UP' });
+  assert.deepEqual(r.body, { status: 'healthy' });
 });
 
-test('AC-HT-05 (mục 6): GET /ready → 200 READY, redis UP, grpc_clients UP', async () => {
+test('AC-HT-05 (mục 6): GET /ready → 200 ready, redis healthy, grpc_clients healthy', async () => {
   const r = await getJson(`${GATEWAY_URL}/ready`);
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { status: 'READY', checks: { redis: 'UP', grpc_clients: 'UP' } });
+  assert.deepEqual(r.body, { status: 'ready', checks: { redis: 'healthy', grpc_clients: 'healthy' } });
 });
 
-test('AC-HT-05 (mục 6): GET /health/services → 200 UP, đủ 8 service SERVING', async () => {
+test('AC-HT-05 (mục 6): GET /health/services → 200 healthy, đủ 8 service healthy', async () => {
   const r = await getJson(`${GATEWAY_URL}/health/services`);
   assert.equal(r.status, 200);
-  assert.equal(r.body.status, 'UP');
+  assert.equal(r.body.status, 'healthy');
   assert.deepEqual(Object.keys(r.body.services).sort(), [...BACKEND_SERVICES].sort());
-  for (const s of BACKEND_SERVICES) assert.equal(r.body.services[s], 'SERVING', `${s} = ${r.body.services[s]}`);
+  for (const s of BACKEND_SERVICES) assert.equal(r.body.services[s], 'healthy', `${s} = ${r.body.services[s]}`);
+});
+
+test('AC-HT-17 (mục 6): mọi giá trị trạng thái của ba endpoint là chữ thường healthy/unhealthy/ready/not_ready, không còn chữ cũ', async () => {
+  const allowed = new Set(['healthy', 'unhealthy', 'ready', 'not_ready']);
+  const collect = (o, out = []) => {
+    for (const v of Object.values(o)) {
+      if (v && typeof v === 'object') collect(v, out);
+      else out.push(v);
+    }
+    return out;
+  };
+  for (const p of ['/health', '/ready', '/health/services']) {
+    const r = await getJson(`${GATEWAY_URL}${p}`);
+    assert.equal(r.status, 200, p);
+    for (const v of collect(r.body)) assert.ok(allowed.has(v), `${p}: giá trị lạ ${v}`);
+    for (const old of ['UP', 'DOWN', 'READY', 'NOT_READY', 'SERVING', 'NOT_SERVING', 'UNREACHABLE', 'DEGRADED']) {
+      assert.ok(!r.text.includes(`"${old}"`), `${p} còn chữ cũ ${old}`);
+    }
+  }
 });
 
 test('AC-HT-05 (mục 6): ba endpoint health không cần token và không trả 401', async () => {
@@ -67,7 +86,7 @@ test('Spec 00 mục 4: GET bỏ qua body — GET /health kèm body hỏng vẫn 
     body: '{hong',
   });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { status: 'UP' });
+  assert.deepEqual(r.body, { status: 'healthy' });
 });
 
 test('Spec 00 mục 4: method không đăng ký (POST /health) → 404 ROUTE_NOT_FOUND', async () => {

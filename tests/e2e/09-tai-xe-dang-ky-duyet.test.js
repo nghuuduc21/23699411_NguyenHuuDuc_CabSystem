@@ -29,8 +29,8 @@ const plateD = newPlate();
 let otpD;
 let D; // { account_id, token }
 
-test('AC-TX-01 (mục 21): POST /otps → 201 {phone, expires_in 300, otp 6 chữ số}; database lưu băm scrypt, không thấy mã rõ', async () => {
-  const r = await call('POST', '/otps', { body: { phone: phoneD } });
+test('AC-TX-01 (mục 21): POST /auth/otp → 201 {phone, expires_in 300, otp 6 chữ số}; database lưu băm scrypt, không thấy mã rõ', async () => {
+  const r = await call('POST', '/auth/otp', { body: { phone: phoneD } });
   assert.equal(r.status, 201, r.text);
   assert.deepEqual(Object.keys(r.body).sort(), ['expires_in', 'otp', 'phone']);
   assert.equal(r.body.phone, phoneD);
@@ -46,7 +46,7 @@ test('AC-TX-01 (mục 21): POST /otps → 201 {phone, expires_in 300, otp 6 ch�
 test('AC-TX-04 (mục 21, 400): A08 otp "000000" sai → 400 OTP_INVALID, attempt_count tăng 1', async () => {
   const wrong = otpD === '000000' ? '111111' : '000000';
   const before = latestOtp(phoneD).attempt;
-  const r = await call('POST', '/driver-accounts', { body: { phone: phoneD, otp: wrong, password: SEED_PASSWORD } });
+  const r = await call('POST', '/auth/driver-register', { body: { phone: phoneD, otp: wrong, password: SEED_PASSWORD } });
   assert.equal(r.status, 400);
   assert.deepEqual(r.body, { error: 'OTP_INVALID' });
   assert.equal(latestOtp(phoneD).attempt, before + 1);
@@ -55,36 +55,36 @@ test('AC-TX-04 (mục 21, 400): A08 otp "000000" sai → 400 OTP_INVALID, attemp
 
 test('TX2: otp sai định dạng ("12ab") → 400 OTP_INVALID, KHÔNG tăng lượt sai', async () => {
   const before = latestOtp(phoneD).attempt;
-  const r = await call('POST', '/driver-accounts', { body: { phone: phoneD, otp: '12ab', password: SEED_PASSWORD } });
+  const r = await call('POST', '/auth/driver-register', { body: { phone: phoneD, otp: '12ab', password: SEED_PASSWORD } });
   assert.equal(r.status, 400);
   assert.deepEqual(r.body, { error: 'OTP_INVALID' });
   assert.equal(latestOtp(phoneD).attempt, before);
 });
 
 test('AC-TX-08 (mục 21, 400): A08 password "123" → INVALID_PASSWORD; thêm "role":"admin" → INVALID_INPUT; A07 phone "123" → INVALID_PHONE', async () => {
-  const a = await call('POST', '/driver-accounts', { body: { phone: phoneD, otp: otpD, password: '123' } });
+  const a = await call('POST', '/auth/driver-register', { body: { phone: phoneD, otp: otpD, password: '123' } });
   assert.equal(a.status, 400);
   assert.deepEqual(a.body, { error: 'INVALID_PASSWORD' });
-  const b = await call('POST', '/driver-accounts', { body: { phone: phoneD, otp: otpD, password: SEED_PASSWORD, role: 'admin' } });
+  const b = await call('POST', '/auth/driver-register', { body: { phone: phoneD, otp: otpD, password: SEED_PASSWORD, role: 'admin' } });
   assert.equal(b.status, 400);
   assert.deepEqual(b.body, { error: 'INVALID_INPUT' });
-  const c = await call('POST', '/otps', { body: { phone: '123' } });
+  const c = await call('POST', '/auth/otp', { body: { phone: '123' } });
   assert.equal(c.status, 400);
   assert.deepEqual(c.body, { error: 'INVALID_PHONE' });
-  const d = await call('POST', '/otps', { body: {} });
+  const d = await call('POST', '/auth/otp', { body: {} });
   assert.equal(d.status, 400);
   assert.deepEqual(d.body, { error: 'INVALID_INPUT' });
-  const e = await call('POST', '/otps', { body: '{x' });
+  const e = await call('POST', '/auth/otp', { body: '{x' });
   assert.equal(e.status, 400);
   assert.deepEqual(e.body, { error: 'INVALID_JSON' });
-  const f = await call('POST', '/driver-accounts', { body: { phone: phoneD, otp: 123456, password: SEED_PASSWORD } });
+  const f = await call('POST', '/auth/driver-register', { body: { phone: phoneD, otp: 123456, password: SEED_PASSWORD } });
   assert.equal(f.status, 400);
   assert.deepEqual(f.body, { error: 'INVALID_INPUT' });
   assert.equal(countAcc(phoneD), 0);
 });
 
 test('AC-TX-02 (mục 21): A08 đúng OTP → 201 {account_id ≥ 1000, role driver, token, expires_in}; đăng nhập lại → 200 role driver', async () => {
-  const r = await call('POST', '/driver-accounts', { body: { phone: phoneD, otp: otpD, password: SEED_PASSWORD } });
+  const r = await call('POST', '/auth/driver-register', { body: { phone: phoneD, otp: otpD, password: SEED_PASSWORD } });
   assert.equal(r.status, 201, r.text);
   assert.deepEqual(Object.keys(r.body).sort(), ['account_id', 'expires_in', 'role', 'token']);
   assert.equal(r.body.role, 'driver');
@@ -99,14 +99,15 @@ test('AC-TX-02 (mục 21): A08 đúng OTP → 201 {account_id ≥ 1000, role dri
   assert.equal(l.status, 200);
   assert.equal(l.body.role, 'driver');
   assert.equal(l.body.account_id, D.account_id);
+  // ADR-021: tài khoản tài xế có phone, email NULL.
+  assert.equal(psql('auth-db', 'auth', `select coalesce(email, 'NULL') || '|' || phone from accounts where account_id = ${D.account_id}`), `NULL|${phoneD}`);
 });
 
 test('AC-TX-07 (mục 21, 409): A07 lại số vừa đăng ký; A08 lại cùng body; A07 số TX1 → 409 PHONE_ALREADY_EXISTS cả ba', async () => {
   const list = [
-    await call('POST', '/otps', { body: { phone: phoneD } }),
-    await call('POST', '/driver-accounts', { body: { phone: phoneD, otp: otpD, password: SEED_PASSWORD } }),
-    await call('POST', '/otps', { body: { phone: SEED.TX1 } }),
-    await call('POST', '/otps', { body: { phone: SEED.KH1 } }),
+    await call('POST', '/auth/otp', { body: { phone: phoneD } }),
+    await call('POST', '/auth/driver-register', { body: { phone: phoneD, otp: otpD, password: SEED_PASSWORD } }),
+    await call('POST', '/auth/otp', { body: { phone: SEED.TX1 } }),
   ];
   for (const r of list) {
     assert.equal(r.status, 409, r.text);
@@ -115,31 +116,39 @@ test('AC-TX-07 (mục 21, 409): A07 lại số vừa đăng ký; A08 lại cùng
   assert.equal(countAcc(phoneD), 1);
 });
 
+test('AC-TX-07 (mục 21, ADR-021): A07 số hồ sơ của KH1 0900000001 → 201 (số hồ sơ khách không nằm ở accounts)', async () => {
+  t.phone('0900000001'); // dọn otp_verifications của số này ở hook after
+  const r = await call('POST', '/auth/otp', { body: { phone: '0900000001' } });
+  assert.equal(r.status, 201, r.text);
+  assert.equal(r.body.phone, '0900000001');
+  assert.equal(countAcc('0900000001'), 0);
+});
+
 test('AC-TX-05 (mục 21, 400): OTP mới, sai đủ 5 lần, rồi gửi mã ĐÚNG → 400 OTP_EXPIRED, không tạo tài khoản', async () => {
   const p = t.phone(newDriverPhone());
-  const o = await call('POST', '/otps', { body: { phone: p } });
+  const o = await call('POST', '/auth/otp', { body: { phone: p } });
   assert.equal(o.status, 201);
   const wrong = o.body.otp === '000000' ? '111111' : '000000';
   for (let i = 0; i < 5; i += 1) {
-    const r = await call('POST', '/driver-accounts', { body: { phone: p, otp: wrong, password: SEED_PASSWORD } });
+    const r = await call('POST', '/auth/driver-register', { body: { phone: p, otp: wrong, password: SEED_PASSWORD } });
     assert.equal(r.status, 400);
     assert.deepEqual(r.body, { error: 'OTP_INVALID' }, `lần sai thứ ${i + 1}`);
   }
   assert.equal(latestOtp(p).attempt, 5);
-  const r = await call('POST', '/driver-accounts', { body: { phone: p, otp: o.body.otp, password: SEED_PASSWORD } });
+  const r = await call('POST', '/auth/driver-register', { body: { phone: p, otp: o.body.otp, password: SEED_PASSWORD } });
   assert.equal(r.status, 400);
   assert.deepEqual(r.body, { error: 'OTP_EXPIRED' });
   assert.equal(countAcc(p), 0);
   // Xin mã mới thì dùng được (dòng mới nhất).
-  const o2 = await call('POST', '/otps', { body: { phone: p } });
-  const ok = await call('POST', '/driver-accounts', { body: { phone: p, otp: o2.body.otp, password: SEED_PASSWORD } });
+  const o2 = await call('POST', '/auth/otp', { body: { phone: p } });
+  const ok = await call('POST', '/auth/driver-register', { body: { phone: p, otp: o2.body.otp, password: SEED_PASSWORD } });
   assert.equal(ok.status, 201, ok.text);
   t.id(ok.body.account_id);
 });
 
 test('AC-TX-06 (mục 21, 400): chưa xin OTP → A08 otp "123456" → 400 OTP_INVALID', async () => {
   const p = t.phone(newDriverPhone());
-  const r = await call('POST', '/driver-accounts', { body: { phone: p, otp: '123456', password: SEED_PASSWORD } });
+  const r = await call('POST', '/auth/driver-register', { body: { phone: p, otp: '123456', password: SEED_PASSWORD } });
   assert.equal(r.status, 400);
   assert.deepEqual(r.body, { error: 'OTP_INVALID' });
   assert.equal(countAcc(p), 0);
@@ -147,11 +156,11 @@ test('AC-TX-06 (mục 21, 400): chưa xin OTP → A08 otp "123456" → 400 OTP_I
 
 test('Spec 12-13-21-23 mục 8.1: xin OTP hai lần, dùng mã CŨ → 400 OTP_INVALID', async () => {
   const p = t.phone(newDriverPhone());
-  const o1 = await call('POST', '/otps', { body: { phone: p } });
-  let o2 = await call('POST', '/otps', { body: { phone: p } });
+  const o1 = await call('POST', '/auth/otp', { body: { phone: p } });
+  let o2 = await call('POST', '/auth/otp', { body: { phone: p } });
   // Hiếm khi hai mã trùng nhau; xin thêm để có mã khác.
-  while (o2.body.otp === o1.body.otp) o2 = await call('POST', '/otps', { body: { phone: p } });
-  const r = await call('POST', '/driver-accounts', { body: { phone: p, otp: o1.body.otp, password: SEED_PASSWORD } });
+  while (o2.body.otp === o1.body.otp) o2 = await call('POST', '/auth/otp', { body: { phone: p } });
+  const r = await call('POST', '/auth/driver-register', { body: { phone: p, otp: o1.body.otp, password: SEED_PASSWORD } });
   assert.equal(r.status, 400);
   assert.deepEqual(r.body, { error: 'OTP_INVALID' });
   assert.equal(countAcc(p), 0);
@@ -228,12 +237,16 @@ test('AC-TX-12 (mục 24): table drivers — license_number_enc dạng \\x…, k
   assert.equal(r.body.license, 'GPLX-99');
 });
 
-test('TX3 (mục 12): hồ sơ PENDING — KH1 xem → 404 DRIVER_NOT_FOUND; AD1 xem → 200 đầy đủ', async () => {
+test('AC-TX-26/40 (mục 12): hồ sơ PENDING — KH1 xem → 403 FORBIDDEN; TX1 xem → 403 NOT_OWNER; chủ và AD1 xem → 200 đầy đủ', async () => {
   const k = await call('GET', `/drivers/${D.account_id}`, { token: await tokenOf(SEED.KH1) });
-  assert.equal(k.status, 404);
-  assert.deepEqual(k.body, { error: 'DRIVER_NOT_FOUND' });
+  assert.equal(k.status, 403, k.text);
+  assert.deepEqual(k.body, { error: 'FORBIDDEN' });
   const tx = await call('GET', `/drivers/${D.account_id}`, { token: await tokenOf(SEED.TX1) });
-  assert.equal(tx.status, 404);
+  assert.equal(tx.status, 403, tx.text);
+  assert.deepEqual(tx.body, { error: 'NOT_OWNER' });
+  const own = await call('GET', `/drivers/${D.account_id}`, { token: D.token });
+  assert.equal(own.status, 200, own.text);
+  assert.equal(own.body.approval_status, 'PENDING');
   const a = await call('GET', `/drivers/${D.account_id}`, { token: await tokenOf(SEED.AD1) });
   assert.equal(a.status, 200);
   assert.equal(a.body.approval_status, 'PENDING');
@@ -387,7 +400,7 @@ test('AC-TX-16 (mục 22, 409): duyệt lại hồ sơ đã duyệt; từ chối
   assert.deepEqual(b.body, { error: 'APPLICATION_ALREADY_REVIEWED' });
 });
 
-test('AC-TX-15 (mục 22): A16 từ chối hồ sơ PENDING kèm reason → 200 REJECTED + reason; Kafka result REJECTED, không có lý do; KH1 xem → 404, AD1 và chủ thấy reason; nộp lại → 200 resubmitted (FR43)', async () => {
+test('AC-TX-15 (mục 22): A16 từ chối hồ sơ PENDING kèm reason → 200 REJECTED + reason; Kafka result REJECTED, không có lý do; KH1 xem → 403 FORBIDDEN, AD1 và chủ thấy reason; nộp lại → 200 resubmitted (FR43)', async () => {
   const E = await newDriverWithApplication(t);
   const reason = 'thieu giay to';
   const ad = await tokenOf(SEED.AD1);
@@ -403,7 +416,8 @@ test('AC-TX-15 (mục 22): A16 từ chối hồ sơ PENDING kèm reason → 200 
   assert.equal(msg.content.data.result, 'REJECTED');
   assert.ok(!msg.raw.includes(reason), 'event chứa lý do từ chối');
   const k = await call('GET', `/drivers/${E.driver_id}`, { token: await tokenOf(SEED.KH1) });
-  assert.equal(k.status, 404);
+  assert.equal(k.status, 403, k.text);
+  assert.deepEqual(k.body, { error: 'FORBIDDEN' });
   const a = await call('GET', `/drivers/${E.driver_id}`, { token: ad });
   assert.equal(a.body.approval_status, 'REJECTED');
   assert.equal(a.body.reason, reason);
@@ -441,16 +455,35 @@ test('AC-TX-22 (mục 23, 400): D đã duyệt, chưa có vị trí — ONLINE k
   assert.ok(!s2.body.data.some((x) => x.driver_id === D.account_id));
 });
 
-test('Mục 12: tài xế đã duyệt — KH1 xem phần công khai đúng 5 key', async () => {
+test('AC-TX-26 (mục 12, ADR-021): tài xế đã duyệt — KH1 xem → 403 FORBIDDEN (bỏ phần công khai); chủ xem → 200 đầy đủ APPROVED', async () => {
   const r = await call('GET', `/drivers/${D.account_id}`, { token: await tokenOf(SEED.KH1) });
-  assert.equal(r.status, 200);
-  assert.deepEqual(r.body, { driver_id: D.account_id, name: 'Tai Xe Moi', vehicle: 'CAR_4', plate: plateD, status: 'OFFLINE' });
+  assert.equal(r.status, 403, r.text);
+  assert.deepEqual(r.body, { error: 'FORBIDDEN' });
+  const own = await call('GET', `/drivers/${D.account_id}`, { token: D.token });
+  assert.equal(own.status, 200, own.text);
+  assert.equal(own.body.driver_id, D.account_id);
+  assert.equal(own.body.name, 'Tai Xe Moi');
+  assert.equal(own.body.plate, plateD);
+  assert.equal(own.body.approval_status, 'APPROVED');
+  assert.equal(own.body.license, 'GPLX-99');
+});
+
+test('AC-TX-41 (mục 12): tài khoản driver mới chưa nộp hồ sơ — A14 mã của mình → 404 DRIVER_NOT_FOUND; A11 nộp → 201; A14 lại → 200 PENDING', async () => {
+  const acc = await newDriverAccount(t);
+  const a = await call('GET', `/drivers/${acc.account_id}`, { token: acc.token });
+  assert.equal(a.status, 404, a.text);
+  assert.deepEqual(a.body, { error: 'DRIVER_NOT_FOUND' });
+  const n = await call('POST', '/drivers', { token: acc.token, body: { name: 'Tai Xe Test', license: 'GPLX-99', plate: newPlate() } });
+  assert.equal(n.status, 201, n.text);
+  const b = await call('GET', `/drivers/${acc.account_id}`, { token: acc.token });
+  assert.equal(b.status, 200, b.text);
+  assert.equal(b.body.approval_status, 'PENDING');
 });
 
 test('Mục 21: password_hash, otp_hash không bao giờ xuất hiện trong response', async () => {
   const p = t.phone(newDriverPhone());
-  const o = await call('POST', '/otps', { body: { phone: p } });
-  const a = await call('POST', '/driver-accounts', { body: { phone: p, otp: o.body.otp, password: SEED_PASSWORD } });
+  const o = await call('POST', '/auth/otp', { body: { phone: p } });
+  const a = await call('POST', '/auth/driver-register', { body: { phone: p, otp: o.body.otp, password: SEED_PASSWORD } });
   t.id(a.body.account_id);
   for (const r of [o, a]) assert.ok(!/hash|scrypt/i.test(r.text), r.text);
 });

@@ -5,7 +5,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  SEED, SEED_PASSWORD, call, createTracker, newCustomerPhone, newDriverWithApplication, tokenOf,
+  SEED, SEED_PASSWORD, call, createTracker, newEmail, newDriverWithApplication, tokenOf,
 } from './api.js';
 import { compose, run, waitFor, waitHealthy } from './helpers.js';
 
@@ -26,12 +26,12 @@ async function withStopped(service, fn) {
   }
 }
 
-test('AC-DN-06 (mục 9, 503): dừng auth-service → POST /accounts hợp lệ → 503 SERVICE_UNAVAILABLE', async () => {
+test('AC-DN-06 (mục 9, 503): dừng auth-service → POST /auth/register hợp lệ → 503 SERVICE_UNAVAILABLE', async () => {
   await withStopped('auth-service', async () => {
-    const r = await call('POST', '/accounts', { body: { phone: t.phone(newCustomerPhone()), password: SEED_PASSWORD } });
+    const r = await call('POST', '/auth/register', { body: { email: t.email(newEmail()), password: SEED_PASSWORD } });
     assert.equal(r.status, 503);
     assert.deepEqual(r.body, { error: 'SERVICE_UNAVAILABLE' });
-    const l = await call('POST', '/auth/login', { body: { phone: SEED.KH1, password: SEED_PASSWORD } });
+    const l = await call('POST', '/auth/login', { body: { email: SEED.KH1, password: SEED_PASSWORD } });
     assert.equal(l.status, 503);
   });
 });
@@ -56,7 +56,7 @@ test('AC-HS-12 (mục 11, 503): dừng customer-service → GET /customers/me �
     const r = await call('GET', '/customers/me', { token: tok });
     assert.equal(r.status, 503);
     assert.deepEqual(r.body, { error: 'SERVICE_UNAVAILABLE' });
-    const l = await call('POST', '/auth/login', { body: { phone: SEED.KH1, password: SEED_PASSWORD } });
+    const l = await call('POST', '/auth/login', { body: { email: SEED.KH1, password: SEED_PASSWORD } });
     assert.equal(l.status, 200);
   });
 });
@@ -67,7 +67,7 @@ test('AC-TX-33 (mục 13, 503): dừng driver-service → A12 → 503; đăng nh
     const r = await call('GET', '/drivers?lat=10.82&lng=106.68', { token: tok });
     assert.equal(r.status, 503);
     assert.deepEqual(r.body, { error: 'SERVICE_UNAVAILABLE' });
-    const l = await call('POST', '/auth/login', { body: { phone: SEED.KH1, password: SEED_PASSWORD } });
+    const l = await call('POST', '/auth/login', { body: { email: SEED.KH1, password: SEED_PASSWORD } });
     assert.equal(l.status, 200);
   });
 });

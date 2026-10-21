@@ -1,7 +1,8 @@
 // Hàm dùng chung cho test nghiệp vụ (spec 09-10, 11, 12-13-21-23): gọi REST vào Gateway,
 // đăng nhập tài khoản seed, đọc database bằng psql trong container, đọc Kafka qua Kafka UI, dọn dữ liệu test.
-// Quy ước dữ liệu test (không trùng seed 0900…, 0910…, 0999…):
-//   khách tạo mới  : 0399 + 6 số ngẫu nhiên
+// Quy ước dữ liệu test (không trùng seed khn@cab.vn, 0910…; ADR-021: khách / admin đăng nhập bằng email, tài xế bằng số):
+//   khách tạo mới  : email qa + 8 số ngẫu nhiên @test.vn
+//   số điện thoại hồ sơ khách tạo mới : 0399 + 6 số ngẫu nhiên
 //   tài xế tạo mới : 0599 + 6 số ngẫu nhiên
 //   biển số        : 99T- + 5 số ngẫu nhiên
 // Mọi mã do API tạo lấy từ response, không viết cứng.
@@ -13,21 +14,29 @@ import { GATEWAY_URL, KAFKA_UI_URL, REPO_ROOT, run, waitFor } from './helpers.js
 export const API = `${GATEWAY_URL}/api/v1`;
 export const SEED_PASSWORD = '12345678';
 
+// Định danh đăng nhập của tài khoản seed (ADR-021): khách và admin bằng email, tài xế bằng số điện thoại.
 export const SEED = {
-  KH1: '0900000001',
-  KH2: '0900000002',
-  KH3: '0900000003',
-  KH9: '0900000009',
+  KH1: 'kh1@cab.vn',
+  KH2: 'kh2@cab.vn',
+  KH3: 'kh3@cab.vn',
+  KH9: 'kh9@cab.vn',
   TX1: '0910000001',
   TX2: '0910000002',
   TX5: '0910000005',
   TX6: '0910000006',
   TX7: '0910000007',
-  AD1: '0999999999',
+  AD1: 'admin@cab.vn',
 };
+// Số điện thoại trong HỒ SƠ khách seed (spec 11, ADR-021) — không dùng để đăng nhập.
+export const SEED_PROFILE_PHONE = { KH1: '0900000001', KH2: '0900000002', KH9: '0900000009' };
+
+// Body đăng nhập theo định danh: có '@' là email, còn lại là số điện thoại.
+export const loginBody = (id, password = SEED_PASSWORD) =>
+  id.includes('@') ? { email: id, password } : { phone: id, password };
 
 const rand = (n) => String(crypto.randomInt(0, 10 ** n)).padStart(n, '0');
 export const newCustomerPhone = () => `0399${rand(6)}`;
+export const newEmail = () => `qa${rand(8)}@test.vn`;
 export const newDriverPhone = () => `0599${rand(6)}`;
 export const newPlate = () => `99T-${rand(5)}`;
 
@@ -67,7 +76,7 @@ export async function call(method, url, { token, body, headers = {}, rawAuth } =
 // (service đang khởi động lại do dev-agent dựng lại container).
 export async function login(phone, password = SEED_PASSWORD) {
   const r = await waitFor(
-    () => call('POST', '/auth/login', { body: { phone, password } }),
+    () => call('POST', '/auth/login', { body: loginBody(phone, password) }),
     (x) => x && x.status !== 503 && !x.error,
     { timeoutMs: 90_000, intervalMs: 2000 },
   );
@@ -179,11 +188,16 @@ async function kafkaPage(url) {
 // Ghi nhận dữ liệu test tạo ra để dọn ở hook `after`.
 export function createTracker() {
   const phones = new Set();
+  const emails = new Set();
   const ids = new Set();
   return {
     phone(p) {
       phones.add(p);
       return p;
+    },
+    email(e) {
+      emails.add(e);
+      return e;
     },
     id(n) {
       ids.add(Number(n));
@@ -195,6 +209,12 @@ export function createTracker() {
       if (ph.length) {
         const list = ph.map((p) => `'${p}'`).join(',');
         const found = psql('auth-db', 'auth', `select account_id from accounts where phone in (${list})`);
+        for (const line of found.split(/\r?\n/).filter(Boolean)) ids.add(Number(line));
+      }
+      const em = [...emails].map((e) => String(e).trim().toLowerCase()).filter((e) => /^[a-z0-9._%+-]+@[a-z0-9.-]+$/.test(e));
+      if (em.length) {
+        const list = em.map((e) => `'${e}'`).join(',');
+        const found = psql('auth-db', 'auth', `select account_id from accounts where email in (${list})`);
         for (const line of found.split(/\r?\n/).filter(Boolean)) ids.add(Number(line));
       }
       const idList = [...ids].filter((n) => Number.isInteger(n) && n >= 1000);
@@ -212,23 +232,23 @@ export function createTracker() {
   };
 }
 
-// Đăng ký khách mới qua API, trả { phone, account_id, token }.
+// Đăng ký khách mới qua API (A04 auth/register bằng email), trả { email, account_id, token }.
 export async function newCustomer(tracker) {
-  const phone = tracker.phone(newCustomerPhone());
-  const r = await call('POST', '/accounts', { body: { phone, password: SEED_PASSWORD } });
-  if (r.status !== 201) throw new Error(`đăng ký ${phone} → ${r.status} ${r.text}`);
+  const email = tracker.email(newEmail());
+  const r = await call('POST', '/auth/register', { body: { email, password: SEED_PASSWORD } });
+  if (r.status !== 201) throw new Error(`đăng ký ${email} → ${r.status} ${r.text}`);
   tracker.id(r.body.account_id);
-  const l = await login(phone);
-  return { phone, account_id: r.body.account_id, token: l.token };
+  const l = await login(email);
+  return { email, account_id: r.body.account_id, token: l.token };
 }
 
 // Tạo tài khoản tài xế mới qua OTP (A07 → A08), trả { phone, account_id, token }.
 export async function newDriverAccount(tracker) {
   const phone = tracker.phone(newDriverPhone());
-  const o = await call('POST', '/otps', { body: { phone } });
+  const o = await call('POST', '/auth/otp', { body: { phone } });
   if (o.status !== 201) throw new Error(`otp ${phone} → ${o.status} ${o.text}`);
-  const a = await call('POST', '/driver-accounts', { body: { phone, otp: o.body.otp, password: SEED_PASSWORD } });
-  if (a.status !== 201) throw new Error(`driver-accounts ${phone} → ${a.status} ${a.text}`);
+  const a = await call('POST', '/auth/driver-register', { body: { phone, otp: o.body.otp, password: SEED_PASSWORD } });
+  if (a.status !== 201) throw new Error(`driver-register ${phone} → ${a.status} ${a.text}`);
   tracker.id(a.body.account_id);
   return { phone, account_id: a.body.account_id, token: a.body.token };
 }

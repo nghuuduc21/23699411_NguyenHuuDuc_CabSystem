@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "6b0f3c9e-2f1a-4c55-9a1e-cab000000000",
     "name": "Cab Booking System",
-    "description": "Collection theo số mục chấm. CHỈ để test-agent kiểm thử và sinh viên luyện tập; khi thi không được dùng (gõ tay mọi request). Biến {{base}} = http://localhost:3000. Chạy theo thứ tự thư mục: 06 → 13, 21 → 22 (+ thư mục luyện vấn đáp nộp lại hồ sơ), 23 → 28, rồi 14 → 15 → 16 → 17 → 20 → 18 → 19 → 30, cuối cùng 29 (chạy riêng với ngưỡng rate limit mẫu 5 / 10 s; các thư mục khác chạy với ngưỡng 1000). Mục 18 (chuyến seed 5), 19 (payment seed 7), 22.2 (TX7) đổi seed — chạy lại cần đặt lại dữ liệu (xem báo cáo kiểm thử).",
+    "description": "Collection theo số mục chấm. CHỈ để test-agent kiểm thử và sinh viên luyện tập; khi thi không được dùng (gõ tay mọi request). Biến {{base}} = http://localhost:3000. Chạy theo thứ tự thư mục: 06 → 13, 21 → 22 (+ thư mục luyện vấn đáp nộp lại hồ sơ), 23 → 28, rồi 14 → 15 → 16 → 17 → 20 → 18 → 19 → 30, cuối cùng 29 (chạy riêng với ngưỡng rate limit mẫu 5 / 10 s; các thư mục khác chạy với ngưỡng 1000). Mục 18 (chuyến seed 5), 19 (payment seed 7), 22.2 (TX7) đổi seed — chạy lại cần đặt lại dữ liệu (xem báo cáo kiểm thử). Cập nhật 2026-10-21 theo góp ý giảng viên 2026-10-14 (ADR-021): khách / admin đăng nhập bằng email, tài xế bằng số; đường xác thực ở /api/v1/auth/…; health trả healthy / ready; hồ sơ khách có phone; drivers/{id} chỉ admin và chính tài xế; booking theo customers/{id}/bookings.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -102,7 +102,7 @@
   "item": [
     {
       "name": "06 Health check",
-      "description": "Mục chấm 6 (spec 00 AC-HT-05). Ba request không cần token. Muốn xem 503: `docker compose stop rating-service` (A03 503 DEGRADED) hoặc `docker compose stop redis` (A02 503 NOT_READY), xong nhớ `docker compose start ...`.",
+      "description": "Mục chấm 6 (spec 00 AC-HT-05, AC-HT-17). Ba request không cần token; chữ trả về theo yêu cầu giảng viên 2026-10-14: healthy / ready. Muốn xem 503: `docker compose stop rating-service` (A03 503 unhealthy, rating-service unhealthy) hoặc `docker compose stop redis` (A02 503 not_ready, redis unhealthy), xong nhớ `docker compose start ...`.",
       "item": [
         {
           "name": "06.1 GET /health",
@@ -113,7 +113,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('AC-HT-05: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('AC-HT-05: body {\"status\":\"UP\"}', () => pm.expect(pm.response.json()).to.eql({ status: 'UP' }));",
+                  "pm.test('AC-HT-05: body {\"status\":\"healthy\"}', () => pm.expect(pm.response.json()).to.eql({ status: 'healthy' }));",
                   "pm.test('Header bảo vệ và X-Request-Id', () => {",
                   "  pm.response.to.have.header('X-Content-Type-Options', 'nosniff');",
                   "  pm.response.to.have.header('Cache-Control', 'no-store');",
@@ -124,6 +124,9 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
             "header": [],
             "url": {
@@ -146,16 +149,15 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('AC-HT-05: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('AC-HT-05: READY, redis UP, grpc_clients UP', () => {",
-                  "  const b = pm.response.json();",
-                  "  pm.expect(b.status).to.eql('READY');",
-                  "  pm.expect(b.checks).to.eql({ redis: 'UP', grpc_clients: 'UP' });",
-                  "});"
+                  "pm.test('AC-HT-05: ready, redis healthy, grpc_clients healthy', () => pm.expect(pm.response.json()).to.eql({ status: 'ready', checks: { redis: 'healthy', grpc_clients: 'healthy' } }));"
                 ]
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
             "header": [],
             "url": {
@@ -179,17 +181,21 @@
                 "exec": [
                   "const services = ['auth-service','customer-service','driver-service','booking-service','trip-service','payment-service','notification-service','rating-service'];",
                   "pm.test('AC-HT-05: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('AC-HT-05: status UP', () => pm.expect(pm.response.json().status).to.eql('UP'));",
-                  "pm.test('AC-HT-05: đủ 8 service, đều SERVING', () => {",
+                  "pm.test('AC-HT-05: status healthy', () => pm.expect(pm.response.json().status).to.eql('healthy'));",
+                  "pm.test('AC-HT-05: đủ 8 service, đều healthy', () => {",
                   "  const s = pm.response.json().services;",
                   "  pm.expect(Object.keys(s).sort()).to.eql([...services].sort());",
-                  "  services.forEach((name) => pm.expect(s[name], name).to.eql('SERVING'));",
-                  "});"
+                  "  services.forEach((name) => pm.expect(s[name], name).to.eql('healthy'));",
+                  "});",
+                  "pm.test('AC-HT-17: không còn chữ cũ UP / SERVING / DEGRADED', () => ['\"UP\"', '\"SERVING\"', '\"DEGRADED\"', '\"UNREACHABLE\"'].forEach((w) => pm.expect(pm.response.text()).to.not.include(w)));"
                 ]
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
             "header": [],
             "url": {
@@ -208,17 +214,17 @@
     },
     {
       "name": "09 Đăng ký khách hàng → đăng nhập được",
-      "description": "Mục chấm 9 (spec 09-10 AC-DN-01..03). Khi thi gõ số 0901234567 (lần hai 0901234568); collection tự sinh số 0399xxxxxx để chạy lại được nhiều lần. Chuỗi: tạo tab POST accounts → sửa URL thành auth/login (body giữ nguyên) → (sửa lại accounts → 409).",
+      "description": "Mục chấm 9 (spec 09-10 AC-DN-01..03, 25). Khi thi gõ email new1@cab.vn (lần hai new2@cab.vn); collection tự sinh email qaxxxxxxxx@test.vn để chạy lại được nhiều lần. Chuỗi: tạo tab POST auth/register → sửa URL register → login (body giữ nguyên) → (sửa lại register → 409).",
       "item": [
         {
-          "name": "09.1 POST /api/v1/accounts (số mới)",
+          "name": "09.1 POST /api/v1/auth/register (email mới)",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.collectionVariables.set('phone9', '0399' + String(Math.floor(Math.random() * 1e6)).padStart(6, '0'));"
+                  "pm.collectionVariables.set('email9', 'qa' + String(Math.floor(Math.random() * 1e8)).padStart(8, '0') + '@test.vn');"
                 ]
               }
             },
@@ -229,44 +235,44 @@
                 "exec": [
                   "pm.test('AC-DN-01: status 201', () => pm.response.to.have.status(201));",
                   "const b = pm.response.json();",
-                  "pm.test('AC-DN-01: role customer, account_id ≥ 1000', () => { pm.expect(b.role).to.eql('customer'); pm.expect(b.account_id).to.be.at.least(1000); });",
+                  "pm.test('AC-DN-01: đúng {account_id ≥ 1000, role customer}', () => { pm.expect(Object.keys(b).sort()).to.eql(['account_id', 'role']); pm.expect(b.role).to.eql('customer'); pm.expect(b.account_id).to.be.at.least(1000); });",
                   "pm.test('Không lộ password_hash', () => pm.expect(pm.response.text()).to.not.include('password'));",
-                  "pm.collectionVariables.set('account9', b.account_id);",
-                  "pm.test('AC-DN-21: response không có email', () => pm.expect(pm.response.json()).to.not.have.property('email'));"
+                  "pm.collectionVariables.set('account9', b.account_id);"
                 ]
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{email9}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
-              "raw": "{{base}}/api/v1/accounts",
+              "raw": "{{base}}/api/v1/auth/register",
               "host": [
                 "{{base}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "accounts"
+                "auth",
+                "register"
               ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\":\"{{phone9}}\",\"password\":\"12345678\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         },
         {
-          "name": "09.2 POST /api/v1/auth/login (cùng body)",
+          "name": "09.2 Sửa tab: register → login (cùng body)",
           "event": [
             {
               "listen": "test",
@@ -282,8 +288,20 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{email9}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -295,23 +313,11 @@
                 "auth",
                 "login"
               ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\":\"{{phone9}}\",\"password\":\"12345678\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         },
         {
-          "name": "09.3 (tùy chọn) POST /api/v1/accounts lại → 409",
+          "name": "09.3 (tùy chọn) Sửa tab: login → register lại → 409",
           "event": [
             {
               "listen": "test",
@@ -319,36 +325,80 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('AC-DN-03: status 409', () => pm.response.to.have.status(409));",
-                  "pm.test('error = PHONE_ALREADY_EXISTS', () => pm.expect(pm.response.json()).to.eql({ error: 'PHONE_ALREADY_EXISTS' }));"
+                  "pm.test('error = EMAIL_ALREADY_EXISTS', () => pm.expect(pm.response.json()).to.eql({ error: 'EMAIL_ALREADY_EXISTS' }));"
                 ]
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{email9}}\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
-              "raw": "{{base}}/api/v1/accounts",
+              "raw": "{{base}}/api/v1/auth/register",
               "host": [
                 "{{base}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "accounts"
+                "auth",
+                "register"
               ]
-            },
+            }
+          }
+        },
+        {
+          "name": "09.4 (test-agent) register kèm \"phone\" → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-25: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = INVALID_INPUT', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_INPUT' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "noauth"
             },
+            "method": "POST",
+            "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"{{phone9}}\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"x{{email9}}\",\"password\":\"12345678\",\"phone\":\"0901234569\"}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
+            },
+            "url": {
+              "raw": "{{base}}/api/v1/auth/register",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
             }
           }
         }
@@ -356,10 +406,10 @@
     },
     {
       "name": "10 Đăng nhập → cấp token",
-      "description": "Mục chấm 10 (AC-DN-07, 08, 10, 11). Sửa tab mục 9 thành số KH1 → nhân bản tab cho TX1, AD1. Ba token lưu vào biến kh1, tx1, ad1 cho các mục sau.",
+      "description": "Mục chấm 10 (AC-DN-07, 08, 10, 11, 26). Sửa tab mục 9: \"email\":\"kh1@cab.vn\" (tab KH1) → nhân bản: \"email\":\"admin@cab.vn\" (tab AD1) → nhân bản: body {\"phone\":\"0910000001\",…} (tab TX1, đổi cả tên field). Khách, admin đăng nhập bằng email; tài xế bằng số điện thoại (ADR-021). Ba token lưu vào biến kh1, ad1, tx1 cho các mục sau.",
       "item": [
         {
-          "name": "10.1 Đăng nhập KH1 (0900000001)",
+          "name": "10.1 Đăng nhập KH1 (kh1@cab.vn)",
           "event": [
             {
               "listen": "test",
@@ -369,15 +419,27 @@
                   "pm.test('AC-DN-07: status 200', () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
                   "pm.test('AC-DN-07: account_id 1, customer, expires_in 3600', () => { pm.expect(b.account_id).to.eql(1); pm.expect(b.role).to.eql('customer'); pm.expect(b.expires_in).to.eql(3600); });",
-                  "pm.test('AC-DN-07: payload có sub/role/jti/exp, không có số điện thoại', () => { const p = JSON.parse(atob(b.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); pm.expect(p.sub).to.eql('1'); pm.expect(p.role).to.eql('customer'); pm.expect(p.jti).to.be.a('string'); pm.expect(p.exp).to.be.a('number'); pm.expect(JSON.stringify(p)).to.not.include('0900000001'); });",
+                  "pm.test('AC-DN-07: payload có sub/role/jti/exp, không có email, số điện thoại', () => { const p = JSON.parse(atob(b.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); pm.expect(p.sub).to.eql('1'); pm.expect(p.role).to.eql('customer'); pm.expect(p.jti).to.be.a('string'); pm.expect(p.exp).to.be.a('number'); pm.expect(JSON.stringify(p)).to.not.include('@'); pm.expect(JSON.stringify(p)).to.not.include('0900000001'); });",
                   "pm.collectionVariables.set('kh1', b.token);"
                 ]
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -389,23 +451,11 @@
                 "auth",
                 "login"
               ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         },
         {
-          "name": "10.2 Đăng nhập TX1 (0910000001)",
+          "name": "10.2 Nhân bản: đăng nhập AD1 (admin@cab.vn)",
           "event": [
             {
               "listen": "test",
@@ -413,15 +463,27 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('AC-DN-11: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('role driver', () => pm.expect(pm.response.json().role).to.eql('driver'));",
-                  "pm.collectionVariables.set('tx1', pm.response.json().token);"
+                  "pm.test('role admin, account_id 99', () => { pm.expect(pm.response.json().role).to.eql('admin'); pm.expect(pm.response.json().account_id).to.eql(99); });",
+                  "pm.collectionVariables.set('ad1', pm.response.json().token);"
                 ]
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"admin@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -433,10 +495,30 @@
                 "auth",
                 "login"
               ]
-            },
+            }
+          }
+        },
+        {
+          "name": "10.3 Nhân bản: đăng nhập TX1 (\"phone\":\"0910000001\")",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-11: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('role driver, account_id 11', () => { pm.expect(pm.response.json().role).to.eql('driver'); pm.expect(pm.response.json().account_id).to.eql(11); });",
+                  "pm.collectionVariables.set('tx1', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "noauth"
             },
+            "method": "POST",
+            "header": [],
             "body": {
               "mode": "raw",
               "raw": "{\"phone\":\"0910000001\",\"password\":\"12345678\"}",
@@ -445,27 +527,7 @@
                   "language": "json"
                 }
               }
-            }
-          }
-        },
-        {
-          "name": "10.3 Đăng nhập AD1 (0999999999)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('AC-DN-11: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('role admin', () => pm.expect(pm.response.json().role).to.eql('admin'));",
-                  "pm.collectionVariables.set('ad1', pm.response.json().token);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -477,23 +539,54 @@
                 "auth",
                 "login"
               ]
-            },
+            }
+          }
+        },
+        {
+          "name": "10.4 (tùy chọn) Tab KH1 gửi cả email và phone → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-26: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = INVALID_INPUT', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_INPUT' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "noauth"
             },
+            "method": "POST",
+            "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0999999999\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"phone\":\"0910000001\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
+            },
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
             }
           }
         },
         {
-          "name": "10.4 (tùy chọn) KH1 sai mật khẩu → 401",
+          "name": "10.5 (tùy chọn) KH1 sai mật khẩu → 401",
           "event": [
             {
               "listen": "test",
@@ -507,8 +600,20 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"sai\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -520,23 +625,11 @@
                 "auth",
                 "login"
               ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"sai\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         },
         {
-          "name": "10.5 (test-agent) KH9 bị khóa → 403",
+          "name": "10.6 (test-agent) KH9 bị khóa → 403",
           "event": [
             {
               "listen": "test",
@@ -550,8 +643,20 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh9@cab.vn\",\"password\":\"12345678\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -563,18 +668,49 @@
                 "auth",
                 "login"
               ]
-            },
+            }
+          }
+        },
+        {
+          "name": "10.7 (test-agent) khách gửi số hồ sơ 0900000001 → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-27: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = INVALID_CREDENTIALS', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_CREDENTIALS' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "noauth"
             },
+            "method": "POST",
+            "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000009\",\"password\":\"12345678\"}",
+              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
+            },
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
             }
           }
         }
@@ -582,7 +718,7 @@
     },
     {
       "name": "11 Xem khách hàng theo mã (có token)",
-      "description": "Mục chấm 11 (spec 11 AC-HS-01, 02, 04, 08). Tab GET tạo ở đây dùng lại cho 12, 13, 14, 16, 18, 24–27. Response có email (ADR-019: email ở hồ sơ, không ở tài khoản).",
+      "description": "Mục chấm 11 (spec 11 AC-HS-01, 02, 04, 08). Tab GET tạo ở đây dùng lại cho 12, 13, 14, 16, 18, 24–27. Hồ sơ có phone (bắt buộc khi tạo), không có email (ADR-021: email ở tài khoản để đăng nhập, số điện thoại khách ở hồ sơ để liên hệ).",
       "item": [
         {
           "name": "11.1 GET /api/v1/customers/1 [KH1]",
@@ -593,7 +729,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('AC-HS-01: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('AC-HS-01: hồ sơ KH1 có email', () => pm.expect(pm.response.json()).to.eql({ customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01', email: 'kh1@cab.vn' }));"
+                  "pm.test('AC-HS-01: hồ sơ KH1 có phone, không có email', () => pm.expect(pm.response.json()).to.eql({ customer_id: 1, name: 'Nguyễn Văn An', phone: '0900000001', dob: '2000-01-01' }));"
                 ]
               }
             }
@@ -675,7 +811,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('AC-HS-04: status 201', () => pm.response.to.have.status(201));",
-                  "pm.test('AC-HS-04: customer_id = mã tài khoản mục 9, dob null, email null', () => { const b = pm.response.json(); pm.expect(String(b.customer_id)).to.eql(String(pm.collectionVariables.get('account9'))); pm.expect(b.name).to.eql('Pham Duc'); pm.expect(b.dob).to.eql(null); pm.expect(b.email).to.eql(null); });"
+                  "pm.test('AC-HS-04: customer_id = mã tài khoản mục 9, phone, dob null', () => { const b = pm.response.json(); pm.expect(String(b.customer_id)).to.eql(String(pm.collectionVariables.get('account9'))); pm.expect([b.name, b.phone, b.dob]).to.eql(['Pham Duc', '0901234567', null]); pm.expect(b).to.not.have.property('email'); });"
                 ]
               }
             }
@@ -706,7 +842,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"name\":\"Pham Duc\"}",
+              "raw": "{\"name\":\"Pham Duc\",\"phone\":\"0901234567\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -753,23 +889,33 @@
     },
     {
       "name": "12 Xem tài xế theo mã (có token)",
-      "description": "Mục chấm 12 (AC-TX-26, 28). Tab GET: customers/2 → drivers/11 → drivers/999 → (drivers/abc).",
+      "description": "Mục chấm 12 (AC-TX-26, 27, 28, 40). Theo giảng viên 2026-10-14: hồ sơ tài xế theo mã chỉ admin (mọi mã) và chính tài xế (mã của mình). Tab GET [KH1]: customers/2 → drivers/11 (403 FORBIDDEN) → Duplicate Tab, dán token [AD1] (tab admin) → 200 đầy đủ → drivers/999 (404) → (tab admin đổi token [TX1]: drivers/11 200 → drivers/12 403 NOT_OWNER).",
       "item": [
         {
-          "name": "12.1 GET /api/v1/drivers/11 [KH1]",
+          "name": "12.1 Tab GET: drivers/11 [KH1] → 403",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('AC-TX-26: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('AC-TX-26: đúng 5 key công khai', () => pm.expect(pm.response.json()).to.eql({ driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE' }));"
+                  "pm.test('AC-TX-26: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = FORBIDDEN', () => pm.expect(pm.response.json()).to.eql({ error: 'FORBIDDEN' }));"
                 ]
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [],
             "url": {
@@ -783,21 +929,52 @@
                 "drivers",
                 "11"
               ]
-            },
+            }
+          }
+        },
+        {
+          "name": "12.2 Duplicate Tab, token [AD1]: drivers/11 → 200 đầy đủ",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-27: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-27: bản đầy đủ Tài Xế 1', () => { const b = pm.response.json(); pm.expect([b.driver_id, b.name, b.vehicle, b.plate, b.status, b.approval_status, b.license, b.lat, b.lng]).to.eql([11, 'Tài Xế 1', 'CAR_4', '59A-00001', 'ONLINE', 'APPROVED', 'GPLX-00001', 10.821, 106.68]); });"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{kh1}}",
+                  "value": "{{ad1}}",
                   "type": "string"
                 }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/11",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "11"
               ]
             }
           }
         },
         {
-          "name": "12.2 GET /api/v1/drivers/999 [KH1] → 404",
+          "name": "12.3 Tab admin: drivers/999 → 404",
           "event": [
             {
               "listen": "test",
@@ -811,6 +988,16 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [],
             "url": {
@@ -824,21 +1011,93 @@
                 "drivers",
                 "999"
               ]
-            },
+            }
+          }
+        },
+        {
+          "name": "12.4 (tùy chọn) Tab admin đổi token [TX1]: drivers/11 → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-27: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-TX-27: chủ thấy license', () => pm.expect(pm.response.json().license).to.eql('GPLX-00001'));"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{kh1}}",
+                  "value": "{{tx1}}",
                   "type": "string"
                 }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/11",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "11"
               ]
             }
           }
         },
         {
-          "name": "12.3 (tùy chọn) GET /api/v1/drivers/abc → 400",
+          "name": "12.5 (tùy chọn) [TX1]: drivers/12 → 403 NOT_OWNER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-TX-40: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = NOT_OWNER', () => pm.expect(pm.response.json()).to.eql({ error: 'NOT_OWNER' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tx1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/drivers/12",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "drivers",
+                "12"
+              ]
+            }
+          }
+        },
+        {
+          "name": "12.6 (test-agent) [AD1] drivers/abc → 400",
           "event": [
             {
               "listen": "test",
@@ -852,6 +1111,16 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [],
             "url": {
@@ -864,16 +1133,6 @@
                 "v1",
                 "drivers",
                 "abc"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{kh1}}",
-                  "type": "string"
-                }
               ]
             }
           }
@@ -1062,10 +1321,10 @@
     },
     {
       "name": "21 Đăng ký tài xế (OTP) → hồ sơ chờ duyệt",
-      "description": "Mục chấm 21 (AC-TX-01..03) + phần lỗi mục 23 (AC-TX-21). Khi thi gõ số 0911111111 và biển 59A-99999 (lần hai đổi số, biển); collection tự sinh số 0599xxxxxx và biển 99T-xxxxx để chạy lại được. Tab tài xế: POST otps → sửa URL driver-accounts (thêm otp, password) → sửa URL drivers, gắn token vừa nhận.",
+      "description": "Mục chấm 21 (AC-TX-01..03) + phần lỗi mục 23 (AC-TX-21). Khi thi gõ số 0911111111 và biển 59A-99999 (lần hai đổi số, biển); collection tự sinh số 0599xxxxxx và biển 99T-xxxxx để chạy lại được. Tab tài xế: POST otps → sửa URL auth/driver-register (thêm otp, password) → sửa URL drivers, gắn token vừa nhận.",
       "item": [
         {
-          "name": "21.1 POST /api/v1/otps",
+          "name": "21.1 POST /api/v1/auth/otp",
           "event": [
             {
               "listen": "prerequest",
@@ -1094,14 +1353,15 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base}}/api/v1/otps",
+              "raw": "{{base}}/api/v1/auth/otp",
               "host": [
                 "{{base}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "otps"
+                "auth",
+                "otp"
               ]
             },
             "auth": {
@@ -1119,7 +1379,7 @@
           }
         },
         {
-          "name": "21.2 POST /api/v1/driver-accounts",
+          "name": "21.2 Sửa tab: auth/otp → auth/driver-register",
           "event": [
             {
               "listen": "test",
@@ -1138,14 +1398,15 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base}}/api/v1/driver-accounts",
+              "raw": "{{base}}/api/v1/auth/driver-register",
               "host": [
                 "{{base}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "driver-accounts"
+                "auth",
+                "driver-register"
               ]
             },
             "auth": {
@@ -1755,7 +2016,7 @@
     },
     {
       "name": "24 Mã hóa dữ liệu nhạy cảm",
-      "description": "Mục chấm 24 (AC-HS-13, 14; AC-DN-19; AC-TX-12). API trả rõ cho đúng chủ; database chỉ có bản mã. Lệnh terminal (gõ tay): docker exec customer-db psql -U cab -d customer -c \"table customer_profiles\" → full_name_enc, date_of_birth_enc dạng \\x…; (tùy chọn) docker exec auth-db psql -U cab -d auth -c \"table accounts\" → password_hash bắt đầu scrypt$.",
+      "description": "Mục chấm 24 (AC-HS-13, 14, 29; AC-DN-19; AC-TX-12). API trả rõ cho đúng chủ; database chỉ có bản mã. Lệnh terminal (gõ tay): docker exec customer-db psql -U cab -d customer -c \"table customer_profiles\" → full_name_enc, date_of_birth_enc dạng \\x…, cột phone rõ; (tùy chọn) docker exec auth-db psql -U cab -d auth -c \"table accounts\" → password_hash bắt đầu scrypt$, email (khách, admin) và phone (tài xế) rõ.",
       "item": [
         {
           "name": "24.1 GET /api/v1/customers/1 [KH1]",
@@ -1766,7 +2027,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('AC-HS-13: status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('AC-HS-13: họ tên rõ cho chủ', () => pm.expect(pm.response.json().name).to.eql('Nguyễn Văn An'));"
+                  "pm.test('AC-HS-13: họ tên rõ cho chủ, phone 0900000001', () => { const b = pm.response.json(); pm.expect(b.name).to.eql('Nguyễn Văn An'); pm.expect(b.phone).to.eql('0900000001'); });"
                 ]
               }
             }
@@ -1802,10 +2063,53 @@
     },
     {
       "name": "25 SQL injection",
-      "description": "Mục chấm 25 (AC-DN-12, 13; AC-HS-17). Tab KH1 sửa mật khẩu → tab GET customers/1 OR 1=1 → (tab KH1 phone injection). Nhớ sửa lại mật khẩu tab KH1.",
+      "description": "Mục chấm 25 (AC-DN-12, 13; AC-HS-17). Tab đăng nhập KH1: email \"' OR 1=1 --\" → 400 INVALID_EMAIL → sửa: email kh1@cab.vn, password \"' OR '1'='1\" → 401 → (tab GET customers/1 OR 1=1 → 400). Nhớ sửa lại tab KH1 về {\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"} (mục 29 dùng).",
       "item": [
         {
-          "name": "25.1 Đăng nhập KH1 password ' OR '1'='1 → 401",
+          "name": "25.1 Tab KH1: email ' OR 1=1 -- → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-13: status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error = INVALID_EMAIL', () => pm.expect(pm.response.json()).to.eql({ error: 'INVALID_EMAIL' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"' OR 1=1 --\",\"password\":\"x\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base}}/api/v1/auth/login",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "25.2 Sửa tab: password ' OR '1'='1 → 401",
           "event": [
             {
               "listen": "test",
@@ -1819,8 +2123,20 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"' OR '1'='1\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -1832,23 +2148,11 @@
                 "auth",
                 "login"
               ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"' OR '1'='1\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         },
         {
-          "name": "25.2 GET /api/v1/customers/1 OR 1=1 [KH1] → 400",
+          "name": "25.3 (tùy chọn) Tab GET: customers/1 OR 1=1 [KH1] → 400",
           "event": [
             {
               "listen": "test",
@@ -1889,7 +2193,7 @@
           }
         },
         {
-          "name": "25.3 (tùy chọn) phone ' OR 1=1 -- → 400",
+          "name": "25.4 (test-agent) phone ' OR 1=1 -- → 400",
           "event": [
             {
               "listen": "test",
@@ -1903,8 +2207,20 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
             "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\":\"' OR 1=1 --\",\"password\":\"x\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base}}/api/v1/auth/login",
               "host": [
@@ -1916,18 +2232,6 @@
                 "auth",
                 "login"
               ]
-            },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\"phone\":\"' OR 1=1 --\",\"password\":\"x\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         }
@@ -2042,10 +2346,66 @@
     },
     {
       "name": "27 JWT bị sửa → 401",
-      "description": "Mục chấm 27 (AC-DN-15, 16, 17). Khi thi: sửa tay MỘT ký tự ở giữa token (không phải ký tự cuối). Collection dùng pre-request script để sửa thay. 27.3–27.5 dùng một token KH1 riêng để đăng xuất, không ảnh hưởng biến kh1.",
+      "description": "Mục chấm 27 (AC-DN-15, 16, 17, 24). Khi thi: dán token lên jwt.io, sửa \"role\":\"customer\" thành \"admin\", dán token mới vào tab (KHÔNG nhập JWT_SECRET) → 401; dự phòng không có Internet: sửa tay MỘT ký tự ở giữa token. Collection dùng pre-request script để làm thay. 27.3–27.5 dùng một token KH1 riêng để đăng xuất, không ảnh hưởng biến kh1.",
       "item": [
         {
-          "name": "27.1 GET /api/v1/customers/me token sửa giữa → 401",
+          "name": "27.1 Tab GET customers/me: token sửa payload \"role\":\"admin\" (như jwt.io), giữ chữ ký → 401",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Làm như jwt.io: giải payload, đổi role customer → admin, mã hóa lại base64url; chữ ký cũ giữ nguyên (không có JWT_SECRET).",
+                  "const [h, p, s] = pm.collectionVariables.get('kh1').split('.');",
+                  "const b64 = (x) => x.replace(/-/g, '+').replace(/_/g, '/');",
+                  "const payload = JSON.parse(atob(b64(p)));",
+                  "payload.role = 'admin';",
+                  "const p2 = btoa(JSON.stringify(payload)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+                  "pm.collectionVariables.set('tamperedToken', `${h}.${p2}.${s}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DN-24: status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('error = TOKEN_INVALID', () => pm.expect(pm.response.json()).to.eql({ error: 'TOKEN_INVALID' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tamperedToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/me",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "27.1b (dự phòng) token sửa một ký tự ở giữa → 401",
           "event": [
             {
               "listen": "prerequest",
@@ -2163,7 +2523,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2354,10 +2714,10 @@
     },
     {
       "name": "14 Booking của khách, limit + paging",
-      "description": "Mục chấm 14 (AC-DX-01…03). Chạy TRƯỚC mục 15 (KH1 còn đúng 7 booking seed). Tab GET: bookings?limit=2 → thêm &page=2.",
+      "description": "Mục chấm 14 (AC-DX-01…03, 26, 27). Chạy TRƯỚC mục 15 (KH1 còn đúng 7 booking seed). Theo giảng viên 2026-10-14: booking theo mã khách. Tab GET [KH1]: customers/1/bookings?limit=2 → thêm &page=2 → customers/1 → customers/2 (403) → (tab admin: customers/1/bookings?limit=2 → 200).",
       "item": [
         {
-          "name": "14.1 GET /api/v1/bookings?limit=2 [KH1]",
+          "name": "14.1 Tab GET: customers/1/bookings?limit=2 [KH1]",
           "event": [
             {
               "listen": "test",
@@ -2374,25 +2734,6 @@
             }
           ],
           "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/v1/bookings?limit=2",
-              "host": [
-                "{{base}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "bookings"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "2"
-                }
-              ]
-            },
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2402,11 +2743,32 @@
                   "type": "string"
                 }
               ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1/bookings?limit=2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
             }
           }
         },
         {
-          "name": "14.2 … &page=2",
+          "name": "14.2 Sửa tab: thêm &page=2",
           "event": [
             {
               "listen": "test",
@@ -2422,16 +2784,28 @@
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base}}/api/v1/bookings?limit=2&page=2",
+              "raw": "{{base}}/api/v1/customers/1/bookings?limit=2&page=2",
               "host": [
                 "{{base}}"
               ],
               "path": [
                 "api",
                 "v1",
+                "customers",
+                "1",
                 "bookings"
               ],
               "query": [
@@ -2444,7 +2818,24 @@
                   "value": "2"
                 }
               ]
-            },
+            }
+          }
+        },
+        {
+          "name": "14.3 Sửa tab: customers/1 → customers/2 → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-26: status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('error = NOT_OWNER', () => pm.expect(pm.response.json()).to.eql({ error: 'NOT_OWNER' }));"
+                ]
+              }
+            }
+          ],
+          "request": {
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2454,11 +2845,84 @@
                   "type": "string"
                 }
               ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/2/bookings?limit=2&page=2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "2",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "2"
+                },
+                {
+                  "key": "page",
+                  "value": "2"
+                }
+              ]
             }
           }
         },
         {
-          "name": "14.3 (tùy chọn) … ?limit=abc → 400",
+          "name": "14.4 (tùy chọn) Tab admin: customers/1/bookings?limit=2 [AD1]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AC-DX-27: status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('AC-DX-27: như 14.1 — 7, 6, total 7', () => { const b = pm.response.json(); pm.expect(b.data.map((x) => x.booking_id)).to.eql([7, 6]); pm.expect(b.pagination.total).to.eql(7); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{ad1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1/bookings?limit=2",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "2"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "14.5 (test-agent) customers/1/bookings?limit=abc → 400",
           "event": [
             {
               "listen": "test",
@@ -2472,25 +2936,6 @@
             }
           ],
           "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base}}/api/v1/bookings?limit=abc",
-              "host": [
-                "{{base}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "bookings"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "abc"
-                }
-              ]
-            },
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2498,6 +2943,27 @@
                   "key": "token",
                   "value": "{{kh1}}",
                   "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/customers/1/bookings?limit=abc",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                "1",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "abc"
                 }
               ]
             }
@@ -4035,7 +4501,7 @@
     },
     {
       "name": "29 Spam → 429",
-      "description": "Mục chấm 29 (spec 20-29 AC-GH-01). Làm CUỐI CÙNG; 10 giây trước đó không gửi request công khai nào. Tab đăng nhập KH1 bấm Send 6 lần liên tục → lần 6: 429 + Retry-After. Chạy riêng thư mục này với ngưỡng mẫu của .env (5 công khai / 10 s); các thư mục khác test-agent chạy với RATE_LIMIT_PUBLIC_MAX=1000, RATE_LIMIT_ACCOUNT_MAX=1000 (GH-Q3).",
+      "description": "Mục chấm 29 (spec 20-29 AC-GH-01). Làm CUỐI CÙNG; 10 giây trước đó không gửi request công khai nào. Tab đăng nhập KH1 (body {\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}) bấm Send 6 lần liên tục → lần 6: 429 + Retry-After. Chạy riêng thư mục này với ngưỡng mẫu của .env (5 công khai / 10 s); các thư mục khác test-agent chạy với RATE_LIMIT_PUBLIC_MAX=1000, RATE_LIMIT_ACCOUNT_MAX=1000 (GH-Q3).",
       "item": [
         {
           "name": "29.1 Tab đăng nhập KH1: Send lần 1",
@@ -4071,7 +4537,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4114,7 +4580,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4157,7 +4623,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4200,7 +4666,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4243,7 +4709,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4287,7 +4753,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\"phone\":\"0900000001\",\"password\":\"12345678\"}",
+              "raw": "{\"email\":\"kh1@cab.vn\",\"password\":\"12345678\"}",
               "options": {
                 "raw": {
                   "language": "json"

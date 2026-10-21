@@ -26,11 +26,13 @@ after(async () => {
   await call('PATCH', '/drivers/me', { token: tx5, body: { status: 'OFFLINE' } });
 });
 
-// ---------- Mục 12 ----------
-test('AC-TX-26 (mục 12): KH1 GET /drivers/11 → 200 đúng 5 key công khai, không có license, lat, lng', async () => {
-  const r = await call('GET', '/drivers/11', { token: kh1 });
-  assert.equal(r.status, 200, r.text);
-  assert.deepEqual(r.body, { driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE' });
+// ---------- Mục 12 (ADR-021: A14 chỉ admin và chính tài xế) ----------
+test('AC-TX-26 (mục 12, 403): KH1 GET /drivers/11 và /drivers/999 → 403 FORBIDDEN (Gateway chặn theo role)', async () => {
+  for (const id of [11, 999]) {
+    const r = await call('GET', `/drivers/${id}`, { token: kh1 });
+    assert.equal(r.status, 403, `${id}: ${r.text}`);
+    assert.deepEqual(r.body, { error: 'FORBIDDEN' });
+  }
 });
 
 test('AC-TX-27 (mục 12): TX1 và AD1 GET /drivers/11 → 200 đầy đủ: approval_status, license GPLX-00001, lat, lng', async () => {
@@ -38,6 +40,9 @@ test('AC-TX-27 (mục 12): TX1 và AD1 GET /drivers/11 → 200 đầy đủ: app
     const r = await call('GET', '/drivers/11', { token: await tokenOf(who) });
     assert.equal(r.status, 200, `${who} ${r.text}`);
     assert.equal(r.body.driver_id, 11);
+    assert.equal(r.body.name, 'Tài Xế 1');
+    assert.equal(r.body.vehicle, 'CAR_4');
+    assert.equal(r.body.plate, '59A-00001');
     assert.equal(r.body.approval_status, 'APPROVED');
     assert.equal(r.body.license, 'GPLX-00001');
     assert.equal(r.body.lat, 10.821);
@@ -46,31 +51,40 @@ test('AC-TX-27 (mục 12): TX1 và AD1 GET /drivers/11 → 200 đầy đủ: app
   }
 });
 
-test('Spec mục 8.1: tài xế xem tài xế KHÁC chỉ thấy phần công khai', async () => {
-  const r = await call('GET', '/drivers/12', { token: await tokenOf(SEED.TX1) });
-  assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.body).sort(), ['driver_id', 'name', 'plate', 'status', 'vehicle']);
-  assert.equal(r.body.vehicle, 'MOTORBIKE');
+test('AC-TX-40 (mục 12, 403): TX1 GET /drivers/12, /drivers/999, /drivers/17 → 403 NOT_OWNER cả ba', async () => {
+  const tok = await tokenOf(SEED.TX1);
+  for (const id of [12, 999, 17]) {
+    const r = await call('GET', `/drivers/${id}`, { token: tok });
+    assert.equal(r.status, 403, `${id}: ${r.text}`);
+    assert.deepEqual(r.body, { error: 'NOT_OWNER' });
+  }
 });
 
-test('AC-TX-28 (mục 12, 404/400/401): /drivers/999 → 404; /drivers/17 (chờ duyệt) bằng KH1 → 404, AD1 → 200; /drivers/abc → 400 INVALID_ID; không token → 401', async () => {
-  const a = await call('GET', '/drivers/999', { token: kh1 });
+test('AC-TX-28 (mục 12, 404/400/401): AD1 /drivers/999 → 404; /drivers/17 (chờ duyệt) → 200 PENDING; /drivers/abc → 400 INVALID_ID; không token → 401', async () => {
+  const ad = await tokenOf(SEED.AD1);
+  const a = await call('GET', '/drivers/999', { token: ad });
   assert.equal(a.status, 404);
   assert.deepEqual(a.body, { error: 'DRIVER_NOT_FOUND' });
-  const b = await call('GET', '/drivers/17', { token: kh1 });
-  assert.equal(b.status, 404);
-  assert.deepEqual(b.body, { error: 'DRIVER_NOT_FOUND' });
-  const c = await call('GET', '/drivers/17', { token: await tokenOf(SEED.AD1) });
+  const c = await call('GET', '/drivers/17', { token: ad });
   assert.equal(c.status, 200);
   assert.equal(c.body.approval_status, 'PENDING');
   for (const id of ['abc', '0', '11%20OR%201=1']) {
-    const d = await call('GET', `/drivers/${id}`, { token: kh1 });
+    const d = await call('GET', `/drivers/${id}`, { token: ad });
     assert.equal(d.status, 400, id);
     assert.deepEqual(d.body, { error: 'INVALID_ID' });
   }
   const e = await call('GET', '/drivers/11');
   assert.equal(e.status, 401);
   assert.deepEqual(e.body, { error: 'TOKEN_MISSING' });
+});
+
+test('AC-TX-42 (mục 12, FR14): KH1 GET /trips/5 (trip seed KH1–TX6) → 200 có driver.name, driver.plate của TX6', async () => {
+  const r = await call('GET', '/trips/5', { token: kh1 });
+  assert.equal(r.status, 200, r.text);
+  assert.ok(r.body.driver, `không có driver: ${r.text}`);
+  assert.equal(r.body.driver.name, 'Tài Xế 6');
+  assert.equal(typeof r.body.driver.plate, 'string');
+  assert.equal(r.body.driver.plate, psql('driver-db', 'driver', 'select license_plate from vehicles where driver_id = 16'));
 });
 
 // ---------- Mục 13 ----------
@@ -172,8 +186,8 @@ test('AC-TX-19 (mục 23): TX1 PATCH /drivers/me {"status":"OFFLINE"} → 200 {1
   const s = await call('GET', `/drivers?${P0}`, { token: kh1 });
   assert.ok(!s.body.data.some((d) => d.driver_id === 11));
   assert.equal(s.body.pagination.total, 3);
-  // Khách xem theo mã thấy OFFLINE.
-  const g = await call('GET', '/drivers/11', { token: kh1 });
+  // Chính tài xế xem theo mã thấy OFFLINE (khách không còn xem A14 — ADR-021).
+  const g = await call('GET', '/drivers/11', { token: tx1 });
   assert.equal(g.body.status, 'OFFLINE');
 });
 

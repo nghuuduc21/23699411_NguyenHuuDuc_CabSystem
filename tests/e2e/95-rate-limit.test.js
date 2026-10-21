@@ -1,4 +1,5 @@
-// Spec 20-29 — rate limit tại Gateway (mục 29, NFR17). AC-GH-01…08.
+// Spec 20-29 — rate limit tại Gateway (mục 29, NFR17). AC-GH-01…10; AC-TX-43 (spec 12-13-21-23).
+// 2026-10-14 (ADR-021): bốn route công khai auth/register, auth/login, auth/otp, auth/driver-register chung một bộ đếm IP.
 // Chạy RIÊNG và CUỐI CÙNG bằng `npm run test:rate-limit`, với ngưỡng mẫu của `.env.example`
 // (RATE_LIMIT_WINDOW_SECONDS=10, PUBLIC_MAX=5, ACCOUNT_MAX=30) — các nhóm test khác chạy với ngưỡng 1000 (GH-Q3).
 // AC-GH-05, 06 tạm dựng lại gateway với RATE_LIMIT_ACCOUNT_MAX=3 (biến môi trường của tiến trình test đè `.env`
@@ -6,11 +7,12 @@
 // và bật lại redis.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED, SEED_PASSWORD, call, login, newCustomerPhone, tamperMiddle } from './api.js';
+import { SEED, SEED_PASSWORD, call, createTracker, login, newDriverPhone, newEmail, tamperMiddle } from './api.js';
 import { compose, run, sleep, waitFor, waitHealthy } from './helpers.js';
 
 const S = {};
-const loginKH1 = () => call('POST', '/auth/login', { body: { phone: SEED.KH1, password: SEED_PASSWORD } });
+const tr = createTracker();
+const loginKH1 = () => call('POST', '/auth/login', { body: { email: SEED.KH1, password: SEED_PASSWORD } });
 const h = (r, name) => r.headers.get(name);
 const redisKeys = () => run('docker', ['exec', 'redis', 'redis-cli', '--scan', '--pattern', 'rl:*']).stdout.split(/\r?\n/).filter(Boolean);
 const redisTtl = (key) => Number(run('docker', ['exec', 'redis', 'redis-cli', 'ttl', key]).stdout.trim());
@@ -46,6 +48,7 @@ before(async () => {
 });
 
 after(async () => {
+  tr.cleanup();
   if (run('docker', ['inspect', '-f', '{{.State.Running}}', 'redis']).stdout.trim() !== 'true') {
     compose('start', 'redis');
     await waitHealthy('redis', 120_000);
@@ -108,12 +111,14 @@ test('AC-GH-02 (mục 29, phần 1): Send thêm 5 lần trong Retry-After → 42
   assert.ok(prev < 10);
 });
 
-test('AC-GH-03 (mục 29): IP đang bị chặn — A04 số mới → 429; A07 → 429 (chung bộ đếm IP); A38 [KH1] → 200, RateLimit-Limit 30; /health → 200 không RateLimit-*; A05 kèm X-Forwarded-For → 429', async () => {
-  const a = await call('POST', '/accounts', { body: { phone: newCustomerPhone(), password: SEED_PASSWORD } });
+test('AC-GH-03 (mục 29): IP đang bị chặn — A04 auth/register email mới → 429; A07 auth/otp → 429; A08 auth/driver-register → 429 (chung bộ đếm IP); A38 [KH1] → 200, RateLimit-Limit 30; /health → 200 không RateLimit-*; A05 kèm X-Forwarded-For → 429', async () => {
+  const a = await call('POST', '/auth/register', { body: { email: tr.email(newEmail()), password: SEED_PASSWORD } });
   assert.equal(a.status, 429, a.text);
   assert.deepEqual(a.body, { error: 'RATE_LIMITED' });
-  const o = await call('POST', '/otps', { body: { phone: '0599000001' } });
+  const o = await call('POST', '/auth/otp', { body: { phone: '0599000001' } });
   assert.equal(o.status, 429, o.text);
+  const d = await call('POST', '/auth/driver-register', { body: { phone: '0599000001', otp: '000000', password: SEED_PASSWORD } });
+  assert.equal(d.status, 429, d.text);
   const me = await call('GET', '/customers/me', { token: S.kh1 });
   assert.equal(me.status, 200, me.text);
   assert.equal(h(me, 'ratelimit-limit'), '30');
@@ -121,8 +126,17 @@ test('AC-GH-03 (mục 29): IP đang bị chặn — A04 số mới → 429; A07 
   assert.equal(hl.status, 200);
   assert.equal(h(hl, 'ratelimit-limit'), null);
   assert.equal(h(hl, 'ratelimit-remaining'), null);
-  const x = await call('POST', '/auth/login', { body: { phone: SEED.KH1, password: SEED_PASSWORD }, headers: { 'X-Forwarded-For': '1.2.3.4' } });
+  const x = await call('POST', '/auth/login', { body: { email: SEED.KH1, password: SEED_PASSWORD }, headers: { 'X-Forwarded-For': '1.2.3.4' } });
   assert.equal(x.status, 429, 'không tin X-Forwarded-For');
+});
+
+test('AC-GH-10 (mục 29): IP đang bị chặn — POST /api/v1/accounts (đường cũ) → 404 ROUTE_NOT_FOUND, không 429', async () => {
+  const r = await call('POST', '/accounts', { body: { email: newEmail(), password: SEED_PASSWORD } });
+  assert.equal(r.status, 404, r.text);
+  assert.deepEqual(r.body, { error: 'ROUTE_NOT_FOUND' });
+  // Đối chứng: IP vẫn đang bị chặn ở route công khai thật.
+  const l = await loginKH1();
+  assert.equal(l.status, 429, l.text);
 });
 
 test('AC-GH-02 (mục 29, phần 2) + AC-GH-08: chờ hết Retry-After của lần 6 → khóa rl:ip biến mất; Send → 200, RateLimit-Remaining 4', async () => {
@@ -202,4 +216,46 @@ test('AC-GH-07 (mục 29, Redis dừng): A05 KH1 ×7 → 200 cả 7, không Rate
   const res = [];
   for (let i = 0; i < 6; i += 1) res.push(await loginKH1());
   assert.deepEqual(res.map((r) => r.status), [200, 200, 200, 200, 200, 429]);
+});
+
+test('AC-GH-09 (mục 29): xen kẽ 6 request công khai (register, login email, otp, driver-register OTP sai, login tài xế, login email) → 201/200/201/400/200, lần 6: 429', async () => {
+  await sleep(10_500);
+  await waitIpWindowClear();
+  const ph = tr.phone(newDriverPhone());
+  const res = [
+    await call('POST', '/auth/register', { body: { email: tr.email(newEmail()), password: SEED_PASSWORD } }),
+    await loginKH1(),
+    await call('POST', '/auth/otp', { body: { phone: ph } }),
+    await call('POST', '/auth/driver-register', { body: { phone: ph, otp: '000000', password: SEED_PASSWORD } }),
+    await call('POST', '/auth/login', { body: { phone: SEED.TX1, password: SEED_PASSWORD } }),
+    await loginKH1(),
+  ];
+  // OTP "000000" có thể trùng mã thật với xác suất 1/1 000 000 — bỏ qua.
+  assert.deepEqual(res.map((r) => r.status), [201, 200, 201, 400, 200, 429], res.map((r) => r.text).join(' | '));
+  assert.deepEqual(res[3].body, { error: 'OTP_INVALID' });
+  assert.deepEqual(res[5].body, { error: 'RATE_LIMITED' });
+});
+
+test('AC-TX-43 (mục 21, 29): A07 auth/otp số mới ×6 → lần 6: 429; sau hết 429: POST /otps, /driver-accounts (đường cũ) → 404 ROUTE_NOT_FOUND', async () => {
+  await sleep(10_500);
+  await waitIpWindowClear();
+  const res = [];
+  for (let i = 0; i < 6; i += 1) res.push(await call('POST', '/auth/otp', { body: { phone: tr.phone(newDriverPhone()) } }));
+  assert.deepEqual(res.map((r) => r.status), [201, 201, 201, 201, 201, 429], res.map((r) => r.text).join(' | '));
+  const ra = Number(h(res[5], 'retry-after'));
+  await sleep(ra * 1000 + 500);
+  for (const [path, body] of [['/otps', { phone: '0599000002' }], ['/driver-accounts', { phone: '0599000002', otp: '123456', password: SEED_PASSWORD }]]) {
+    const r = await call('POST', path, { body });
+    assert.equal(r.status, 404, `${path}: ${r.text}`);
+    assert.deepEqual(r.body, { error: 'ROUTE_NOT_FOUND' });
+  }
+});
+
+test('AC-DN-32 (mục 29): A04 auth/register email mới ×6 liên tục → 201 ×5, lần 6: 429 RATE_LIMITED', async () => {
+  await sleep(10_500);
+  await waitIpWindowClear();
+  const res = [];
+  for (let i = 0; i < 6; i += 1) res.push(await call('POST', '/auth/register', { body: { email: tr.email(newEmail()), password: SEED_PASSWORD } }));
+  assert.deepEqual(res.map((r) => r.status), [201, 201, 201, 201, 201, 429], res.map((r) => r.text).join(' | '));
+  assert.deepEqual(res[5].body, { error: 'RATE_LIMITED' });
 });

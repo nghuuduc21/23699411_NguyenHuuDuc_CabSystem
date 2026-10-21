@@ -1,37 +1,39 @@
 // Spec 11 — hồ sơ khách hàng. Mục chấm 11, bổ trợ 24 (mã hóa), 25 (mã trong đường dẫn), 26 (XSS), 28 (role).
-// Không đổi dữ liệu seed: việc tạo / sửa hồ sơ (AC-HS-04, 05, 10, 11) làm trên tài khoản khách TẠO MỚI
-// (cùng nhánh code với KH3 / KH1); KH1, KH2, KH3 chỉ được đọc hoặc nhận request bị từ chối.
+// Không đổi dữ liệu seed: việc tạo / sửa hồ sơ (AC-HS-04, 05, 10, 11, 25) làm trên tài khoản khách TẠO MỚI
+// (cùng nhánh code với KH3 / KH1); KH1, KH2, KH3 chỉ được đọc hoặc nhận request bị từ chối
+// (AC-HS-27 sửa số của KH2 rồi trả lại như seed).
 // AC-HS-12 (dừng customer-service) nằm ở 90-dung-service.test.js.
+// ADR-021 (2026-10-14): hồ sơ có `phone` bắt buộc, không còn `email`.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED, call, createTracker, newCustomer, psql, psqlTable, tokenOf, ROOT } from './api.js';
+import { SEED, SEED_PROFILE_PHONE, call, createTracker, newCustomer, psql, psqlTable, tokenOf, ROOT } from './api.js';
 import { GATEWAY_URL, run } from './helpers.js';
 
 const t = createTracker();
-// ADR-019 (2026-10-05): hồ sơ có thêm email (seed KH1 kh1@cab.vn, KH2 kh2@cab.vn).
-const KH1_PROFILE = { customer_id: 1, name: 'Nguyễn Văn An', dob: '2000-01-01', email: 'kh1@cab.vn' };
-const KH2_EMAIL = 'kh2@cab.vn';
+const KH1_PROFILE = { customer_id: 1, name: 'Nguyễn Văn An', phone: SEED_PROFILE_PHONE.KH1, dob: '2000-01-01' };
+const P = '0901234567';
 
 after(async () => {
   t.cleanup();
   // Phòng khi một test XSS lọt: trả hồ sơ KH1 về như seed.
   const tok = await tokenOf(SEED.KH1);
   const r = await call('GET', '/customers/me', { token: tok });
-  if (r.status === 200 && (r.body.name !== KH1_PROFILE.name || r.body.dob !== KH1_PROFILE.dob || r.body.email !== KH1_PROFILE.email)) {
-    await call('PATCH', '/customers/me', { token: tok, body: { name: KH1_PROFILE.name, dob: KH1_PROFILE.dob, email: KH1_PROFILE.email } });
+  if (r.status === 200 && (r.body.name !== KH1_PROFILE.name || r.body.dob !== KH1_PROFILE.dob || r.body.phone !== KH1_PROFILE.phone)) {
+    await call('PATCH', '/customers/me', { token: tok, body: { name: KH1_PROFILE.name, dob: KH1_PROFILE.dob, phone: KH1_PROFILE.phone } });
   }
-  // AC-HS-21 đổi email KH2: trả về như seed.
+  // AC-HS-27 đổi số KH2: trả về như seed.
   const t2 = await tokenOf(SEED.KH2);
   const r2 = await call('GET', '/customers/me', { token: t2 });
-  if (r2.status === 200 && r2.body.email !== KH2_EMAIL) {
-    await call('PATCH', '/customers/me', { token: t2, body: { email: KH2_EMAIL } });
+  if (r2.status === 200 && r2.body.phone !== SEED_PROFILE_PHONE.KH2) {
+    await call('PATCH', '/customers/me', { token: t2, body: { phone: SEED_PROFILE_PHONE.KH2 } });
   }
 });
 
-test('AC-HS-01 (mục 11): KH1 GET /customers/1 → 200 hồ sơ seed', async () => {
+test('AC-HS-01 (mục 11): KH1 GET /customers/1 → 200 hồ sơ seed có phone 0900000001, không có key email', async () => {
   const r = await call('GET', '/customers/1', { token: await tokenOf(SEED.KH1) });
   assert.equal(r.status, 200, r.text);
   assert.deepEqual(r.body, KH1_PROFILE);
+  assert.ok(!('email' in r.body), 'hồ sơ còn key email');
 });
 
 test('AC-HS-02 (mục 11, 403): KH1 GET /customers/2 → 403 NOT_OWNER', async () => {
@@ -72,17 +74,19 @@ test('AC-HS-03 (mục 11, 404): tài khoản vừa đăng ký chưa có hồ sơ
   assert.deepEqual(r.body, { error: 'CUSTOMER_NOT_FOUND' });
 });
 
-test('AC-HS-10 (mục 11, 400): thiếu name; dob "15/01/2000"; thêm customer_id; name rỗng; name > 100 ký tự; dob tương lai; dob 2001-02-30 → 400 INVALID_INPUT', async () => {
+test('AC-HS-10 (mục 11, 400): thiếu name; thiếu phone; dob "15/01/2000"; thêm customer_id; name rỗng; name > 100 ký tự; dob tương lai; dob 2001-02-30 → 400 INVALID_INPUT', async () => {
   const bodies = [
     {},
-    { name: 'Pham Duc', dob: '15/01/2000' },
-    { name: 'Pham Duc', customer_id: 5 },
-    { name: '   ' },
-    { name: 'a'.repeat(101) },
-    { name: 'Pham Duc', dob: '2999-01-01' },
-    { name: 'Pham Duc', dob: '2001-02-30' },
-    { name: 'Pham Duc', dob: '1899-12-31' },
-    { name: 123 },
+    { phone: P },
+    { name: 'Pham Duc' },
+    { name: 'Pham Duc', phone: P, dob: '15/01/2000' },
+    { name: 'Pham Duc', phone: P, customer_id: 5 },
+    { name: '   ', phone: P },
+    { name: 'a'.repeat(101), phone: P },
+    { name: 'Pham Duc', phone: P, dob: '2999-01-01' },
+    { name: 'Pham Duc', phone: P, dob: '2001-02-30' },
+    { name: 'Pham Duc', phone: P, dob: '1899-12-31' },
+    { name: 123, phone: P },
   ];
   for (const body of bodies) {
     const r = await call('POST', '/customers', { token: fresh.token, body });
@@ -98,10 +102,10 @@ test('AC-HS-10: body không phải JSON → 400 INVALID_JSON', async () => {
   assert.deepEqual(r.body, { error: 'INVALID_JSON' });
 });
 
-test('AC-HS-04 (mục 11): POST /customers {"name":"Pham Duc"} → 201 customer_id = mã tài khoản, dob null, email null; GET theo mã → 200 cùng nội dung', async () => {
-  const r = await call('POST', '/customers', { token: fresh.token, body: { name: 'Pham Duc' } });
+test('AC-HS-04 (mục 11): POST /customers {"name":"Pham Duc","phone":"0901234567"} → 201 customer_id = mã tài khoản, phone, dob null; GET theo mã → 200 cùng nội dung', async () => {
+  const r = await call('POST', '/customers', { token: fresh.token, body: { name: 'Pham Duc', phone: P } });
   assert.equal(r.status, 201, r.text);
-  assert.deepEqual(r.body, { customer_id: fresh.account_id, name: 'Pham Duc', dob: null, email: null });
+  assert.deepEqual(r.body, { customer_id: fresh.account_id, name: 'Pham Duc', phone: P, dob: null });
   const g = await call('GET', `/customers/${fresh.account_id}`, { token: fresh.token });
   assert.equal(g.status, 200);
   assert.deepEqual(g.body, r.body);
@@ -111,7 +115,7 @@ test('AC-HS-04 (mục 11): POST /customers {"name":"Pham Duc"} → 201 customer_
 });
 
 test('AC-HS-05 (mục 11, 409): tạo hồ sơ lần hai → 409 CUSTOMER_ALREADY_EXISTS', async () => {
-  const r = await call('POST', '/customers', { token: fresh.token, body: { name: 'Lan Hai' } });
+  const r = await call('POST', '/customers', { token: fresh.token, body: { name: 'Lan Hai', phone: P } });
   assert.equal(r.status, 409);
   assert.deepEqual(r.body, { error: 'CUSTOMER_ALREADY_EXISTS' });
   const g = await call('GET', '/customers/me', { token: fresh.token });
@@ -121,10 +125,10 @@ test('AC-HS-05 (mục 11, 409): tạo hồ sơ lần hai → 409 CUSTOMER_ALREAD
 test('AC-HS-11 (mục 11): PATCH /me {"dob":"1999-12-31"} → 200, họ tên giữ nguyên, ngày sinh mới', async () => {
   const r = await call('PATCH', '/customers/me', { token: fresh.token, body: { dob: '1999-12-31' } });
   assert.equal(r.status, 200, r.text);
-  assert.deepEqual(r.body, { customer_id: fresh.account_id, name: 'Pham Duc', dob: '1999-12-31', email: null });
+  assert.deepEqual(r.body, { customer_id: fresh.account_id, name: 'Pham Duc', phone: P, dob: '1999-12-31' });
   const n = await call('PATCH', '/customers/me', { token: fresh.token, body: { name: 'Nguyễn Thị Hoa' } });
   assert.equal(n.status, 200);
-  assert.deepEqual(n.body, { customer_id: fresh.account_id, name: 'Nguyễn Thị Hoa', dob: '1999-12-31', email: null });
+  assert.deepEqual(n.body, { customer_id: fresh.account_id, name: 'Nguyễn Thị Hoa', phone: P, dob: '1999-12-31' });
 });
 
 test('HS2 (spec 11 mục 4.5): PATCH {"dob":null} xóa ngày sinh; {} / name null / field lạ → 400 INVALID_INPUT', async () => {
@@ -157,7 +161,7 @@ test('AC-HS-06 (mục 11): AD1 GET /customers/1 → 200; /customers/999999 → 4
 
 test('AC-HS-07 (mục 11, 28): TX1 GET /customers/1 → 403; AD1 POST /customers → 403; TX1 /me, AD1 PATCH /me → 403 FORBIDDEN', async () => {
   const tx = await tokenOf(SEED.TX1);
-  const ad = await call('POST', '/customers', { token: await tokenOf(SEED.AD1), body: { name: 'Admin' } });
+  const ad = await call('POST', '/customers', { token: await tokenOf(SEED.AD1), body: { name: 'Admin', phone: P } });
   const list = [
     await call('GET', '/customers/1', { token: tx }),
     ad,
@@ -222,17 +226,17 @@ test('AC-HS-16 (mục 26): PATCH /me name "<script>alert(1)</script>" → 400 TE
 test('AC-HS-16 (mục 26): tạo hồ sơ với "<b>" hoặc ">" → 400 TEXT_CONTAINS_HTML, không lưu; ký tự & \' " được phép', async () => {
   const c = await newCustomer(t);
   for (const name of ['<b>An</b>', 'An > Binh', 'An <']) {
-    const r = await call('POST', '/customers', { token: c.token, body: { name } });
+    const r = await call('POST', '/customers', { token: c.token, body: { name, phone: P } });
     assert.equal(r.status, 400, name);
     assert.deepEqual(r.body, { error: 'TEXT_CONTAINS_HTML' });
   }
   assert.equal(psql('customer-db', 'customer', `select count(*) from customer_profiles where customer_id = ${c.account_id}`), '0');
-  const ok = await call('POST', '/customers', { token: c.token, body: { name: `O'Neil & "Tom"` } });
+  const ok = await call('POST', '/customers', { token: c.token, body: { name: `O'Neil & "Tom"`, phone: P } });
   assert.equal(ok.status, 201, ok.text);
   assert.equal(ok.body.name, `O'Neil & "Tom"`);
 });
 
-test('AC-HS-13 + AC-HS-14 (mục 24): API trả họ tên rõ cho chủ; table customer_profiles chỉ có \\x…, không thấy họ tên, ngày sinh; không có cột số điện thoại', async () => {
+test('AC-HS-13 + AC-HS-14 (mục 24): API trả họ tên rõ cho chủ; table customer_profiles chỉ có \\x…, không thấy họ tên, ngày sinh; phone rõ; không còn cột email', async () => {
   const r = await call('GET', '/customers/1', { token: await tokenOf(SEED.KH1) });
   assert.equal(r.body.name, 'Nguyễn Văn An');
   const out = psqlTable('customer-db', 'customer', 'customer_profiles');
@@ -243,8 +247,9 @@ test('AC-HS-13 + AC-HS-14 (mục 24): API trả họ tên rõ cho chủ; table c
     assert.ok(!out.includes(plain), `thấy "${plain}" rõ trong database`);
   }
   const cols = psql('customer-db', 'customer', "select string_agg(column_name, ',' order by ordinal_position) from information_schema.columns where table_name = 'customer_profiles'");
-  // ADR-019: thêm cột email (migration 002), vẫn không có cột số điện thoại.
-  assert.equal(cols, 'customer_id,full_name_enc,date_of_birth_enc,created_at,updated_at,email');
+  // ADR-021: migration 003 bỏ email, thêm phone (lưu rõ).
+  assert.equal(cols, 'customer_id,full_name_enc,date_of_birth_enc,created_at,updated_at,phone');
+  assert.match(out, /0900000001/);
   // AES-GCM, IV ngẫu nhiên mỗi giá trị: hai hồ sơ không có bản mã trùng nhau.
   const enc = psql('customer-db', 'customer', 'select encode(full_name_enc, \'hex\') from customer_profiles').split(/\r?\n/);
   assert.equal(new Set(enc).size, enc.length);
@@ -273,80 +278,84 @@ test('AC-HS-18: PUT /customers/me, POST /customers/me, GET /customers/1 (thiếu
   }
 });
 
-// ---------- Email trong hồ sơ (ADR-019, 2026-10-05) ----------
-test('AC-HS-19 (mục 11): tài khoản mới A37 {"name","email":"  Duc@Cab.VN "} → 201 email "duc@cab.vn"; A09 theo mã → 200 cùng nội dung', async () => {
+// ---------- Số điện thoại trong hồ sơ (ADR-021, 2026-10-14) ----------
+test('AC-HS-25 (mục 11): tài khoản mới (auth/register → login) A37 {"name","phone":" +84 901-234-567 "} → 201 phone "0901234567"; A09 theo mã → 200 cùng nội dung', async () => {
   const c = await newCustomer(t);
-  const r = await call('POST', '/customers', { token: c.token, body: { name: 'Pham Duc', email: '  Duc@Cab.VN ' } });
+  const r = await call('POST', '/customers', { token: c.token, body: { name: 'Pham Duc', phone: ' +84 901-234-567 ' } });
   assert.equal(r.status, 201, r.text);
-  assert.deepEqual(r.body, { customer_id: c.account_id, name: 'Pham Duc', dob: null, email: 'duc@cab.vn' });
+  assert.deepEqual(r.body, { customer_id: c.account_id, name: 'Pham Duc', phone: '0901234567', dob: null });
   const g = await call('GET', `/customers/${c.account_id}`, { token: c.token });
   assert.equal(g.status, 200);
   assert.deepEqual(g.body, r.body);
 });
 
-test('AC-HS-20 (mục 11, 400): KH3 A37 email "abc" / "" / "<a>@x.vn" / 255 ký tự → INVALID_EMAIL; 123 / null → INVALID_INPUT; không tạo hồ sơ', async () => {
+test('AC-HS-26 (mục 11, 400): KH3 A37 phone "123" / "" / "09abc" → INVALID_PHONE; 901234567 (số) / null / thêm email → INVALID_INPUT; không tạo hồ sơ', async () => {
   const tok = await tokenOf(SEED.KH3);
-  const long = `${'a'.repeat(248)}@cab.vn`; // 255 ký tự
-  assert.equal(long.length, 255);
   const cases = [
-    ['abc', 'INVALID_EMAIL'], ['', 'INVALID_EMAIL'], ['<a>@x.vn', 'INVALID_EMAIL'], [long, 'INVALID_EMAIL'],
-    [123, 'INVALID_INPUT'], [null, 'INVALID_INPUT'],
+    [{ name: 'X', phone: '123' }, 'INVALID_PHONE'],
+    [{ name: 'X', phone: '' }, 'INVALID_PHONE'],
+    [{ name: 'X', phone: '09abc' }, 'INVALID_PHONE'],
+    [{ name: 'X', phone: 901234567 }, 'INVALID_INPUT'],
+    [{ name: 'X', phone: null }, 'INVALID_INPUT'],
+    [{ name: 'X', phone: '0901234567', email: 'a@b.vn' }, 'INVALID_INPUT'],
   ];
-  for (const [email, code] of cases) {
-    const r = await call('POST', '/customers', { token: tok, body: { name: 'X', email } });
-    assert.equal(r.status, 400, `${JSON.stringify(email).slice(0, 30)} → ${r.status} ${r.text}`);
-    assert.deepEqual(r.body, { error: code }, JSON.stringify(email).slice(0, 30));
+  for (const [body, code] of cases) {
+    const r = await call('POST', '/customers', { token: tok, body });
+    assert.equal(r.status, 400, `${JSON.stringify(body)} → ${r.status} ${r.text}`);
+    assert.deepEqual(r.body, { error: code }, JSON.stringify(body));
   }
   const g = await call('GET', '/customers/3', { token: tok });
   assert.equal(g.status, 404);
   assert.deepEqual(g.body, { error: 'CUSTOMER_NOT_FOUND' });
 });
 
-test('AC-HS-21 (mục 11): KH2 A10 {"email":"kh1@cab.vn"} (trùng KH1) → 200, email không UNIQUE; họ tên, ngày sinh giữ nguyên', async () => {
+test('AC-HS-27 (mục 11): KH2 A10 {"phone":"0900000001"} (trùng số KH1) → 200, số hồ sơ không UNIQUE; họ tên, ngày sinh giữ nguyên', async () => {
   const tok = await tokenOf(SEED.KH2);
   const before = await call('GET', '/customers/me', { token: tok });
   assert.equal(before.status, 200);
-  const r = await call('PATCH', '/customers/me', { token: tok, body: { email: 'kh1@cab.vn' } });
+  assert.equal(before.body.phone, SEED_PROFILE_PHONE.KH2);
+  const r = await call('PATCH', '/customers/me', { token: tok, body: { phone: SEED_PROFILE_PHONE.KH1 } });
   assert.equal(r.status, 200, r.text);
-  assert.deepEqual(r.body, { ...before.body, email: 'kh1@cab.vn' });
-  const back = await call('PATCH', '/customers/me', { token: tok, body: { email: KH2_EMAIL } });
+  assert.deepEqual(r.body, { ...before.body, phone: SEED_PROFILE_PHONE.KH1 });
+  const back = await call('PATCH', '/customers/me', { token: tok, body: { phone: SEED_PROFILE_PHONE.KH2 } });
   assert.equal(back.status, 200);
-  assert.equal(back.body.email, KH2_EMAIL);
+  assert.equal(back.body.phone, SEED_PROFILE_PHONE.KH2);
 });
 
-test('AC-HS-22 (mục 11): KH1 A10 {"email":null} → 200 null; A38 null; A10 lại kh1@cab.vn → 200; {"email":"sai"} → 400 INVALID_EMAIL, email giữ nguyên', async () => {
+test('AC-HS-28 (mục 11, 400): KH1 A10 {"phone":null} → INVALID_INPUT; {"phone":"sai"} → INVALID_PHONE; A38 vẫn 0900000001', async () => {
   const tok = await tokenOf(SEED.KH1);
-  const a = await call('PATCH', '/customers/me', { token: tok, body: { email: null } });
-  assert.equal(a.status, 200, a.text);
-  assert.deepEqual(a.body, { ...KH1_PROFILE, email: null });
-  const b = await call('GET', '/customers/me', { token: tok });
-  assert.equal(b.status, 200);
-  assert.ok('email' in b.body, 'A38 phải có key email (null)');
-  assert.equal(b.body.email, null);
-  const c = await call('PATCH', '/customers/me', { token: tok, body: { email: 'kh1@cab.vn' } });
+  const a = await call('PATCH', '/customers/me', { token: tok, body: { phone: null } });
+  assert.equal(a.status, 400, a.text);
+  assert.deepEqual(a.body, { error: 'INVALID_INPUT' });
+  const b = await call('PATCH', '/customers/me', { token: tok, body: { phone: 'sai' } });
+  assert.equal(b.status, 400, b.text);
+  assert.deepEqual(b.body, { error: 'INVALID_PHONE' });
+  const c = await call('GET', '/customers/me', { token: tok });
   assert.equal(c.status, 200);
   assert.deepEqual(c.body, KH1_PROFILE);
-  const d = await call('PATCH', '/customers/me', { token: tok, body: { email: 'sai' } });
-  assert.equal(d.status, 400);
-  assert.deepEqual(d.body, { error: 'INVALID_EMAIL' });
-  const e = await call('GET', '/customers/me', { token: tok });
-  assert.deepEqual(e.body, KH1_PROFILE);
 });
 
-test('AC-HS-23 (mục 24): table customer_profiles — email kh1@cab.vn, kh2@cab.vn hiện rõ; họ tên, ngày sinh vẫn \\x…', () => {
+test('AC-HS-29 (mục 24): table customer_profiles — phone 0900000001/2/9 hiện rõ; họ tên, ngày sinh vẫn \\x…', () => {
   const out = psqlTable('customer-db', 'customer', 'customer_profiles');
-  assert.match(out, /kh1@cab\.vn/);
-  assert.match(out, /kh2@cab\.vn/);
+  for (const p of ['0900000001', '0900000002', '0900000009']) assert.match(out, new RegExp(p));
   assert.match(out, /\\x[0-9a-f]{40,}/);
   for (const plain of ['Nguyễn Văn An', '2000-01-01']) assert.ok(!out.includes(plain), `thấy "${plain}" rõ`);
 });
 
-test('AC-HS-24 (migration): schema_migrations có 002_them-email.sql (một lần); hồ sơ không email (KH9) trả "email": null', async () => {
+test('AC-HS-30 (migration): schema_migrations có 003_sdt-trong-ho-so.sql (một lần); phone NOT NULL có CHECK customer_profiles_phone_format; không có cột email', () => {
   const mig = psql('customer-db', 'customer', 'select version from schema_migrations order by 1');
-  assert.match(mig, /002_them-email\.sql/);
-  assert.equal(psql('customer-db', 'customer', "select count(*) from schema_migrations where version like '002%'"), '1');
+  assert.match(mig, /003_sdt-trong-ho-so\.sql/);
+  assert.equal(psql('customer-db', 'customer', "select count(*) from schema_migrations where version like '003%'"), '1');
+  assert.equal(psql('customer-db', 'customer', "select is_nullable from information_schema.columns where table_name = 'customer_profiles' and column_name = 'phone'"), 'NO');
+  assert.equal(psql('customer-db', 'customer', "select count(*) from information_schema.columns where table_name = 'customer_profiles' and column_name = 'email'"), '0');
+  assert.equal(psql('customer-db', 'customer', "select count(*) from pg_constraint where conname = 'customer_profiles_phone_format'"), '1');
+  // Không UNIQUE trên phone.
+  assert.equal(psql('customer-db', 'customer', "select count(*) from pg_indexes where tablename = 'customer_profiles' and indexdef ilike '%(phone)%'"), '0');
+});
+
+test('AC-HS-01 (mục 11, AC-HS-06): AD1 xem hồ sơ KH9 (seed) → 200 phone 0900000009', async () => {
   const r = await call('GET', '/customers/9', { token: await tokenOf(SEED.AD1) });
   assert.equal(r.status, 200, r.text);
-  assert.ok('email' in r.body);
-  assert.equal(r.body.email, null);
+  assert.equal(r.body.phone, SEED_PROFILE_PHONE.KH9);
+  assert.ok(!('email' in r.body));
 });

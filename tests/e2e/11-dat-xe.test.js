@@ -44,8 +44,8 @@ after(async () => {
 });
 
 // ---------- Mục 14 ----------
-test('AC-DX-01 (mục 14): A20 ?limit=2 [KH1] → 7, 6; pagination {1, 2, 7, 4}; &page=2 → 5, 4', async () => {
-  const r = await call('GET', '/bookings?limit=2', { token: kh1 });
+test('AC-DX-01 (mục 14): A20 /customers/1/bookings?limit=2 [KH1] → 7, 6; pagination {1, 2, 7, 4}; &page=2 → 5, 4', async () => {
+  const r = await call('GET', '/customers/1/bookings?limit=2', { token: kh1 });
   assert.equal(r.status, 200, r.text);
   assert.deepEqual(r.body.data.map((b) => b.booking_id), [7, 6]);
   assert.deepEqual(r.body.pagination, { page: 1, limit: 2, total: 7, total_pages: 4 });
@@ -56,42 +56,70 @@ test('AC-DX-01 (mục 14): A20 ?limit=2 [KH1] → 7, 6; pagination {1, 2, 7, 4};
   assert.equal(b7.fare, 56000);
   assert.ok(b7.created_at, 'có created_at');
   assert.deepEqual(Object.keys(b7).sort(), ['booking_id', 'created_at', 'fare', 'pay', 'status', 'vehicle']);
-  const p2 = await call('GET', '/bookings?limit=2&page=2', { token: kh1 });
+  const p2 = await call('GET', '/customers/1/bookings?limit=2&page=2', { token: kh1 });
   assert.equal(p2.status, 200);
   assert.deepEqual(p2.body.data.map((b) => b.booking_id), [5, 4]);
   assert.deepEqual(p2.body.pagination, { page: 2, limit: 2, total: 7, total_pages: 4 });
 });
 
-test('AC-DX-02 (mục 14, B14): [KH1] ?status=canceled → total 2 (6 rồi 1); [KH2] → data [], total 0', async () => {
-  const r = await call('GET', '/bookings?status=canceled', { token: kh1 });
+test('AC-DX-02 (mục 14, B14): [KH1] customers/1/bookings?status=canceled → total 2 (6 rồi 1); [KH2] customers/2/bookings → data [], total 0', async () => {
+  const r = await call('GET', '/customers/1/bookings?status=canceled', { token: kh1 });
   assert.equal(r.status, 200, r.text);
   assert.equal(r.body.pagination.total, 2);
   assert.deepEqual(r.body.data.map((b) => b.booking_id), [6, 1]);
-  const k2 = await call('GET', '/bookings', { token: kh2 });
+  const k2 = await call('GET', '/customers/2/bookings', { token: kh2 });
   assert.equal(k2.status, 200, k2.text);
   assert.deepEqual(k2.body.data, []);
   assert.equal(k2.body.pagination.total, 0);
 });
 
-test('AC-DX-03 (mục 14, 400/401/403): limit=abc, 51, page=0 → INVALID_PAGINATION; status=XYZ, sort=asc → INVALID_INPUT; không token 401; TX1, AD1 → 403', async () => {
+test('AC-DX-03 (mục 14, 400/401/403): limit=abc, 51, page=0 → INVALID_PAGINATION; status=XYZ, sort=asc → INVALID_INPUT; không token 401; TX1 → 403 FORBIDDEN', async () => {
   for (const q of ['limit=abc', 'limit=51', 'page=0', 'limit=0']) {
-    const r = await call('GET', `/bookings?${q}`, { token: kh1 });
+    const r = await call('GET', `/customers/1/bookings?${q}`, { token: kh1 });
     assert.equal(r.status, 400, `${q} → ${r.status} ${r.text}`);
     assert.deepEqual(r.body, { error: 'INVALID_PAGINATION' }, q);
   }
   for (const q of ['status=XYZ', 'sort=asc', 'customer_id=2']) {
-    const r = await call('GET', `/bookings?${q}`, { token: kh1 });
+    const r = await call('GET', `/customers/1/bookings?${q}`, { token: kh1 });
     assert.equal(r.status, 400, `${q} → ${r.status} ${r.text}`);
     assert.deepEqual(r.body, { error: 'INVALID_INPUT' }, q);
   }
-  const n = await call('GET', '/bookings');
+  const n = await call('GET', '/customers/1/bookings');
   assert.equal(n.status, 401);
   assert.deepEqual(n.body, { error: 'TOKEN_MISSING' });
-  for (const tok of [tx1, ad1]) {
-    const r = await call('GET', '/bookings', { token: tok });
-    assert.equal(r.status, 403);
-    assert.deepEqual(r.body, { error: 'FORBIDDEN' });
+  const r = await call('GET', '/customers/1/bookings', { token: tx1 });
+  assert.equal(r.status, 403, r.text);
+  assert.deepEqual(r.body, { error: 'FORBIDDEN' });
+});
+
+test('AC-DX-26 (mục 14, 403): [KH1] customers/2/bookings?limit=2 và customers/999/bookings → 403 NOT_OWNER', async () => {
+  for (const p of ['/customers/2/bookings?limit=2', '/customers/999/bookings']) {
+    const r = await call('GET', p, { token: kh1 });
+    assert.equal(r.status, 403, `${p}: ${r.text}`);
+    assert.deepEqual(r.body, { error: 'NOT_OWNER' }, p);
   }
+});
+
+test('AC-DX-27 (mục 14): [AD1] customers/1/bookings?limit=2 → 200 như AC-DX-01; customers/999/bookings → 200 data [], total 0', async () => {
+  const a = await call('GET', '/customers/1/bookings?limit=2', { token: ad1 });
+  assert.equal(a.status, 200, a.text);
+  assert.deepEqual(a.body.data.map((b) => b.booking_id), [7, 6]);
+  assert.deepEqual(a.body.pagination, { page: 1, limit: 2, total: 7, total_pages: 4 });
+  const b = await call('GET', '/customers/999/bookings', { token: ad1 });
+  assert.equal(b.status, 200, b.text);
+  assert.deepEqual(b.body.data, []);
+  assert.equal(b.body.pagination.total, 0);
+});
+
+test('AC-DX-28 (mục 14, 400/404): customers/abc/bookings, customers/me/bookings → 400 INVALID_ID; GET /bookings (đường cũ) → 404 ROUTE_NOT_FOUND', async () => {
+  for (const p of ['/customers/abc/bookings', '/customers/me/bookings']) {
+    const r = await call('GET', p, { token: kh1 });
+    assert.equal(r.status, 400, `${p}: ${r.text}`);
+    assert.deepEqual(r.body, { error: 'INVALID_ID' }, p);
+  }
+  const old = await call('GET', '/bookings?limit=2', { token: kh1 });
+  assert.equal(old.status, 404, old.text);
+  assert.deepEqual(old.body, { error: 'ROUTE_NOT_FOUND' });
 });
 
 test('AC-DX-04 (mục 14, seed): bookings 7, payments 7, trips 3, trip_status_history 11 dòng seed', () => {
