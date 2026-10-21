@@ -4,7 +4,7 @@
 import { buildMetadata, callUnary } from '../grpc/clients.js';
 import { grpcErrorToHttp, SERVICE_UNAVAILABLE } from '../grpc/errors.js';
 
-// Chỉ chép field có mặt: field `optional` của proto (ví dụ `phone` của Login) không gửi khác với gửi chuỗi rỗng.
+// Chỉ chép field có mặt: field `optional` của proto (`email`, `phone` của Login) không gửi khác với gửi chuỗi rỗng.
 function pick(body, keys) {
   const out = {};
   for (const key of keys) if (body[key] !== undefined) out[key] = body[key];
@@ -27,9 +27,10 @@ export function createAuthHandlers({ authClient, revocations, log, now = () => D
 
   return {
     // A04: 201 vì tạo mới một tài khoản. Không trả token: mục 9 phải thấy "đăng ký xong ĐĂNG NHẬP được".
-    register: forward('RegisterCustomer', ['phone', 'password'], 201),
-    // A05: 200, đăng nhập không tạo bản ghi nào (JWT không lưu phiên).
-    login: forward('Login', ['phone', 'password'], 200),
+    // Khách đăng ký bằng email (ADR-021).
+    register: forward('RegisterCustomer', ['email', 'password'], 201),
+    // A05: 200, đăng nhập không tạo bản ghi nào (JWT không lưu phiên). Đúng một trong email / phone (đã kiểm).
+    login: forward('Login', ['email', 'phone', 'password'], 200),
     // A07: 201 — mỗi lần xin là một mã OTP mới được tạo và lưu (TX-Q1 đã chốt). `otp` chỉ có khi giả lập.
     requestOtp: forward('RequestDriverOtp', ['phone'], 201, ['phone', 'expires_in', 'otp']),
     // A08: 201 vì tạo mới tài khoản tài xế; response có luôn token để nộp hồ sơ ngay.

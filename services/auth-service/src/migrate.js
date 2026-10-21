@@ -35,7 +35,9 @@ export async function runMigrations({ pool, dir, log }) {
       log.info('migration: đã chạy', { file });
     } catch (err) {
       await client.query('ROLLBACK');
-      log.error('migration: lỗi, đã rollback', { file, code: err.code });
+      // Nêu tên ràng buộc / cột bị vi phạm (không nêu dữ liệu): người vận hành biết ngay vì sao lỗi
+      // (ví dụ accounts_identity_by_role khi database còn dữ liệu bản cũ — AC-DN-30).
+      log.error('migration: lỗi, đã rollback', { file, code: err.code, constraint: err.constraint, column: err.column });
       throw err;
     } finally {
       client.release();

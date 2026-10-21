@@ -302,13 +302,22 @@ test('A20 / A21 / A23: chỉ của mình; admin xem A21; phân trang và lọc',
   await logic.createBooking(ROUTE, KH1);
   await logic.createBooking({ ...ROUTE, pay: 'ONLINE' }, KH1);
   await flush();
-  const list = await logic.listBookings({ page: 1, limit: 1 }, KH1);
+  // A20 theo mã khách (2026-10-14): customer_id là mã trong đường dẫn.
+  const list = await logic.listBookings({ customer_id: 1, page: 1, limit: 1 }, KH1);
   assert.deepEqual(list.pagination, { page: 1, limit: 1, total: 2, total_pages: 2 });
   assert.deepEqual(Object.keys(list.data[0]), ['booking_id', 'status', 'vehicle', 'pay', 'fare', 'created_at']);
-  assert.equal((await logic.listBookings({ status: 'searching', page: 1, limit: 10 }, KH1)).pagination.total, 1);
-  assert.equal((await logic.listBookings({ page: 1, limit: 10 }, KH2)).pagination.total, 0);
-  await rejectsWith(logic.listBookings({ page: 1, limit: 51 }, KH1), 'INVALID_ARGUMENT', 'INVALID_PAGINATION');
-  await rejectsWith(logic.listBookings({ status: 'XYZ', page: 1, limit: 10 }, KH1), 'INVALID_ARGUMENT', 'INVALID_INPUT');
+  assert.equal((await logic.listBookings({ customer_id: 1, status: 'searching', page: 1, limit: 10 }, KH1)).pagination.total, 1);
+  assert.equal((await logic.listBookings({ customer_id: 2, page: 1, limit: 10 }, KH2)).pagination.total, 0);
+  await rejectsWith(logic.listBookings({ customer_id: 1, page: 1, limit: 51 }, KH1), 'INVALID_ARGUMENT', 'INVALID_PAGINATION');
+  await rejectsWith(logic.listBookings({ customer_id: 1, status: 'XYZ', page: 1, limit: 10 }, KH1), 'INVALID_ARGUMENT', 'INVALID_INPUT');
+  // Khách xem mã khác → NOT_OWNER (kể cả mã không tồn tại) — AC-DX-26.
+  await rejectsWith(logic.listBookings({ customer_id: 2, page: 1, limit: 10 }, KH1), 'PERMISSION_DENIED', 'NOT_OWNER');
+  await rejectsWith(logic.listBookings({ customer_id: 999, page: 1, limit: 10 }, KH1), 'PERMISSION_DENIED', 'NOT_OWNER');
+  // Admin xem mọi mã; mã không có booking → rỗng, không 404 (AC-DX-27, DX24). Tài xế → FORBIDDEN.
+  assert.equal((await logic.listBookings({ customer_id: 1, page: 1, limit: 10 }, AD1)).pagination.total, 2);
+  assert.equal((await logic.listBookings({ customer_id: 999, page: 1, limit: 10 }, AD1)).pagination.total, 0);
+  await rejectsWith(logic.listBookings({ customer_id: 0, page: 1, limit: 10 }, AD1), 'INVALID_ARGUMENT', 'INVALID_INPUT');
+  await rejectsWith(logic.listBookings({ customer_id: 11, page: 1, limit: 10 }, TX1), 'PERMISSION_DENIED', 'FORBIDDEN');
   await rejectsWith(logic.getBooking({ booking_id: 1000 }, KH2), 'PERMISSION_DENIED', 'NOT_OWNER');
   assert.equal((await logic.getBooking({ booking_id: 1000 }, AD1)).booking_id, 1000);
   await rejectsWith(logic.getBooking({ booking_id: 999 }, KH1), 'NOT_FOUND', 'BOOKING_NOT_FOUND');

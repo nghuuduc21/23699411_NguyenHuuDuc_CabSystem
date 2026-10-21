@@ -22,21 +22,27 @@ export function checkStringFields(body, fields) {
   return null;
 }
 
-// A04 POST /api/v1/accounts — chỉ `phone`, `password` (ADR-019). Gửi `email` là field lạ → 400 INVALID_INPUT
-// (DN-Q5): email nay thuộc hồ sơ khách (A37, A10), tài khoản không còn nhận.
+// A04 POST /api/v1/auth/register — chỉ `email`, `password` (ADR-021). Gửi `phone`, `role` là field lạ → 400
+// INVALID_INPUT: khách không có số ở tài khoản (số liên hệ ở hồ sơ), client không tự chọn role.
+// Định dạng email kiểm ở auth-service (chủ dữ liệu, DN-Q5); Gateway chỉ kiểm kiểu và độ dài.
+const EMAIL_FORM_MAX = 254;
 export function validateRegister(body) {
   return checkStringFields(body, {
-    phone: { required: true, max: 20 },
+    email: { required: true, max: EMAIL_FORM_MAX },
     password: { required: true, max: 128 },
   });
 }
 
-// A05 POST /api/v1/auth/login — chỉ đăng nhập bằng `phone` (DN1 sửa 2026-10-05); `email` là field lạ → 400.
+// A05 POST /api/v1/auth/login — ĐÚNG MỘT trong `email` (khách, admin) / `phone` (tài xế) (DN1 sửa 2026-10-14).
+// Thiếu cả hai hoặc có cả hai → INVALID_INPUT: một role một cách đăng nhập (BRULE19).
 export function validateLogin(body) {
-  return checkStringFields(body, {
-    phone: { required: true, max: 20 },
+  const error = checkStringFields(body, {
+    email: { required: false, max: EMAIL_FORM_MAX },
+    phone: { required: false, max: 20 },
     password: { required: true, max: 128 },
   });
+  if (error) return error;
+  return (body.email === undefined) === (body.phone === undefined) ? 'INVALID_INPUT' : null;
 }
 
 // ---- Hồ sơ khách (spec 11 mục 4.1) ----
@@ -47,16 +53,17 @@ export function validateLogin(body) {
 // dài hơn số ký tự nhìn thấy, nên không đặt đúng 100 ở Gateway để khỏi từ chối nhầm.
 const NAME_FORM_MAX = 200;
 const DOB_FORM_MAX = 10; // YYYY-MM-DD
-const EMAIL_MAX = 254; // giới hạn độ dài địa chỉ email (RFC 5321), cùng số với CHECK trong database
+const PHONE_FORM_MAX = 20;
 
-// `nullable`: chỉ A10 nhận `null` cho `dob`, `email` (nghĩa là xóa giá trị); A37 cứ không gửi là được.
-function checkCustomerBody(body, { nameRequired, nullable }) {
+// `required`: A37 bắt buộc `name`, `phone`; A10 không bắt buộc field nào (nhưng phải có ít nhất một).
+// `nullable`: chỉ A10 nhận `"dob": null` (nghĩa là xóa ngày sinh); `phone` không bao giờ nhận null (bắt buộc — HS6).
+function checkCustomerBody(body, { required, nullable }) {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return 'INVALID_INPUT';
-  // Field lạ (ví dụ `customer_id`) → 400: mã khách lấy từ token, client không được gửi.
-  for (const key of Object.keys(body)) if (!['name', 'dob', 'email'].includes(key)) return 'INVALID_INPUT';
-  const { name, dob, email } = body;
+  // Field lạ (ví dụ `customer_id`, `email` — email nay ở tài khoản, ADR-021) → 400: mã khách lấy từ token.
+  for (const key of Object.keys(body)) if (!['name', 'dob', 'phone'].includes(key)) return 'INVALID_INPUT';
+  const { name, dob, phone } = body;
   if (name === undefined) {
-    if (nameRequired) return 'INVALID_INPUT';
+    if (required) return 'INVALID_INPUT';
   } else if (typeof name !== 'string' || name.length < 1 || name.length > NAME_FORM_MAX) {
     return 'INVALID_INPUT'; // gồm cả `"name": null`
   }
@@ -64,26 +71,27 @@ function checkCustomerBody(body, { nameRequired, nullable }) {
   if (dob !== undefined && !(dob === null && nullable)) {
     if (typeof dob !== 'string' || dob.length < 1 || dob.length > DOB_FORM_MAX) return 'INVALID_INPUT';
   }
-  // Email (ADR-019, HS-Q6 chọn a): Gateway chỉ kiểm KIỂU và ĐỘ DÀI; định dạng là quy tắc của chủ dữ liệu
-  // (customer-service). Sai kiểu (số, object, `null` ở A37) → INVALID_INPUT; quá 254 ký tự → INVALID_EMAIL.
-  // Chuỗi rỗng vẫn chuyển xuống để service trả INVALID_EMAIL (spec 11 mục 4.1). Không chặn `<` `>` ở đây:
-  // biểu thức định dạng của service đã loại chúng và trả đúng mã INVALID_EMAIL.
-  if (email !== undefined && !(email === null && nullable)) {
-    if (typeof email !== 'string') return 'INVALID_INPUT';
-    if (email.trim().length > EMAIL_MAX) return 'INVALID_EMAIL';
+  // Số điện thoại (ADR-021, HS-Q6 chọn a): Gateway chỉ kiểm KIỂU và ĐỘ DÀI; định dạng là quy tắc của chủ dữ liệu
+  // (customer-service). Thiếu ở A37, sai kiểu (số JSON, object), `null` → INVALID_INPUT. Quá 20 ký tự chắc chắn
+  // sai định dạng → INVALID_PHONE ngay. Chuỗi rỗng vẫn chuyển xuống để service trả INVALID_PHONE (spec 11 mục 4.1).
+  if (phone === undefined) {
+    if (required) return 'INVALID_INPUT';
+  } else {
+    if (typeof phone !== 'string') return 'INVALID_INPUT';
+    if (phone.length > PHONE_FORM_MAX) return 'INVALID_PHONE';
   }
   if (typeof name === 'string' && (name.includes('<') || name.includes('>'))) return 'TEXT_CONTAINS_HTML';
   return null;
 }
 
-// A37 POST /api/v1/customers — `name` bắt buộc, `dob`, `email` tùy chọn.
+// A37 POST /api/v1/customers — `name`, `phone` bắt buộc; `dob` tùy chọn.
 export function validateCreateCustomer(body) {
-  return checkCustomerBody(body, { nameRequired: true, nullable: false });
+  return checkCustomerBody(body, { required: true, nullable: false });
 }
 
-// A10 PATCH /api/v1/customers/me — ít nhất một field; `"dob": null` = xóa ngày sinh, `"email": null` = xóa email (HS6).
+// A10 PATCH /api/v1/customers/me — ít nhất một field; `"dob": null` = xóa ngày sinh (HS2); `"phone": null` → 400.
 export function validateUpdateCustomer(body) {
-  const error = checkCustomerBody(body, { nameRequired: false, nullable: true });
+  const error = checkCustomerBody(body, { required: false, nullable: true });
   if (error) return error;
   return Object.keys(body).length === 0 ? 'INVALID_INPUT' : null;
 }
@@ -105,12 +113,12 @@ const hasHtml = (value) => typeof value === 'string' && (value.includes('<') || 
 const isObject = (body) => body !== null && typeof body === 'object' && !Array.isArray(body);
 const onlyKeys = (object, allowed) => Object.keys(object).every((key) => allowed.includes(key));
 
-// A07 POST /api/v1/otps
+// A07 POST /api/v1/auth/otp
 export function validateRequestOtp(body) {
   return checkStringFields(body, { phone: { required: true, max: 20 } });
 }
 
-// A08 POST /api/v1/driver-accounts — field lạ (gồm `role`) → 400: client không tự chọn role.
+// A08 POST /api/v1/auth/driver-register — field lạ (gồm `role`) → 400: client không tự chọn role.
 export function validateRegisterDriver(body) {
   return checkStringFields(body, {
     phone: { required: true, max: 20 },
@@ -324,10 +332,12 @@ function parseStatusListQuery(query, statuses) {
   return { request: { ...request, page: paging.page, limit: paging.limit } };
 }
 
-// A20 GET /api/v1/bookings?status&page&limit
-export function parseBookingsQuery(query) {
+// A20 GET /api/v1/customers/{id}/bookings?status&page&limit — mã khách trong đường dẫn đã kiểm ở validateIdParam.
+// Mã gửi dạng chuỗi để số lớn không bị làm tròn trước khi tới service; service so với mã trong token.
+export function parseBookingsQuery(req) {
+  const { query } = req;
   const parsed = parseStatusListQuery(query, BOOKING_STATUSES);
-  return parsed.error ? parsed : { variant: 'A20', request: parsed.request };
+  return parsed.error ? parsed : { variant: 'A20', request: { ...parsed.request, customer_id: req.params.id } };
 }
 
 // A23 GET /api/v1/offers?status&page&limit — không gửi `status` thì service lọc PENDING.

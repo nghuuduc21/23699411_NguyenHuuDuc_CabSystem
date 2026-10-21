@@ -13,8 +13,8 @@ test('RegisterCustomer / Login: kết quả và lỗi đổi đúng status + det
   const auth = {
     async registerCustomer(req) {
       seen.push(req);
-      if (req.phone === 'dup') throw new AuthError('ALREADY_EXISTS', 'PHONE_ALREADY_EXISTS');
-      if (req.phone === 'boom') throw new Error('database dừng');
+      if (req.email === 'dup') throw new AuthError('ALREADY_EXISTS', 'EMAIL_ALREADY_EXISTS');
+      if (req.email === 'boom') throw new Error('database dừng');
       return { account_id: 1000, role: 'customer' };
     },
     async login(req) {
@@ -31,24 +31,28 @@ test('RegisterCustomer / Login: kết quả và lỗi đổi đúng status + det
     client[method](req, { deadline: Date.now() + 2000 }, (err, res) => resolve({ err, res }));
   });
   try {
-    let r = await call('RegisterCustomer', { phone: '0901234567', password: '12345678' });
+    let r = await call('RegisterCustomer', { email: 'new1@cab.vn', password: '12345678' });
     assert.deepEqual(r.res, { account_id: 1000, role: 'customer' });
-    // Field 2 (`email`) đã reserved: request không còn khóa email (ADR-019).
-    assert.equal('email' in seen[0], false);
-    r = await call('RegisterCustomer', { phone: 'dup', password: 'x' });
+    // Số 1 (`phone`) đã reserved (ADR-021): request không còn khóa phone; email đi qua số 2.
+    assert.equal('phone' in seen[0], false);
+    assert.equal(seen[0].email, 'new1@cab.vn');
+    r = await call('RegisterCustomer', { email: 'dup', password: 'x' });
     assert.equal(r.err.code, grpc.status.ALREADY_EXISTS);
-    assert.equal(r.err.details, 'PHONE_ALREADY_EXISTS');
-    r = await call('RegisterCustomer', { phone: 'boom', password: 'x' });
+    assert.equal(r.err.details, 'EMAIL_ALREADY_EXISTS');
+    r = await call('RegisterCustomer', { email: 'boom', password: 'x' });
     assert.equal(r.err.code, grpc.status.INTERNAL);
     assert.equal(r.err.details, 'INTERNAL');
-    r = await call('Login', { phone: '0900000001', password: 'sai' });
+    r = await call('Login', { email: 'kh1@cab.vn', password: 'sai' });
     assert.equal(r.err.code, grpc.status.UNAUTHENTICATED);
     assert.equal(r.err.details, 'INVALID_CREDENTIALS');
-    // Bên gọi gửi khóa `email` lạ: proto không còn field này nên server không nhận được; thiếu phone → undefined.
-    r = await call('Login', { email: 'a@b.vn', password: '12345678' });
+    // `optional`: field không gửi tới server là undefined — phân biệt được "không gửi" với chuỗi rỗng.
+    r = await call('Login', { email: 'kh1@cab.vn', password: '12345678' });
     assert.equal(r.res.expires_in, 3600);
+    assert.equal(seen.at(-1).email, 'kh1@cab.vn');
     assert.equal(seen.at(-1).phone, undefined);
-    assert.equal('email' in seen.at(-1), false);
+    r = await call('Login', { phone: '0910000001', password: '12345678' });
+    assert.equal(seen.at(-1).phone, '0910000001');
+    assert.equal(seen.at(-1).email, undefined);
   } finally {
     client.close();
     server.forceShutdown();
@@ -58,6 +62,13 @@ test('RegisterCustomer / Login: kết quả và lỗi đổi đúng status + det
 test('seed: 13 tài khoản theo quy luật mã, câu SQL có tham số, OVERRIDING SYSTEM VALUE, ON CONFLICT', async () => {
   assert.deepEqual(SEED_ACCOUNTS.map((a) => a.id), [1, 2, 3, 9, 11, 12, 13, 14, 15, 16, 17, 18, 99]);
   assert.equal(SEED_ACCOUNTS.find((a) => a.id === 9).status, 'LOCKED');
+  // ADR-021: tài xế dùng số, mọi người khác dùng email (đúng CHECK accounts_identity_by_role).
+  for (const a of SEED_ACCOUNTS) {
+    if (a.role === 'driver') assert.ok(a.phone && a.email === null);
+    else assert.ok(a.email && a.phone === null);
+  }
+  assert.equal(SEED_ACCOUNTS.find((a) => a.id === 1).email, 'kh1@cab.vn');
+  assert.equal(SEED_ACCOUNTS.find((a) => a.id === 99).email, 'admin@cab.vn');
   assert.equal(SEED_ACCOUNTS.find((a) => a.id === 18).phone, '0910000008');
   const queries = [];
   const pool = { async query(sql, params) { queries.push({ sql, params }); return { rowCount: 1 }; } };

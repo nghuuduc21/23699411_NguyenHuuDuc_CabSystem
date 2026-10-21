@@ -13,7 +13,7 @@ package cab.driver.v1;
 service DriverService {
   // A11 POST /api/v1/drivers — tài xế nộp hồ sơ và xe → PENDING. Chỉ role `driver`.
   rpc SubmitApplication (SubmitApplicationRequest) returns (Driver);
-  // A14 GET /api/v1/drivers/{id} — cả ba role; người khác thấy phần công khai, chủ và admin thấy đầy đủ.
+  // A14 GET /api/v1/drivers/{id} — admin (mọi mã) và chính tài xế (mã của mình, khác → NOT_OWNER); luôn bản đầy đủ.
   rpc GetDriver (GetDriverRequest) returns (Driver);
   // A13 GET /api/v1/drivers?approval_status=… — danh sách hồ sơ cho admin, cũ nhất trước.
   rpc ListDrivers (ListDriversRequest) returns (ListDriversResponse);
@@ -35,7 +35,7 @@ service DriverService {
 }
 
 // `optional`: không có giá trị thì field vắng hẳn, Gateway không đưa key vào JSON.
-// Nhờ vậy phần công khai của A14 không có key `license`, `lat`, `lng` (NFR08).
+// Ví dụ hồ sơ chưa có vị trí, chưa khai `brand` thì JSON không có key `lat`, `lng`, `brand`.
 message Driver {
   int64 driver_id = 1;
   string name = 2;

@@ -121,16 +121,20 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
     },
 
     // A14: mọi role xem được; mức chi tiết tùy người xem (04 mục 4).
+    // A14 (sửa 2026-10-14 theo yêu cầu giảng viên, D11): chỉ ADMIN (mọi mã) và CHÍNH tài xế (mã của mình).
+    // Khách không còn xem hồ sơ tài xế theo mã: khách thấy tài xế của chuyến mình qua A27 (FR14) và tài xế
+    // quanh mình qua A12. Vì vậy chỉ còn MỘT bản trả về — bản đầy đủ — bỏ "phần công khai" (TX3 bỏ).
     async getDriver({ driver_id: driverId }, identity) {
-      const { accountId, role } = requireRole(identity, ['customer', 'driver', 'admin']);
+      const { accountId, role } = requireRole(identity, ['driver', 'admin']);
+      // TX15: tài xế xem mã KHÁC → 403 NGAY, chưa đọc database (như A09 của hồ sơ khách). Mã tài xế là số nhỏ
+      // dễ đoán (11–18); nếu tra trước rồi mới so chủ thì 404 / 403 sẽ lộ "mã này có tài xế không".
+      // So được ngay vì driver_id = account_id. Đánh đổi: mã không tồn tại cũng nhận 403 thay vì 404.
+      if (role === 'driver' && driverId !== accountId) throw new DriverError('PERMISSION_DENIED', 'NOT_OWNER');
       checkId(driverId);
       const row = await drivers.findById(driverId);
       if (!row) throw notFound();
-      const isOwnerOrAdmin = role === 'admin' || accountId === driverId;
-      if (isOwnerOrAdmin) return fullView(row);
-      // Hồ sơ chưa duyệt / bị từ chối chưa phải "tài xế của hệ thống": người khác nhận 404 như không có (TX3).
-      if (row.approval_status !== 'APPROVED') throw notFound();
-      return publicView(row);
+      // Admin và chủ thấy mọi trạng thái duyệt (gồm PENDING, REJECTED kèm lý do — FR43).
+      return fullView(row);
     },
 
     // A13: danh sách hồ sơ cho admin, cũ nhất trước. Không giải mã số giấy phép (xem từng hồ sơ ở A14).

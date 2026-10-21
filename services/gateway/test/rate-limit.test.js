@@ -55,6 +55,7 @@ before(async () => {
     Login: fakeRpc({ token: 't', account_id: 1, role: 'customer', expires_in: 3600 }),
     RegisterCustomer: fakeRpc({ account_id: 1000, role: 'customer' }),
     RequestDriverOtp: fakeRpc({ phone: '0911', expires_in: 300 }),
+    RegisterDriver: fakeRpc({ account_id: 1001, role: 'driver', token: 't', expires_in: 3600 }),
   };
   const routes = buildRoutes({
     health: { live: (req, res) => res.json({ status: 'UP' }), ready() {}, services() {} },
@@ -87,7 +88,7 @@ const send = (method, p, { t, body, headers = {} } = {}) => fetch(base + p, {
   headers: { ...headers, ...(t ? { Authorization: `Bearer ${t}` } : {}) },
   body: body === undefined ? undefined : JSON.stringify(body),
 });
-const login = (headers) => send('POST', '/api/v1/auth/login', { body: { phone: '0900000001', password: '12345678' }, headers });
+const login = (headers) => send('POST', '/api/v1/auth/login', { body: { email: 'kh1@cab.vn', password: '12345678' }, headers });
 const rl = (res) => ['ratelimit-limit', 'ratelimit-remaining', 'ratelimit-reset', 'retry-after'].map((h) => res.headers.get(h));
 
 test('AC-GH-01: đăng nhập 6 lần liên tục → 5 lần 200 (Remaining 4…0), lần 6 → 429 RATE_LIMITED + Retry-After; gRPC chỉ được gọi 5 lần', async () => {
@@ -120,10 +121,11 @@ test('AC-GH-02: spam lúc bị chặn KHÔNG kéo dài cửa sổ; hết Retry-A
   assert.equal(ok.headers.get('ratelimit-remaining'), '4');
 });
 
-test('AC-GH-03: IP bị chặn → A04, A07 cũng 429 (chung bộ đếm IP); route có token vẫn 200 (bộ đếm tài khoản riêng); /health không đếm; X-Forwarded-For không có tác dụng', async () => {
+test('AC-GH-03: IP bị chặn → A04, A07, A08 cũng 429 (chung bộ đếm IP); route có token vẫn 200 (bộ đếm tài khoản riêng); /health không đếm; X-Forwarded-For không có tác dụng', async () => {
   for (let i = 0; i < 6; i += 1) await login();
-  assert.equal((await send('POST', '/api/v1/accounts', { body: { phone: '0901234567', password: '12345678' } })).status, 429);
-  assert.equal((await send('POST', '/api/v1/otps', { body: { phone: '0911111111' } })).status, 429);
+  assert.equal((await send('POST', '/api/v1/auth/register', { body: { email: 'new9@cab.vn', password: '12345678' } })).status, 429);
+  assert.equal((await send('POST', '/api/v1/auth/otp', { body: { phone: '0911111111' } })).status, 429);
+  assert.equal((await send('POST', '/api/v1/auth/driver-register', { body: { phone: '0911111111', otp: '000000', password: '12345678' } })).status, 429);
   const me = await send('GET', '/api/v1/customers/me', { t: KH1 });
   assert.equal(me.status, 200);
   assert.equal(me.headers.get('ratelimit-limit'), '3');
@@ -131,6 +133,27 @@ test('AC-GH-03: IP bị chặn → A04, A07 cũng 429 (chung bộ đếm IP); ro
   assert.equal(h.status, 200);
   assert.deepEqual(rl(h), [null, null, null, null]);
   assert.equal((await login({ 'X-Forwarded-For': '1.2.3.4' })).status, 429);
+});
+
+test('AC-GH-09: bốn route công khai của nhóm auth chung MỘT bộ đếm IP; lần 6 → 429', async () => {
+  const seq = [
+    send('POST', '/api/v1/auth/register', { body: { email: 'new9@cab.vn', password: '12345678' } }),
+    () => login(),
+    () => send('POST', '/api/v1/auth/otp', { body: { phone: '0911111119' } }),
+    () => send('POST', '/api/v1/auth/driver-register', { body: { phone: '0911111119', otp: '000000', password: '12345678' } }),
+    () => send('POST', '/api/v1/auth/login', { body: { phone: '0910000001', password: '12345678' } }),
+  ];
+  const statuses = [(await seq[0]).status];
+  for (const call of seq.slice(1)) statuses.push((await call()).status);
+  assert.deepEqual(statuses, [201, 200, 201, 201, 200]);
+  const r6 = await login();
+  assert.equal(r6.status, 429);
+});
+
+test('AC-GH-10: đường cũ /api/v1/accounts khi IP đang bị chặn → 404, không 429 (đường không tồn tại không bị đếm)', async () => {
+  for (let i = 0; i < 6; i += 1) await login();
+  const r = await send('POST', '/api/v1/accounts', { body: { phone: '0901234567', password: '12345678' } });
+  assert.deepEqual([r.status, await r.json()], [404, { error: 'ROUTE_NOT_FOUND' }]);
 });
 
 test('AC-GH-04: callback cổng thanh toán gửi 10 lần → không 429, không header RateLimit-*', async () => {

@@ -7,24 +7,25 @@ syntax = "proto3";
 package cab.auth.v1;
 
 service AuthService {
-  // A04 POST /api/v1/accounts — chỉ tạo tài khoản role `customer`; client không chọn được role.
+  // A04 POST /api/v1/auth/register — chỉ tạo tài khoản role `customer` bằng email; client không chọn được role.
   rpc RegisterCustomer (RegisterCustomerRequest) returns (RegisterCustomerResponse);
-  // A05 POST /api/v1/auth/login — cả ba role đăng nhập cùng một rpc.
+  // A05 POST /api/v1/auth/login — cả ba role đăng nhập cùng một rpc: khách, admin bằng email; tài xế bằng số (ADR-021).
   rpc Login (LoginRequest) returns (LoginResponse);
-  // A07 POST /api/v1/otps — xin OTP cho số chưa có tài khoản. "Gửi SMS" = ghi log (ADR-014).
+  // A07 POST /api/v1/auth/otp — xin OTP cho số chưa có tài khoản. "Gửi SMS" = ghi log (ADR-014).
   rpc RequestDriverOtp (RequestDriverOtpRequest) returns (RequestDriverOtpResponse);
-  // A08 POST /api/v1/driver-accounts — kiểm tra OTP rồi tạo tài khoản role `driver`; trả luôn token
+  // A08 POST /api/v1/auth/driver-register — kiểm tra OTP rồi tạo tài khoản role `driver`; trả luôn token
   // để tài xế nộp hồ sơ ngay, bớt một request đăng nhập (04 P15).
   rpc RegisterDriver (RegisterDriverRequest) returns (RegisterDriverResponse);
 }
 
 message RegisterCustomerRequest {
-  string phone = 1;
-  // Số 2 từng là `email` (bỏ 2026-10-05, ADR-019: email chuyển sang hồ sơ khách).
-  // `reserved` để không ai dùng lại số 2 / tên `email` với nghĩa khác: client cũ còn gửi field 2
-  // thì server mới chỉ bỏ qua, không đọc nhầm thành dữ liệu khác.
-  reserved 2;
-  reserved "email";
+  // Số 1 từng là `phone` (bỏ 2026-10-14, ADR-021: khách không còn số ở tài khoản; số liên hệ ở hồ sơ).
+  // `reserved` để không ai dùng lại số 1 / tên `phone` với nghĩa khác.
+  reserved 1;
+  reserved "phone";
+  // Dùng LẠI số 2 cho `email`: cùng tên, cùng kiểu, cùng nghĩa như trước 2026-10-05, nên không bên nào
+  // hiểu số 2 theo nghĩa khác (spec 09-10 mục 5).
+  string email = 2;
   string password = 3; // giữ số 3: đổi số field là phá hợp đồng với bên gọi cũ
 }
 
@@ -34,11 +35,10 @@ message RegisterCustomerResponse {
 }
 
 message LoginRequest {
-  // Chỉ đăng nhập bằng số điện thoại (DN1 sửa 2026-10-05, ADR-019).
-  // `optional` giữ như cũ để không đổi hợp đồng; thiếu số → INVALID_INPUT.
+  // ĐÚNG MỘT trong hai định danh (DN1 sửa 2026-10-14, ADR-021): tài xế gửi `phone`, khách / admin gửi `email`.
+  // `optional` để phân biệt "không gửi" với "chuỗi rỗng" khi kiểm "đúng một định danh".
   optional string phone = 1;
-  reserved 2;
-  reserved "email";
+  optional string email = 2;  // dùng lại số 2: cùng tên, cùng nghĩa như trước 2026-10-05
   string password = 3;
 }
 

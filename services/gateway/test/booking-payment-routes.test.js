@@ -113,24 +113,38 @@ test('A19: lỗi service → HTTP (400 của Payment qua Booking, 503 khi dừng
 
 test('A20: query → message; mặc định page 1, limit 10; status chữ hoa; lọc key của phần tử', async () => {
   next = () => ({ res: { data: [{ booking_id: 7, status: 'PENDING_PAYMENT', vehicle: 'CAR_7', pay: 'ONLINE', fare: 56000, created_at: 'x', distance_m: 0, from: [] }], pagination: { page: 1, limit: 2, total: 7, total_pages: 4 } } });
-  const res = await send('GET', '/api/v1/bookings?limit=2&status=canceled', { t: KH1 });
+  const res = await send('GET', '/api/v1/customers/1/bookings?limit=2&status=canceled', { t: KH1 });
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), {
     data: [{ booking_id: 7, status: 'PENDING_PAYMENT', vehicle: 'CAR_7', pay: 'ONLINE', fare: 56000, created_at: 'x' }],
     pagination: { page: 1, limit: 2, total: 7, total_pages: 4 },
   });
-  assert.deepEqual(calls[0].request, { status: 'CANCELED', page: 1, limit: 2 });
-  await send('GET', '/api/v1/bookings', { t: KH1 });
-  assert.deepEqual(calls[1].request, { page: 1, limit: 10 });
+  // Mã khách trong đường dẫn gửi dạng chuỗi (số lớn không bị làm tròn); service so với mã trong token.
+  assert.deepEqual(calls[0].request, { status: 'CANCELED', page: 1, limit: 2, customer_id: '1' });
+  assert.equal(calls[0].metadata['x-account-id'], '1');
+  await send('GET', '/api/v1/customers/1/bookings', { t: KH1 });
+  assert.deepEqual(calls[1].request, { page: 1, limit: 10, customer_id: '1' });
+  // Admin xem mọi mã (AC-DX-27).
+  await send('GET', '/api/v1/customers/1/bookings?limit=2', { t: AD1 });
+  assert.deepEqual(calls[2].request, { page: 1, limit: 2, customer_id: '1' });
+  assert.equal(calls[2].metadata['x-role'], 'admin');
 });
 
-test('A20: 400 / 401 / 403 (AC-DX-03)', async () => {
-  for (const q of ['limit=abc', 'limit=51', 'page=0']) await expectError(await send('GET', `/api/v1/bookings?${q}`, { t: KH1 }), 400, 'INVALID_PAGINATION');
-  for (const q of ['status=XYZ', 'sort=asc']) await expectError(await send('GET', `/api/v1/bookings?${q}`, { t: KH1 }), 400, 'INVALID_INPUT');
-  await expectError(await send('GET', '/api/v1/bookings'), 401, 'TOKEN_MISSING');
-  await expectError(await send('GET', '/api/v1/bookings', { t: TX1 }), 403, 'FORBIDDEN');
-  await expectError(await send('GET', '/api/v1/bookings', { t: AD1 }), 403, 'FORBIDDEN');
+test('A20: 400 / 401 / 403; mã sai dạng → INVALID_ID; đường cũ → 404 (AC-DX-03, 28)', async () => {
+  const P = '/api/v1/customers/1/bookings';
+  for (const q of ['limit=abc', 'limit=51', 'page=0']) await expectError(await send('GET', `${P}?${q}`, { t: KH1 }), 400, 'INVALID_PAGINATION');
+  for (const q of ['status=XYZ', 'sort=asc']) await expectError(await send('GET', `${P}?${q}`, { t: KH1 }), 400, 'INVALID_INPUT');
+  await expectError(await send('GET', P), 401, 'TOKEN_MISSING');
+  await expectError(await send('GET', P, { t: TX1 }), 403, 'FORBIDDEN');
+  for (const id of ['abc', 'me', '1%20OR%201=1', '0']) await expectError(await send('GET', `/api/v1/customers/${id}/bookings`, { t: KH1 }), 400, 'INVALID_ID');
+  await expectError(await send('GET', '/api/v1/bookings?limit=2', { t: KH1 }), 404, 'ROUTE_NOT_FOUND');
   assert.equal(calls.length, 0);
+});
+
+test('A20: khách xem mã khác → 403 NOT_OWNER do service trả (AC-DX-26)', async () => {
+  next = () => ({ err: { code: grpc.status.PERMISSION_DENIED, details: 'NOT_OWNER' } });
+  await expectError(await send('GET', '/api/v1/customers/2/bookings?limit=2', { t: KH1 }), 403, 'NOT_OWNER');
+  assert.deepEqual(calls[0].request, { page: 1, limit: 2, customer_id: '2' });
 });
 
 test('A21: mã dạng chuỗi; admin xem được; tài xế 403; mã sai 400; field optional vắng thì không có key', async () => {

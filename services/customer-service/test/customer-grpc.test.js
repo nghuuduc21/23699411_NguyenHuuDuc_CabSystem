@@ -21,7 +21,7 @@ test('rpc chuyển request + danh tính từ metadata; lỗi nghiệp vụ thàn
     },
     async updateCustomer(req) {
       seen.push({ req });
-      return { customer_id: 1, name: 'An', dob: req.dob };
+      return { customer_id: 1, name: 'An', dob: req.dob, phone: req.phone ?? '0900000001' };
     },
   };
   const server = createGrpcServer({ health: { check: async () => 'SERVING' }, customers, log });
@@ -63,13 +63,14 @@ test('rpc chuyển request + danh tính từ metadata; lỗi nghiệp vụ thàn
     assert.equal(seen[4].req.dob, undefined);
     assert.equal(seen[4].req.clear_dob, true);
 
-    // Email (ADR-019): optional vắng = undefined; clear_email đi qua đúng; field 4 trả về.
-    assert.equal(seen[4].req.email, undefined);
-    assert.equal(seen[4].req.clear_email, false);
-    await call('UpdateCustomer', { email: 'a@b.vn' });
-    assert.equal(seen[5].req.email, 'a@b.vn');
-    await call('UpdateCustomer', { clear_email: true });
-    assert.equal(seen[6].req.clear_email, true);
+    // Số điện thoại (ADR-021): optional ở Update, vắng = undefined; có thì đi qua đúng.
+    // `email`, `clear_email` đã reserved: request không còn hai khóa này.
+    assert.equal(seen[4].req.phone, undefined);
+    assert.equal('email' in seen[4].req, false);
+    assert.equal('clear_email' in seen[4].req, false);
+    ({ res } = await call('UpdateCustomer', { phone: '0909999999' }));
+    assert.equal(seen[5].req.phone, '0909999999');
+    assert.equal(res.phone, '0909999999');
   } finally {
     client.close();
     server.forceShutdown();

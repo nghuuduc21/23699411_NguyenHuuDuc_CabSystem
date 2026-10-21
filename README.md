@@ -91,14 +91,17 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 
 | Request | Kết quả |
 |---|---|
-| `GET /health` | 200 `{"status":"UP"}` — Gateway còn sống |
-| `GET /ready` | 200 `READY` khi Redis trả lời; 503 `NOT_READY` khi Redis dừng |
-| `GET /health/services` | 200 `UP` khi cả 8 service `SERVING`; 503 `DEGRADED`, ghi rõ service nào `NOT_SERVING` / `UNREACHABLE` |
-| `POST /api/v1/accounts` `{"phone":"0901234567","password":"12345678"}` | 201 `{"account_id":1000,"role":"customer"}` — đăng ký khách (A04); trùng số → 409 |
-| `POST /api/v1/auth/login` `{"phone":"0900000001","password":"12345678"}` | 200 `{"token","account_id","role","expires_in"}` (A05); sai → 401, tài khoản khóa → 403 |
+| `GET /health` | 200 `{"status":"healthy"}` — Gateway còn sống |
+| `GET /ready` | 200 `{"status":"ready","checks":{"redis":"healthy","grpc_clients":"healthy"}}`; Redis dừng → 503 `not_ready`, `redis` `unhealthy` |
+| `GET /health/services` | 200 `{"status":"healthy","services":{…8 service "healthy"}}`; có service dừng / mất database → 503 `unhealthy`, service đó `unhealthy` (lý do ở `docker compose logs gateway`) |
+| `POST /api/v1/auth/register` `{"email":"new1@cab.vn","password":"12345678"}` | 201 `{"account_id":1000,"role":"customer"}` — đăng ký khách bằng email (A04); trùng email → 409 `EMAIL_ALREADY_EXISTS` |
+| `POST /api/v1/auth/login` `{"email":"kh1@cab.vn","password":"12345678"}` (khách, admin) hoặc `{"phone":"0910000001","password":"12345678"}` (tài xế) | 200 `{"token","account_id","role","expires_in"}` (A05); đúng một trong `email` / `phone`, có cả hai hoặc thiếu cả hai → 400; sai → 401, tài khoản khóa → 403 |
+| `POST /api/v1/auth/otp` `{"phone":"0911111111"}` → `POST /api/v1/auth/driver-register` `{"phone","otp","password"}` | Tài xế xin OTP (A07, giả lập trả `otp`) rồi tạo tài khoản, nhận luôn `token` (A08, mục 21) |
+| `POST /api/v1/customers` `{"name":"Pham Duc","phone":"0901234567"}` (token khách) | 201 hồ sơ (A37); `GET /api/v1/customers/1` (token KH1) → `{customer_id, name, phone, dob}` (A09, mục 11); mã khác → 403 `NOT_OWNER` |
+| `GET /api/v1/drivers/11` (token admin hoặc TX1) | 200 hồ sơ tài xế đầy đủ (A14, mục 12); khách → 403 `FORBIDDEN`; tài xế xem mã khác → 403 `NOT_OWNER` |
 | `POST /api/v1/auth/logout` + `Authorization: Bearer <token>` | 200 `{"status":"LOGGED_OUT"}` (A06); dùng lại token → 401 `TOKEN_REVOKED` |
 | `POST /api/v1/bookings` `{"from":[10.82,106.68],"to":[10.83,106.69]}` (token khách) | 201 `SEARCHING`, `CAR_4`, `CASH`, `fare` 45000 (A19, mục 15); `"pay":"online"` → `PENDING_PAYMENT` |
-| `GET /api/v1/bookings?limit=2&page=2` (token khách) | Booking của chính khách, mới nhất trước (A20, mục 14) |
+| `GET /api/v1/customers/1/bookings?limit=2&page=2` (token KH1 hoặc admin) | Booking theo mã khách, mới nhất trước (A20, mục 14); khách xem mã khác → 403 `NOT_OWNER` |
 | `GET /api/v1/offers` (token tài xế) → `PATCH /api/v1/offers/{id}` `{"status":"ACCEPTED"}` | Lời mời đang chờ (A23); nhận → `DRIVER_ASSIGNED` + `trip_id` (A24, mục 16) |
 | `POST /api/v1/payments/7/transactions` + `Idempotency-Key: k1` `{"simulate_result":"MANUAL"}` | 200 `PENDING`, `txn_id` `SIM-7-1` (A31, mục 19); gửi lại → header `Idempotency-Replayed: true` (mục 30) |
 | `POST /api/v1/payment-callbacks` + `X-Callback-Secret: cab-secret` `{"txn_id":"SIM-7-1"}` (không token) | 200 `COMPLETED` (A32, mục 19) |
@@ -109,11 +112,11 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | `GET /api/v1/trips/{id}` | Chuyến + lịch sử (A27): khách / tài xế của chuyến, admin |
 | `POST /api/v1/ratings` `{"trip_id":4,"score":5}` (token KH1) | 201 kèm `driver_avg`, `driver_count` (A34, mục 20); gửi lại → 409 `RATING_ALREADY_EXISTS`; chuyến chưa xong → 409 `TRIP_NOT_COMPLETED` |
 | `GET /api/v1/ratings?trip_id=4` / `?driver_id=11` (token bất kỳ) | Đánh giá của chuyến (A35) / điểm tài xế `{"driver_id":11,"avg":5,"count":1}` (A36) |
-| Gửi liên tục `POST /api/v1/auth/login` | Lần 6 trong 10 giây → 429 `RATE_LIMITED` + `Retry-After` (mục 29). Route công khai đếm theo IP (5), route có token theo tài khoản (30); chạy bộ test tự động thì đặt `RATE_LIMIT_PUBLIC_MAX=1000 RATE_LIMIT_ACCOUNT_MAX=1000 docker compose up -d gateway` |
+| Gửi liên tục `POST /api/v1/auth/login` | Lần 6 trong 10 giây → 429 `RATE_LIMITED` + `Retry-After` (mục 29). Bốn route công khai `auth/register`, `auth/login`, `auth/otp`, `auth/driver-register` chung một bộ đếm theo IP (5), route có token theo tài khoản (30); chạy bộ test tự động thì đặt `RATE_LIMIT_PUBLIC_MAX=1000 RATE_LIMIT_ACCOUNT_MAX=1000 docker compose up -d gateway` |
 | Đường dẫn khác | 404 `{"error":"ROUTE_NOT_FOUND"}` |
 
 API nghiệp vụ nằm dưới `/api/v1/…` (`docs/design/04-api.md`) và được thêm theo từng đặc tả.
 
-Tài khoản seed (mật khẩu chung `SEED_PASSWORD` = `12345678`): khách `090000000n` ↔ mã `n` (1, 2, 3; mã 9 bị khóa), tài xế `091000000n` ↔ mã `10 + n` (11–18), admin `0999999999` ↔ mã 99. Tài khoản tạo qua API có mã từ 1000.
+Tài khoản seed (mật khẩu chung `SEED_PASSWORD` = `12345678`) — **tài xế dùng số điện thoại, mọi người khác dùng email** (ADR-021): khách `khn@cab.vn` ↔ mã `n` (1, 2, 3; mã 9 bị khóa), tài xế `091000000n` ↔ mã `10 + n` (11–18), admin `admin@cab.vn` ↔ mã 99. Hồ sơ khách seed (KH1, KH2, KH9) có số liên hệ `090000000n`; KH3 chưa có hồ sơ. Tài khoản tạo qua API có mã từ 1000.
 
 Booking seed của KH1: mã booking = mã payment = mã trip = 1…7, tuyến P0 (10.82, 106.68) → D0 (10.83, 106.69); B7 (`CAR_7`, `ONLINE`, chờ thanh toán, hạn 1 ngày) dành cho mục 19, 30. Booking, payment, trip, offer tạo qua API có mã từ 1000.

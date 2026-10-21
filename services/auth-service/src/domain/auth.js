@@ -1,13 +1,18 @@
 // Logic nghiệp vụ của Identity & Access: đăng ký khách (UC01) và đăng nhập (UC02).
 // Mọi phụ thuộc (kho tài khoản, hàm băm, bộ ký token, log) truyền từ ngoài vào
 // nên test chạy được không cần PostgreSQL và không cần gRPC.
-import { AuthError, checkNewPassword, isPresent, normalizePhone } from './rules.js';
+import { AuthError, checkNewPassword, isPresent, normalizeEmail, normalizePhone } from './rules.js';
 
-// Tên ràng buộc UNIQUE → mã lỗi trả cho client. Chỉ còn số điện thoại: migration 003 đã bỏ cột email
-// cùng ràng buộc accounts_email_key (ADR-019).
+// Tên ràng buộc UNIQUE → mã lỗi trả cho client. Migration 004 thêm lại accounts_email_key (ADR-021):
+// khách đăng ký bằng email (A04); tài xế đăng ký bằng số (A08).
 const UNIQUE_TO_CODE = {
+  accounts_email_key: 'EMAIL_ALREADY_EXISTS',
   accounts_phone_key: 'PHONE_ALREADY_EXISTS',
 };
+
+// proto3 `optional`: không gửi = undefined. Chuỗi rỗng vẫn tính là CÓ GỬI (rồi bị kiểm định dạng),
+// để "gửi cả hai, một cái rỗng" vẫn là lỗi "có cả hai" chứ không âm thầm chọn cái còn lại.
+const sent = (value) => value !== undefined && value !== null;
 
 // OTP (spec 12-13-21-23 mục 4.2, 4.3, 5.1).
 export const OTP_MAX_ATTEMPTS = 5; // hằng số trong code (03 mục 13): sai 5 lần thì mã hết hiệu lực
@@ -25,19 +30,19 @@ export function randomOtp(randomInt) {
 export function createAuthLogic({ accounts, passwords, tokens, log, otps, otpTtlSeconds, simulationMode = false, newOtp }) {
   return {
     // A04: chỉ tạo `customer` (A1). Role do server đặt, request không có field role.
-    // Chỉ nhận số điện thoại + mật khẩu (ADR-019): email thuộc hồ sơ khách ở customer-service.
-    async registerCustomer({ phone, password }) {
+    // Khách đăng ký bằng email + mật khẩu (ADR-021, BRULE19); số điện thoại liên hệ nằm ở hồ sơ (customer-service).
+    async registerCustomer({ email, password }) {
       // Service tự kiểm tra lại dù Gateway đã kiểm tra: service không tin bên gọi.
-      if (!isPresent(phone) || !isPresent(password)) throw new AuthError('INVALID_ARGUMENT', 'INVALID_INPUT');
-      const normalizedPhone = normalizePhone(phone);
+      if (!isPresent(email) || !isPresent(password)) throw new AuthError('INVALID_ARGUMENT', 'INVALID_INPUT');
+      const normalizedEmail = normalizeEmail(email);
       checkNewPassword(password);
 
       const passwordHash = await passwords.hash(password);
       let row;
       try {
         // INSERT thẳng, để UNIQUE của database chặn trùng: không có khe hở giữa "kiểm tra" và "ghi"
-        // khi hai người đăng ký cùng số một lúc.
-        row = await accounts.insert({ phone: normalizedPhone, passwordHash, role: 'customer' });
+        // khi hai người đăng ký cùng email một lúc. `phone` để NULL: đúng CHECK accounts_identity_by_role.
+        row = await accounts.insert({ email: normalizedEmail, phone: null, passwordHash, role: 'customer' });
       } catch (err) {
         // 23505 = vi phạm UNIQUE; tên ràng buộc cho biết ràng buộc nào bị trùng.
         if (err.code === '23505' && UNIQUE_TO_CODE[err.constraint]) {
@@ -50,13 +55,18 @@ export function createAuthLogic({ accounts, passwords, tokens, log, otps, otpTtl
     },
 
     // A05: cả ba role dùng chung. Không có tài khoản và sai mật khẩu trả CÙNG một lỗi
-    // để người ngoài không dò được số nào đã đăng ký (DN5).
-    // Chỉ đăng nhập bằng số điện thoại (DN1 sửa 2026-10-05): một định danh, một cách đăng nhập.
-    async login({ phone, password }) {
-      if (!isPresent(phone) || !isPresent(password)) {
+    // để người ngoài không dò được email / số nào đã đăng ký (DN5).
+    // ĐÚNG MỘT định danh (DN1 sửa 2026-10-14, ADR-021): khách / admin gửi `email`, tài xế gửi `phone`.
+    // Không kiểm role ở đây: CHECK accounts_identity_by_role bảo đảm tra email chỉ ra khách / admin, tra số
+    // chỉ ra tài xế. Khách gửi số (của hồ sơ), tài xế gửi email → không có dòng → INVALID_CREDENTIALS.
+    async login({ email, phone, password }) {
+      // Thiếu cả hai hoặc có cả hai → INVALID_INPUT (Gateway đã kiểm; service kiểm lại vì không tin bên gọi).
+      if (sent(email) === sent(phone) || !isPresent(password)) {
         throw new AuthError('INVALID_ARGUMENT', 'INVALID_INPUT');
       }
-      const account = await accounts.findByPhone(normalizePhone(phone));
+      const account = sent(email)
+        ? await accounts.findByEmail(normalizeEmail(email))
+        : await accounts.findByPhone(normalizePhone(phone));
 
       if (!account || !(await passwords.verify(password, account.password_hash))) {
         log.info('login_failed', { code: 'INVALID_CREDENTIALS' });
@@ -118,6 +128,7 @@ export function createAuthLogic({ accounts, passwords, tokens, log, otps, otpTtl
             return { fail: 'OTP_INVALID' };
           }
           await tx.consume(row.otp_id);
+          // `email` để NULL: tài xế chỉ có số (CHECK accounts_identity_by_role).
           return { account: await tx.insertAccount({ phone: normalizedPhone, passwordHash, role: 'driver' }) };
         });
       } catch (err) {

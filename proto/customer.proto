@@ -18,20 +18,28 @@ service CustomerService {
   rpc UpdateCustomer (UpdateCustomerRequest) returns (Customer);
 }
 
-// Tên field trùng tên JSON của API (`name`, `dob`, `email`) để Gateway chuyển thẳng, không phải đổi tên.
+// Tên field trùng tên JSON của API (`name`, `dob`, `phone`) để Gateway chuyển thẳng, không phải đổi tên.
 // Cột database vẫn là tên đầy đủ `full_name_enc`, `date_of_birth_enc` (đổi ở customer-service).
 // Field mới luôn lấy SỐ TIẾP THEO, không đổi số cũ: client / server bản cũ vẫn đọc được message.
+// Số của field đã bỏ (`email`, `clear_email` — ADR-021, 2026-10-14) để `reserved`: không ai dùng lại số / tên
+// đó với nghĩa khác, bên gọi cũ còn gửi thì bên nhận mới chỉ bỏ qua.
 message Customer {
   int64 customer_id = 1;      // bằng account_id trong token (ADR-013, ADR-015)
   string name = 2;            // họ tên đã giải mã
   optional string dob = 3;    // YYYY-MM-DD; không gửi = chưa có ngày sinh (JSON trả null)
-  optional string email = 4;  // thêm 2026-10-05 (ADR-019): chữ thường; không gửi = chưa có email (JSON trả null)
+  reserved 4;                 // từng là `email` (ADR-019); email nay là định danh đăng nhập ở auth (ADR-021)
+  reserved "email";
+  string phone = 5;           // thêm 2026-10-14: số liên hệ, 0 + 9 chữ số, luôn có (bắt buộc khi tạo hồ sơ)
 }
 
 message CreateCustomerRequest {
   string name = 1;
   optional string dob = 2;    // tùy chọn (C6)
-  optional string email = 3;  // tùy chọn (ADR-019); `optional` để phân biệt "không gửi" với "chuỗi rỗng" (rỗng → INVALID_EMAIL)
+  reserved 3;
+  reserved "email";
+  // Bắt buộc (C6). Không `optional`: Gateway đã chặn "thiếu phone" (INVALID_INPUT); chuỗi rỗng tới service
+  // bị kiểm định dạng → INVALID_PHONE.
+  string phone = 4;
 }
 
 message GetCustomerRequest {
@@ -45,7 +53,8 @@ message UpdateCustomerRequest {
   // proto3 không phân biệt được "dob vắng" với "dob = null", nên Gateway đặt cờ này
   // khi JSON có `"dob": null` để xóa ngày sinh (spec 11 HS2).
   bool clear_dob = 3;
-  optional string email = 4;  // thêm 2026-10-05 (ADR-019)
-  // Cùng lý do với clear_dob: Gateway đặt cờ khi JSON có `"email": null` để xóa email (spec 11 HS6).
-  bool clear_email = 5;
+  reserved 4, 5;              // từng là `email`, `clear_email` (ADR-019; bỏ 2026-10-14, ADR-021)
+  reserved "email", "clear_email";
+  // Thêm 2026-10-14. Không có cờ xóa: số bắt buộc, `"phone": null` bị Gateway từ chối 400 (HS6).
+  optional string phone = 6;
 }

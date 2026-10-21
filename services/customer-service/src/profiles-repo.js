@@ -3,19 +3,19 @@
 // biến thành một phần câu lệnh.
 // Repo chỉ đọc / ghi byte đã mã hóa; mã hóa và giải mã nằm ở logic nghiệp vụ (src/domain/).
 
-const COLUMNS = 'customer_id, full_name_enc, date_of_birth_enc, email';
+const COLUMNS = 'customer_id, full_name_enc, date_of_birth_enc, phone';
 
 export function createProfilesRepo(pool) {
   return {
     // ON CONFLICT DO NOTHING: đã có hồ sơ thì không ghi đè, không ném lỗi; rowCount = 0 cho biết là trùng.
-    // `email` lưu dạng rõ (ADR-019); thiếu thì NULL.
-    async insert({ customerId, nameEnc, dobEnc, email = null }) {
+    // `phone` lưu dạng rõ, đã chuẩn hóa (ADR-021); bắt buộc (NOT NULL trong database).
+    async insert({ customerId, nameEnc, dobEnc, phone }) {
       const result = await pool.query(
-        `INSERT INTO customer_profiles (customer_id, full_name_enc, date_of_birth_enc, email)
+        `INSERT INTO customer_profiles (customer_id, full_name_enc, date_of_birth_enc, phone)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (customer_id) DO NOTHING
          RETURNING customer_id`,
-        [customerId, nameEnc, dobEnc, email],
+        [customerId, nameEnc, dobEnc, phone],
       );
       return result.rowCount === 1;
     },
@@ -42,9 +42,9 @@ export function createProfilesRepo(pool) {
         const next = await change(rows[0]);
         await client.query(
           `UPDATE customer_profiles
-           SET full_name_enc = $2, date_of_birth_enc = $3, email = $4, updated_at = now()
+           SET full_name_enc = $2, date_of_birth_enc = $3, phone = $4, updated_at = now()
            WHERE customer_id = $1`,
-          [customerId, next.nameEnc, next.dobEnc, next.email],
+          [customerId, next.nameEnc, next.dobEnc, next.phone],
         );
         await client.query('COMMIT');
         return next;

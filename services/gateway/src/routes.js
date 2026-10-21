@@ -39,15 +39,20 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
     { code: 'A02', method: 'GET', path: '/ready', roles: null, rateLimit: 'none', rpc: null, handler: health.ready },
     { code: 'A03', method: 'GET', path: '/health/services', roles: null, rateLimit: 'none', rpc: 'grpc.health.v1.Health/Check', handler: health.services },
 
-    // Spec 09-10. Đăng ký = tạo một tài khoản → POST vào tập `accounts` (không có động từ trong đường dẫn).
-    { code: 'A04', method: 'POST', path: '/api/v1/accounts', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RegisterCustomer', validate: validateRegister, handler: auth.register },
-    // Hai ngoại lệ có chủ đích (04 mục 1.9): đăng nhập, đăng xuất không tạo tài nguyên nào.
+    // Spec 09-10, 12-13-21-23 (sửa 2026-10-14 theo yêu cầu giảng viên, ADR-021): MỌI thao tác xác thực gom vào
+    // nhóm `/api/v1/auth/…` — quy ước phổ biến, người chấm nhìn là biết. Đường cũ /accounts, /otps, /driver-accounts
+    // không còn khai báo nên trả 404 ROUTE_NOT_FOUND (và không bị đếm rate limit).
+    // Bốn route công khai (register, login, otp, driver-register) chung MỘT bộ đếm theo IP (mục chấm 29).
+    // A04: khách đăng ký bằng email; chỉ tạo `customer`.
+    { code: 'A04', method: 'POST', path: '/api/v1/auth/register', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RegisterCustomer', validate: validateRegister, handler: auth.register },
+    // A05: cả ba role; đúng một trong email (khách, admin) / phone (tài xế).
     { code: 'A05', method: 'POST', path: '/api/v1/auth/login', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/Login', validate: validateLogin, handler: auth.login },
+    // A06: có token → đếm theo tài khoản như mọi route có token.
     { code: 'A06', method: 'POST', path: '/api/v1/auth/logout', roles: ROLES, rpc: null, handler: auth.logout },
-    // Spec 12-13-21-23. Mã OTP là một tài nguyên được tạo → POST /otps (04 R7). Đăng ký tài xế tạo một
-    // tài khoản tài xế → POST /driver-accounts. Cả hai công khai: người đăng ký chưa có token.
-    { code: 'A07', method: 'POST', path: '/api/v1/otps', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RequestDriverOtp', validate: validateRequestOtp, handler: auth.requestOtp },
-    { code: 'A08', method: 'POST', path: '/api/v1/driver-accounts', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RegisterDriver', validate: validateRegisterDriver, handler: auth.registerDriver },
+    // A07, A08: tài xế xin OTP rồi đăng ký bằng số điện thoại. Đường riêng với A04 vì luật tạo khác (phải có OTP,
+    // role `driver`, định danh là số). Công khai: người đăng ký chưa có token.
+    { code: 'A07', method: 'POST', path: '/api/v1/auth/otp', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RequestDriverOtp', validate: validateRequestOtp, handler: auth.requestOtp },
+    { code: 'A08', method: 'POST', path: '/api/v1/auth/driver-register', roles: null, rateLimit: 'ip', rpc: 'cab.auth.v1.AuthService/RegisterDriver', validate: validateRegisterDriver, handler: auth.registerDriver },
 
     // Spec 11. Tạo hồ sơ = POST vào tập `customers`; không có mã trong đường dẫn vì mã = mã trong token.
     // Admin chỉ xem, tài xế không dùng hồ sơ khách (BRULE18) → hai role này bị 403 FORBIDDEN ngay ở Gateway.
@@ -85,8 +90,9 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
           A18: { handler: drivers.location },
         }),
       },
-      // A14: cả ba role; service quyết định phần công khai hay đầy đủ.
-      { code: 'A14', method: 'GET', path: '/api/v1/drivers/:id', roles: ROLES, rpc: 'cab.driver.v1.DriverService/GetDriver', validateParams: validateIdParam, handler: drivers.byId },
+      // A14 (sửa 2026-10-14 theo yêu cầu giảng viên): chỉ tài xế (mã của mình — service trả 403 NOT_OWNER nếu khác)
+      // và admin (mọi mã). Khách bị 403 FORBIDDEN ngay ở đây, không gọi service.
+      { code: 'A14', method: 'GET', path: '/api/v1/drivers/:id', roles: ['driver', 'admin'], rpc: 'cab.driver.v1.DriverService/GetDriver', validateParams: validateIdParam, handler: drivers.byId },
       // A15 / A16: chỉ admin — khách, tài xế bị 403 dù body rỗng (AC-TX-17).
       {
         code: 'A15|A16', method: 'PATCH', path: '/api/v1/drivers/:id', roles: ['admin'],
@@ -105,10 +111,15 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
         code: 'A19', method: 'POST', path: '/api/v1/bookings', roles: ['customer'], rpc: 'cab.booking.v1.BookingService/CreateBooking',
         select: selectBy((req) => parseCreateBooking(req.body), { A19: { handler: bookings.create } }),
       },
-      // A20: chỉ booking của khách trong token (B14) — admin, tài xế bị 403.
+      // A20 (sửa 2026-10-14 theo yêu cầu giảng viên): booking THEO MÃ KHÁCH — tài nguyên con của khách
+      // (`/{resource}/{id}/{sub-resource}`). Đường dẫn bắt đầu bằng `customers` nhưng dữ liệu thuộc Booking nên
+      // bảng route trỏ sang booking-service; customer-service không tham gia (không thêm đường giao tiếp nào).
+      // Khách chỉ mã của mình (service trả 403 NOT_OWNER), admin mọi mã, tài xế 403 ngay ở đây.
+      // Bỏ GET /api/v1/bookings để chỉ còn một cách (đường cũ → 404).
       {
-        code: 'A20', method: 'GET', path: '/api/v1/bookings', roles: ['customer'], rpc: 'cab.booking.v1.BookingService/ListBookings',
-        select: selectBy((req) => parseBookingsQuery(req.query), { A20: { handler: bookings.list } }),
+        code: 'A20', method: 'GET', path: '/api/v1/customers/:id/bookings', roles: ['customer', 'admin'], rpc: 'cab.booking.v1.BookingService/ListBookings',
+        validateParams: validateIdParam,
+        select: selectBy(parseBookingsQuery, { A20: { handler: bookings.list } }),
       },
       // A21: chủ (service kiểm) hoặc admin.
       { code: 'A21', method: 'GET', path: '/api/v1/bookings/:id', roles: ['customer', 'admin'], rpc: 'cab.booking.v1.BookingService/GetBooking', validateParams: validateIdParam, handler: bookings.byId },

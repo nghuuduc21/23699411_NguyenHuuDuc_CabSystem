@@ -64,34 +64,34 @@ const expectError = async (res, status, error) => expectJson(res, status, { erro
 
 test('A07: 201, chỉ chuyển phone; bỏ key phụ `_otp` của oneof (AC-TX-01)', async () => {
   next = () => ({ res: { phone: '0911111111', expires_in: 300, otp: '482915', _otp: 'otp' } });
-  await expectJson(await send('POST', '/api/v1/otps', { body: { phone: '0911111111' } }), 201, { phone: '0911111111', expires_in: 300, otp: '482915' });
+  await expectJson(await send('POST', '/api/v1/auth/otp', { body: { phone: '0911111111' } }), 201, { phone: '0911111111', expires_in: 300, otp: '482915' });
   assert.equal(calls[0].name, 'RequestDriverOtp');
   assert.deepEqual(calls[0].request, { phone: '0911111111' });
   next = () => ({ res: { phone: '0911111111', expires_in: 300 } });
-  await expectJson(await send('POST', '/api/v1/otps', { body: { phone: '0911111111' } }), 201, { phone: '0911111111', expires_in: 300 });
+  await expectJson(await send('POST', '/api/v1/auth/otp', { body: { phone: '0911111111' } }), 201, { phone: '0911111111', expires_in: 300 });
 });
 
 test('A07: hình thức sai → 400; lỗi của service đổi sang HTTP', async () => {
-  await expectError(await send('POST', '/api/v1/otps', { body: {} }), 400, 'INVALID_INPUT');
-  await expectError(await send('POST', '/api/v1/otps', { body: { phone: 911 } }), 400, 'INVALID_INPUT');
-  await expectError(await send('POST', '/api/v1/otps', { body: { phone: '0911111111', x: 1 } }), 400, 'INVALID_INPUT');
-  await expectError(await send('POST', '/api/v1/otps', { body: '{abc' }), 400, 'INVALID_JSON');
+  await expectError(await send('POST', '/api/v1/auth/otp', { body: {} }), 400, 'INVALID_INPUT');
+  await expectError(await send('POST', '/api/v1/auth/otp', { body: { phone: 911 } }), 400, 'INVALID_INPUT');
+  await expectError(await send('POST', '/api/v1/auth/otp', { body: { phone: '0911111111', x: 1 } }), 400, 'INVALID_INPUT');
+  await expectError(await send('POST', '/api/v1/auth/otp', { body: '{abc' }), 400, 'INVALID_JSON');
   assert.equal(calls.length, 0);
   next = () => ({ err: { code: grpc.status.ALREADY_EXISTS, details: 'PHONE_ALREADY_EXISTS' } });
-  await expectError(await send('POST', '/api/v1/otps', { body: { phone: '0910000001' } }), 409, 'PHONE_ALREADY_EXISTS');
+  await expectError(await send('POST', '/api/v1/auth/otp', { body: { phone: '0910000001' } }), 409, 'PHONE_ALREADY_EXISTS');
   next = () => ({ err: { code: grpc.status.UNAVAILABLE, details: 'x' } });
-  await expectError(await send('POST', '/api/v1/otps', { body: { phone: '0911111111' } }), 503, 'SERVICE_UNAVAILABLE');
+  await expectError(await send('POST', '/api/v1/auth/otp', { body: { phone: '0911111111' } }), 503, 'SERVICE_UNAVAILABLE');
 });
 
 test('A08: 201 kèm token; `role` trong body → 400 (AC-TX-02, 08)', async () => {
   next = () => ({ res: { account_id: 1000, role: 'driver', token: 'eyJ', expires_in: 3600 } });
   const body = { phone: '0911111111', otp: '482915', password: '12345678' };
-  await expectJson(await send('POST', '/api/v1/driver-accounts', { body }), 201, { account_id: 1000, role: 'driver', token: 'eyJ', expires_in: 3600 });
+  await expectJson(await send('POST', '/api/v1/auth/driver-register', { body }), 201, { account_id: 1000, role: 'driver', token: 'eyJ', expires_in: 3600 });
   assert.deepEqual(calls[0].request, body);
-  await expectError(await send('POST', '/api/v1/driver-accounts', { body: { ...body, role: 'admin' } }), 400, 'INVALID_INPUT');
-  await expectError(await send('POST', '/api/v1/driver-accounts', { body: { phone: '0911111111', password: '12345678' } }), 400, 'INVALID_INPUT');
+  await expectError(await send('POST', '/api/v1/auth/driver-register', { body: { ...body, role: 'admin' } }), 400, 'INVALID_INPUT');
+  await expectError(await send('POST', '/api/v1/auth/driver-register', { body: { phone: '0911111111', password: '12345678' } }), 400, 'INVALID_INPUT');
   next = () => ({ err: { code: grpc.status.INVALID_ARGUMENT, details: 'OTP_EXPIRED' } });
-  await expectError(await send('POST', '/api/v1/driver-accounts', { body }), 400, 'OTP_EXPIRED');
+  await expectError(await send('POST', '/api/v1/auth/driver-register', { body }), 400, 'OTP_EXPIRED');
 });
 
 // ---------- A11 ----------
@@ -133,15 +133,25 @@ test('A11: 401 / 403 trước hình thức; body sai → 400 (AC-TX-10, 11)', as
 
 // ---------- A14 ----------
 
-test('A14: mã gửi dạng chuỗi; field vắng không có key; INVALID_ID; 404 (AC-TX-26, 28)', async () => {
-  next = () => ({ res: { driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE' } });
-  await expectJson(await send('GET', '/api/v1/drivers/11', { t: KH1 }), 200, { driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE' });
+test('A14: admin / tài xế; mã gửi dạng chuỗi; field vắng không có key; INVALID_ID; 404; NOT_OWNER từ service (AC-TX-27, 28, 40)', async () => {
+  const full = { driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE', approval_status: 'APPROVED', license: 'GPLX-00001', lat: 10.821, lng: 106.68 };
+  next = () => ({ res: { ...full, _license: 'license' } });
+  await expectJson(await send('GET', '/api/v1/drivers/11', { t: AD1 }), 200, full);
   assert.deepEqual(calls[0].request, { driver_id: '11' });
-  for (const id of ['abc', '11%20OR%201=1', '0', '-1']) await expectError(await send('GET', `/api/v1/drivers/${id}`, { t: KH1 }), 400, 'INVALID_ID');
+  assert.equal(calls[0].metadata['x-role'], 'admin');
+  await expectJson(await send('GET', '/api/v1/drivers/11', { t: TX1 }), 200, full);
+  for (const id of ['abc', '11%20OR%201=1', '0', '-1']) await expectError(await send('GET', `/api/v1/drivers/${id}`, { t: AD1 }), 400, 'INVALID_ID');
   await expectError(await send('GET', '/api/v1/drivers/11'), 401, 'TOKEN_MISSING');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
   next = () => ({ err: { code: grpc.status.NOT_FOUND, details: 'DRIVER_NOT_FOUND' } });
-  await expectError(await send('GET', '/api/v1/drivers/999', { t: TX1 }), 404, 'DRIVER_NOT_FOUND');
+  await expectError(await send('GET', '/api/v1/drivers/999', { t: AD1 }), 404, 'DRIVER_NOT_FOUND');
+  next = () => ({ err: { code: grpc.status.PERMISSION_DENIED, details: 'NOT_OWNER' } });
+  await expectError(await send('GET', '/api/v1/drivers/12', { t: TX1 }), 403, 'NOT_OWNER');
+});
+
+test('A14: khách → 403 FORBIDDEN ở Gateway, kể cả mã không tồn tại / sai dạng; không gọi service (AC-TX-26)', async () => {
+  for (const id of ['11', '999', 'abc']) await expectError(await send('GET', `/api/v1/drivers/${id}`, { t: KH1 }), 403, 'FORBIDDEN');
+  assert.equal(calls.length, 0);
 });
 
 // ---------- GET /drivers: A12, A13 ----------

@@ -28,7 +28,7 @@ export function createBookingHandlers({ bookingClient }) {
   return {
     // A19: 201 vì tạo mới một booking. Mã khách lấy từ token ở service, không nằm trong message.
     create: forward('CreateBooking', prepared, (r) => pick(r, CREATED_KEYS), 201),
-    // A20: booking của chính khách trong token.
+    // A20: booking theo mã khách trong đường dẫn (service kiểm khách chỉ xem mã của mình).
     list: forward('ListBookings', prepared, toList(LIST_KEYS)),
     // A21: chủ hoặc admin (service kiểm quyền sở hữu → 403 NOT_OWNER).
     byId: forward('GetBooking', (req) => ({ booking_id: req.params.id }), (r) => pick(r, BOOKING_KEYS)),

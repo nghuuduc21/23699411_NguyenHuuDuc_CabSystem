@@ -187,23 +187,32 @@ test('A11 nộp lại lỗi: trùng biển số tài xế khác → 409, dữ li
 
 // ---------- A14 ----------
 
-test('A14: khách thấy đúng 5 field công khai; chủ và admin thấy đầy đủ, giấy phép đã giải mã (AC-TX-26, 27)', async () => {
+test('A14: chủ và admin thấy bản đầy đủ, giấy phép đã giải mã (AC-TX-27)', async () => {
   const { logic } = setup();
-  assert.deepEqual(await logic.getDriver({ driver_id: 11 }, KH1), { driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE' });
   const full = { driver_id: 11, name: 'Tài Xế 1', vehicle: 'CAR_4', plate: '59A-00001', status: 'ONLINE', approval_status: 'APPROVED', license: 'GPLX-00001', lat: 10.821, lng: 106.68 };
   assert.deepEqual(await logic.getDriver({ driver_id: 11 }, TX1), full);
   assert.deepEqual(await logic.getDriver({ driver_id: 11 }, AD1), full);
-  // Tài xế khác xem → phần công khai.
-  assert.equal((await logic.getDriver({ driver_id: 11 }, { accountId: '12', role: 'driver' })).license, undefined);
 });
 
-test('A14: không có → 404; hồ sơ chờ duyệt: khách 404, admin 200 (TX3, AC-TX-28)', async () => {
+test('A14: khách → FORBIDDEN; tài xế xem mã khác → NOT_OWNER, KHÔNG đọc database (AC-TX-26, AC-TX-40, TX15)', async () => {
+  const { logic, rows } = setup();
+  await rejectsWith(logic.getDriver({ driver_id: 11 }, KH1), 'PERMISSION_DENIED', 'FORBIDDEN');
+  let reads = 0;
+  const realGet = rows.get.bind(rows);
+  rows.get = (id) => { reads += 1; return realGet(id); };
+  for (const id of [12, 999, 17]) {
+    await rejectsWith(logic.getDriver({ driver_id: id }, TX1), 'PERMISSION_DENIED', 'NOT_OWNER');
+  }
+  assert.equal(reads, 0);
+});
+
+test('A14: không có → 404; admin thấy hồ sơ chờ duyệt; chủ chưa nộp → 404 (AC-TX-28, AC-TX-41)', async () => {
   const { logic } = setup();
-  await rejectsWith(logic.getDriver({ driver_id: 999 }, KH1), 'NOT_FOUND', 'DRIVER_NOT_FOUND');
-  await rejectsWith(logic.getDriver({ driver_id: 17 }, KH1), 'NOT_FOUND', 'DRIVER_NOT_FOUND');
+  await rejectsWith(logic.getDriver({ driver_id: 999 }, AD1), 'NOT_FOUND', 'DRIVER_NOT_FOUND');
   const pending = await logic.getDriver({ driver_id: 17 }, AD1);
   assert.equal(pending.approval_status, 'PENDING');
   assert.equal(pending.lat, undefined); // chưa có vị trí → không có key
+  await rejectsWith(logic.getDriver({ driver_id: 1000 }, { accountId: '1000', role: 'driver' }), 'NOT_FOUND', 'DRIVER_NOT_FOUND');
   await rejectsWith(logic.getDriver({ driver_id: 0 }, AD1), 'INVALID_ARGUMENT', 'INVALID_ID');
 });
 

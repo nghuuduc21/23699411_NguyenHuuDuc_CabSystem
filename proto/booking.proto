@@ -12,7 +12,8 @@ package cab.booking.v1;
 service BookingService {
   // A19 POST /api/v1/bookings — khách đặt xe; trả ngay cước cố định và mã thanh toán.
   rpc CreateBooking (CreateBookingRequest) returns (Booking);
-  // A20 GET /api/v1/bookings?status&page&limit — booking của chính khách, mới nhất trước.
+  // A20 GET /api/v1/customers/{id}/bookings?status&page&limit — booking theo mã khách, mới nhất trước.
+  // Khách chỉ mã của mình (khác → NOT_OWNER); admin mọi mã.
   rpc ListBookings (ListBookingsRequest) returns (ListBookingsResponse);
   // A21 GET /api/v1/bookings/{id} — chủ booking hoặc admin.
   rpc GetBooking (GetBookingRequest) returns (Booking);
@@ -69,6 +70,8 @@ message ListBookingsRequest {
   optional string status = 1;
   int32 page = 2;
   int32 limit = 3;
+  // Thêm 2026-10-14: mã khách trong đường dẫn /customers/{id}/bookings. Số mới, không đổi số cũ.
+  int64 customer_id = 4;
 }
 
 message ListBookingsResponse {

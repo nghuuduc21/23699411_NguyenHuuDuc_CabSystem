@@ -62,80 +62,85 @@ const bearer = (t) => ({ Authorization: `Bearer ${t}` });
 
 test('A04: 201, chỉ chuyển field có mặt, metadata do Gateway dựng (bỏ x-account-id của client)', async () => {
   next = () => ({ res: { account_id: 1000, role: 'customer' } });
-  const res = await post('/api/v1/accounts', { phone: '0901234567', password: '12345678' }, { 'Content-Type': 'text/plain', 'x-account-id': '99', 'x-role': 'admin' });
+  const res = await post('/api/v1/auth/register', { email: 'new1@cab.vn', password: '12345678' }, { 'Content-Type': 'text/plain', 'x-account-id': '99', 'x-role': 'admin' });
   assert.equal(res.status, 201);
   assert.deepEqual(await res.json(), { account_id: 1000, role: 'customer' });
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].request, { phone: '0901234567', password: '12345678' });
+  assert.deepEqual(calls[0].request, { email: 'new1@cab.vn', password: '12345678' });
   assert.match(calls[0].metadata['x-request-id'], /^[0-9a-f-]{36}$/);
   assert.equal(calls[0].metadata['x-account-id'], undefined);
   assert.equal(calls[0].metadata['x-role'], undefined);
   assert.ok(calls[0].deadline - Date.now() <= 3000);
 });
 
-test('A04: thiếu password, field lạ role, sai kiểu, body mảng → 400 INVALID_INPUT, không gọi service', async () => {
-  for (const body of [{ phone: '0901234567' }, { phone: '0901234567', password: '12345678', role: 'admin' }, { phone: 901234567, password: '12345678' }, [], { phone: '', password: 'x' }]) {
-    const res = await post('/api/v1/accounts', body);
+test('A04: thiếu password, field lạ (role, phone), sai kiểu, body mảng → 400 INVALID_INPUT, không gọi service (AC-DN-04, 25)', async () => {
+  const bodies = [{ email: 'new1@cab.vn' }, { email: 'new1@cab.vn', password: '12345678', role: 'admin' },
+    { email: 'new3@cab.vn', password: '12345678', phone: '0901234569' }, { email: 1, password: '12345678' }, [], { email: '', password: 'x' },
+    { phone: '0901234567', password: '12345678' }];
+  for (const body of bodies) {
+    const res = await post('/api/v1/auth/register', body);
     assert.equal(res.status, 400, JSON.stringify(body));
     assert.deepEqual(await res.json(), { error: 'INVALID_INPUT' });
   }
-  const res = await post('/api/v1/accounts', '{hong');
+  const res = await post('/api/v1/auth/register', '{hong');
   assert.deepEqual(await res.json(), { error: 'INVALID_JSON' });
-  assert.equal(calls.length, 0);
-});
-
-test('A04 / A05: gửi `email` → 400 INVALID_INPUT (field lạ), không gọi service (ADR-019; AC-DN-21, 22)', async () => {
-  let res = await post('/api/v1/accounts', { phone: '0901234569', password: '12345678', email: 'a@b.vn' });
-  assert.equal(res.status, 400);
-  assert.deepEqual(await res.json(), { error: 'INVALID_INPUT' });
-  for (const body of [{ email: 'kh1@cab.vn', password: '12345678' }, { phone: '0900000001', email: 'kh1@cab.vn', password: '12345678' }]) {
-    res = await post('/api/v1/auth/login', body);
-    assert.equal(res.status, 400);
-    assert.deepEqual(await res.json(), { error: 'INVALID_INPUT' });
-  }
   assert.equal(calls.length, 0);
 });
 
 test('A04: lỗi gRPC đổi sang HTTP (409, 400, 503)', async () => {
   const cases = [
-    [{ code: grpc.status.ALREADY_EXISTS, details: 'PHONE_ALREADY_EXISTS' }, 409, 'PHONE_ALREADY_EXISTS'],
-    [{ code: grpc.status.INVALID_ARGUMENT, details: 'INVALID_PHONE' }, 400, 'INVALID_PHONE'],
+    [{ code: grpc.status.ALREADY_EXISTS, details: 'EMAIL_ALREADY_EXISTS' }, 409, 'EMAIL_ALREADY_EXISTS'],
+    [{ code: grpc.status.INVALID_ARGUMENT, details: 'INVALID_EMAIL' }, 400, 'INVALID_EMAIL'],
     [{ code: grpc.status.UNAVAILABLE, details: 'No connection established' }, 503, 'SERVICE_UNAVAILABLE'],
     [{ code: grpc.status.INTERNAL, details: 'INTERNAL' }, 503, 'SERVICE_UNAVAILABLE'],
   ];
   for (const [err, status, error] of cases) {
     next = () => ({ err });
-    const res = await post('/api/v1/accounts', { phone: '0901234567', password: '12345678' });
+    const res = await post('/api/v1/auth/register', { email: 'new1@cab.vn', password: '12345678' });
     assert.equal(res.status, status);
     assert.deepEqual(await res.json(), { error });
   }
 });
 
-test('A05: 200 trả nguyên token; đúng một định danh; 401/403 từ service', async () => {
+test('A05: 200 trả nguyên token; email hoặc phone chuyển đúng field; đúng một định danh; 401/403 từ service', async () => {
   next = () => ({ res: { token: 'eyJ.x.y', account_id: 1, role: 'customer', expires_in: 3600 } });
-  let res = await post('/api/v1/auth/login', { phone: '0900000001', password: '12345678' });
+  let res = await post('/api/v1/auth/login', { email: 'kh1@cab.vn', password: '12345678' });
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { token: 'eyJ.x.y', account_id: 1, role: 'customer', expires_in: 3600 });
-  for (const body of [{ password: 'x' }, { phone: '0900000001', email: 'a@b.vn', password: 'x' }, { phone: '0900000001' }]) {
+  assert.deepEqual(calls[0].request, { email: 'kh1@cab.vn', password: '12345678' });
+  res = await post('/api/v1/auth/login', { phone: '0910000001', password: '12345678' });
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls[1].request, { phone: '0910000001', password: '12345678' });
+  // Thiếu cả hai, có cả hai (AC-DN-26), thiếu mật khẩu, field lạ, sai kiểu → INVALID_INPUT, không gọi service.
+  const before = calls.length;
+  for (const body of [{ password: 'x' }, { phone: '0910000001', email: 'kh1@cab.vn', password: 'x' }, { email: 'kh1@cab.vn' },
+    { email: 'kh1@cab.vn', password: 'x', role: 'admin' }, { email: 1, password: 'x' }]) {
     res = await post('/api/v1/auth/login', body);
+    assert.equal(res.status, 400, JSON.stringify(body));
     assert.deepEqual(await res.json(), { error: 'INVALID_INPUT' });
   }
+  assert.equal(calls.length, before);
+  next = () => ({ err: { code: grpc.status.INVALID_ARGUMENT, details: 'INVALID_EMAIL' } });
+  res = await post('/api/v1/auth/login', { email: "' OR 1=1 --", password: 'x' });
+  assert.equal(res.status, 400);
+  assert.deepEqual(await res.json(), { error: 'INVALID_EMAIL' });
   next = () => ({ err: { code: grpc.status.UNAUTHENTICATED, details: 'INVALID_CREDENTIALS' } });
-  res = await post('/api/v1/auth/login', { phone: '0900000001', password: 'sai' });
+  res = await post('/api/v1/auth/login', { email: 'kh1@cab.vn', password: 'sai' });
   assert.equal(res.status, 401);
   assert.deepEqual(await res.json(), { error: 'INVALID_CREDENTIALS' });
   next = () => ({ err: { code: grpc.status.PERMISSION_DENIED, details: 'ACCOUNT_LOCKED' } });
-  res = await post('/api/v1/auth/login', { phone: '0900000009', password: '12345678' });
+  res = await post('/api/v1/auth/login', { email: 'kh9@cab.vn', password: '12345678' });
   assert.equal(res.status, 403);
   assert.deepEqual(await res.json(), { error: 'ACCOUNT_LOCKED' });
 });
 
-test('thiếu /api/v1 → 404 ROUTE_NOT_FOUND', async () => {
-  for (const p of ['/auth/login', '/accounts']) {
-    const res = await post(p, { phone: '0900000001', password: '12345678' });
-    assert.equal(res.status, 404);
+test('thiếu /api/v1 và đường cũ (/accounts, /otps, /driver-accounts) → 404 ROUTE_NOT_FOUND (AC-DN-20, 33)', async () => {
+  for (const p of ['/auth/login', '/accounts', '/api/v1/accounts', '/api/v1/otps', '/api/v1/driver-accounts']) {
+    const res = await post(p, { email: 'kh1@cab.vn', password: '12345678' });
+    assert.equal(res.status, 404, p);
     assert.deepEqual(await res.json(), { error: 'ROUTE_NOT_FOUND' });
   }
+  assert.equal(calls.length, 0);
 });
 
 test('A06: không token → TOKEN_MISSING; sai dạng / sửa / alg none / claim sai → TOKEN_INVALID; hết hạn → TOKEN_EXPIRED', async () => {

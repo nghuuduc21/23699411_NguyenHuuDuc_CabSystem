@@ -60,6 +60,7 @@ const health = createHealthHandlers({
   redisPing: () => pingRedis(redis),
   healthClients,
   expectedServices: BACKEND_SERVICES.map(([name]) => name),
+  log, // ghi lý do service `unhealthy` (NOT_SERVING / UNREACHABLE / DEADLINE_EXCEEDED) — không trả ra ngoài
 });
 const auth = createAuthHandlers({ authClient, revocations, log });
 const customers = createCustomerHandlers({ customerClient });

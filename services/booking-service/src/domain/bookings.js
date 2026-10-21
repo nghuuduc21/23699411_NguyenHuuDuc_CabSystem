@@ -112,11 +112,20 @@ export function createBookingLogic({ bookings, services, dispatcher, events, log
     },
 
     // A20 — booking của CHÍNH khách trong token (B14), mới nhất trước, phân trang (mục 14).
-    async listBookings({ status, page, limit }, identity) {
-      const { accountId } = requireRole(identity, ['customer']);
+    // A20 (sửa 2026-10-14 theo yêu cầu giảng viên): GET /customers/{id}/bookings — booking THEO MÃ KHÁCH.
+    // Khách chỉ xem mã của mình; admin xem mọi mã; tài xế bị chặn.
+    async listBookings({ customer_id: customerId, status, page, limit }, identity) {
+      const { accountId, role } = requireRole(identity, ['customer', 'admin']);
+      // DX23: khách gọi mã KHÁC → 403 NGAY, chưa đọc database (như A09, A14): mã khách dễ đoán, so trước thì
+      // không lộ "khách này có booking không". So được ngay vì customer_id = account_id.
+      if (role === 'customer' && customerId !== accountId) throw notOwner();
+      // Gateway đã chặn mã sai dạng; service vẫn chặn khi bị gọi thẳng (admin gửi 0 / số âm / bỏ trống).
+      if (!Number.isSafeInteger(customerId) || customerId < 1) throw invalid();
       const filter = normalizeEnum(status, BOOKING_STATUSES) ?? null;
       const paging = checkPagination(page, limit);
-      const { rows, total } = await bookings.listBookings({ customerId: accountId, status: filter, limit: paging.limit, offset: paging.offset });
+      // DX24: mã không có booking (kể cả khách không tồn tại) → danh sách rỗng, không 404: Booking không biết
+      // khách nào tồn tại và không gọi customer-service (Q56).
+      const { rows, total } = await bookings.listBookings({ customerId, status: filter, limit: paging.limit, offset: paging.offset });
       return {
         data: rows.map((row) => ({
           booking_id: row.booking_id, status: row.status, vehicle: row.vehicle_type, pay: row.payment_method,

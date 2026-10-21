@@ -56,17 +56,17 @@ export function checkDob(value, now = Date.now()) {
   return value;
 }
 
-// Email (ADR-019; spec 11 mục 4.1, HS7): cắt khoảng trắng, đổi chữ thường (email không phân biệt hoa thường,
-// lưu một dạng để hiển thị nhất quán), 1–254 ký tự, khớp mẫu đơn giản. Mẫu này không có `<` `>` nên cũng chặn
-// luôn văn bản HTML (mục chấm 26). Sai kiểu → INVALID_INPUT; rỗng / sai dạng / quá dài → INVALID_EMAIL
-// (mã riêng để người dùng biết phải sửa email). KHÔNG kiểm trùng: email không UNIQUE.
-export const EMAIL_MAX = 254;
-const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
-export function normalizeEmail(value) {
+// Số điện thoại liên hệ (ADR-021; spec 11 mục 4.1, HS8): CÙNG quy tắc với số tài xế ở auth-service — một quy tắc
+// số điện thoại cho cả hệ thống, dễ nhớ. Bỏ khoảng trắng, `.`, `-`; nhận +84 / 84 / 0 ở đầu; lưu dạng 0 + 9 chữ số
+// để hiển thị nhất quán. Mẫu chỉ có chữ số nên cũng chặn luôn văn bản HTML (mục chấm 26).
+// Sai kiểu → INVALID_INPUT; rỗng / sai dạng → INVALID_PHONE (mã riêng để người dùng biết phải sửa số).
+// KHÔNG kiểm trùng: số hồ sơ không UNIQUE (người nhà dùng chung số vẫn hợp lệ).
+const PHONE = /^(?:\+84|84|0)([35789][0-9]{8})$/;
+export function normalizePhone(value) {
   if (typeof value !== 'string') throw new CustomerError('INVALID_ARGUMENT', 'INVALID_INPUT');
-  const email = value.trim().toLowerCase();
-  if (email.length < 1 || email.length > EMAIL_MAX || !EMAIL.test(email)) throw new CustomerError('INVALID_ARGUMENT', 'INVALID_EMAIL');
-  return email;
+  const match = PHONE.exec(value.replace(/[\s.-]/g, ''));
+  if (!match) throw new CustomerError('INVALID_ARGUMENT', 'INVALID_PHONE');
+  return `0${match[1]}`;
 }
 
 // proto3: field `optional` không gửi là undefined.

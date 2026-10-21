@@ -2,7 +2,7 @@
 // Mọi phụ thuộc (kho hồ sơ, bộ mã hóa, log, đồng hồ) truyền từ ngoài vào
 // nên test chạy được không cần PostgreSQL và không cần gRPC.
 // `identity` = { accountId, role } dạng chuỗi lấy từ metadata do Gateway dựng (tầng gRPC đọc giúp).
-import { checkDob, checkIdentity, CustomerError, isPresent, normalizeEmail, normalizeName } from './rules.js';
+import { checkDob, checkIdentity, CustomerError, isPresent, normalizeName, normalizePhone } from './rules.js';
 
 const forbidden = () => new CustomerError('PERMISSION_DENIED', 'FORBIDDEN');
 const notFound = () => new CustomerError('NOT_FOUND', 'CUSTOMER_NOT_FOUND');
@@ -22,24 +22,25 @@ export function createCustomerLogic({ profiles, cipher, log, now = () => Date.no
     }
   }
 
-  // Hình dạng message `Customer`: không có ngày sinh / email thì bỏ field (proto `optional`);
-  // Gateway đổi "không có" thành `null` trong JSON.
-  const toCustomer = (customerId, { name, dob, email }) => {
-    const customer = { customer_id: customerId, name };
+  // Hình dạng message `Customer`: không có ngày sinh thì bỏ field (proto `optional`); Gateway đổi
+  // "không có" thành `null` trong JSON. `phone` luôn có (bắt buộc từ khi tạo, ADR-021).
+  const toCustomer = (customerId, { name, dob, phone }) => {
+    const customer = { customer_id: customerId, name, phone };
     if (dob !== null && dob !== undefined) customer.dob = dob;
-    if (email !== null && email !== undefined) customer.email = email;
     return customer;
   };
 
   return {
     // A37: customer_id = mã tài khoản trong token (C4): client không gửi mã, nên không tạo hộ người khác.
-    async createCustomer({ name, dob, email }, identity) {
+    async createCustomer({ name, dob, phone }, identity) {
       const { accountId, role } = checkIdentity(identity);
       if (role !== 'customer') throw forbidden(); // admin chỉ xem, driver không liên quan (BRULE18)
       const cleanName = normalizeName(name);
       const cleanDob = isPresent(dob) ? checkDob(dob, now()) : null;
-      // Email tùy chọn (ADR-019): lưu dạng rõ, chữ thường; KHÔNG qua bộ mã hóa.
-      const cleanEmail = isPresent(email) ? normalizeEmail(email) : null;
+      // Số điện thoại BẮT BUỘC (ADR-021, C6): lưu dạng rõ, đã chuẩn hóa; KHÔNG qua bộ mã hóa.
+      // Thiếu hẳn → INVALID_INPUT; qua gRPC field thường không gửi là chuỗi rỗng → INVALID_PHONE.
+      if (!isPresent(phone)) throw new CustomerError('INVALID_ARGUMENT', 'INVALID_INPUT');
+      const cleanPhone = normalizePhone(phone);
 
       // INSERT thẳng, để PK của database chặn hồ sơ thứ hai (C1): không có khe hở giữa
       // "kiểm tra đã có chưa" và "ghi" khi hai request tạo cùng lúc.
@@ -47,12 +48,12 @@ export function createCustomerLogic({ profiles, cipher, log, now = () => Date.no
         customerId: accountId,
         nameEnc: cipher.encrypt(cleanName),
         dobEnc: cleanDob === null ? null : cipher.encrypt(cleanDob),
-        email: cleanEmail,
+        phone: cleanPhone,
       });
       if (!inserted) throw new CustomerError('ALREADY_EXISTS', 'CUSTOMER_ALREADY_EXISTS');
-      // Chỉ ghi mã, KHÔNG ghi họ tên, ngày sinh, email (NFR08, NFR10).
+      // Chỉ ghi mã, KHÔNG ghi họ tên, ngày sinh, số điện thoại (NFR08, NFR10).
       log.info('customer_created', { customer_id: accountId });
-      return toCustomer(accountId, { name: cleanName, dob: cleanDob, email: cleanEmail });
+      return toCustomer(accountId, { name: cleanName, dob: cleanDob, phone: cleanPhone });
     },
 
     // A38 (Gateway điền mã = sub) và A09 (mã trong đường dẫn).
@@ -68,25 +69,25 @@ export function createCustomerLogic({ profiles, cipher, log, now = () => Date.no
 
       const row = await profiles.findById(customerId);
       if (!row) throw notFound();
-      return toCustomer(customerId, { ...decode(row), email: row.email ?? null });
+      return toCustomer(customerId, { ...decode(row), phone: row.phone });
     },
 
-    // A10: sửa MỘT PHẦN hồ sơ của chính mình. Field vắng = giữ nguyên; clear_dob = xóa ngày sinh (HS2);
-    // clear_email = xóa email (HS6).
-    async updateCustomer({ name, dob, clear_dob: clearDob, email, clear_email: clearEmail }, identity) {
+    // A10: sửa MỘT PHẦN hồ sơ của chính mình. Field vắng = giữ nguyên; clear_dob = xóa ngày sinh (HS2).
+    // Số điện thoại sửa được nhưng KHÔNG xóa được (bắt buộc — HS6): không có cờ xóa.
+    async updateCustomer({ name, dob, clear_dob: clearDob, phone }, identity) {
       const { accountId, role } = checkIdentity(identity);
       if (role !== 'customer') throw forbidden();
       const hasName = isPresent(name);
       const hasDob = isPresent(dob);
-      const hasEmail = isPresent(email);
-      // Phải đổi ít nhất một thứ; vừa đặt vừa xóa cùng một field là mâu thuẫn.
-      if ((!hasName && !hasDob && !clearDob && !hasEmail && !clearEmail) || (hasDob && clearDob) || (hasEmail && clearEmail)) {
+      const hasPhone = isPresent(phone);
+      // Phải đổi ít nhất một thứ; vừa đặt vừa xóa ngày sinh là mâu thuẫn.
+      if ((!hasName && !hasDob && !clearDob && !hasPhone) || (hasDob && clearDob)) {
         throw new CustomerError('INVALID_ARGUMENT', 'INVALID_INPUT');
       }
-      // Kiểm tra TRƯỚC khi mở giao dịch: dữ liệu sai (ví dụ có `<script>`, email sai) thì hồ sơ không bị đụng tới.
+      // Kiểm tra TRƯỚC khi mở giao dịch: dữ liệu sai (ví dụ có `<script>`, số sai) thì hồ sơ không bị đụng tới.
       const newName = hasName ? normalizeName(name) : undefined;
       const newDob = hasDob ? checkDob(dob, now()) : undefined;
-      const newEmail = hasEmail ? normalizeEmail(email) : undefined;
+      const newPhone = hasPhone ? normalizePhone(phone) : undefined;
 
       // Khóa dòng (SELECT … FOR UPDATE) trong một giao dịch: hai lần sửa cùng lúc không ghi đè
       // nửa chừng lên nhau (C5). Hàm dưới chạy khi đã giữ khóa dòng.
@@ -95,13 +96,13 @@ export function createCustomerLogic({ profiles, cipher, log, now = () => Date.no
         const next = {
           name: newName ?? current.name,
           dob: clearDob ? null : (newDob ?? current.dob),
-          email: clearEmail ? null : (newEmail ?? row.email ?? null),
+          phone: newPhone ?? row.phone,
         };
         return {
           // Field không đổi giữ nguyên bản mã cũ; field đổi mã hóa lại với IV mới.
           nameEnc: hasName ? cipher.encrypt(next.name) : row.full_name_enc,
           dobEnc: hasDob ? cipher.encrypt(next.dob) : (clearDob ? null : row.date_of_birth_enc),
-          email: next.email, // dạng rõ, không mã hóa (ADR-019)
+          phone: next.phone, // dạng rõ, không mã hóa (ADR-021)
           plain: next,
         };
       });
