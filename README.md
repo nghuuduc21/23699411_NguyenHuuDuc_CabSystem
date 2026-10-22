@@ -9,7 +9,7 @@ Thiết kế: `docs/design/`; đặc tả từng phần: `docs/specs/`; quyết 
 Cần Docker Desktop. Gõ ở thư mục gốc repo (PowerShell, Git Bash hay Linux đều được):
 
 ```
-cp .env.example .env
+cp .env.example .env      # rồi điền 5 biến bí mật (xem đầu file)
 docker compose up -d --build
 docker compose ps -a
 ```
@@ -26,7 +26,7 @@ Khoảng 1 phút sau, cả 20 container ở trạng thái `healthy`, `kafka-init
 | Đặt lại dữ liệu về seed | `docker compose down -v` rồi `docker compose up -d --build` |
 | Chạy unit test một service | `cd services/gateway` → `npm install` → `npm test` |
 
-`.env` chứa mật khẩu và khóa nên **không commit** (`.gitignore` đã có dòng `.env`). `.env.example` có giá trị mẫu chỉ cho máy demo; chạy thật phải đổi khóa trong `.env`.
+`.env` chứa mật khẩu và khóa nên **không commit** (`.gitignore` đã có dòng `.env`). `.env.example` chỉ có tên biến: 5 biến bí mật (`DB_PASSWORD`, `JWT_SECRET`, `CUSTOMER_DATA_KEY`, `DRIVER_DATA_KEY`, `PAYMENT_CALLBACK_SECRET`) để trống, mỗi máy tự sinh trong `.env`. Sinh khóa 32 byte: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
 
 ## Cây thư mục
 
@@ -41,7 +41,7 @@ cab-system-project/
 ├─ postman/                collection theo số mục chấm (chỉ để luyện tập và kiểm thử)
 ├─ docs/                   thiết kế, đặc tả, quyết định, báo cáo kiểm thử
 ├─ compose.yaml            toàn hệ thống: 21 container
-├─ .env.example            mẫu biến môi trường (có commit)
+├─ .env.example            mẫu biến môi trường (có commit, biến bí mật để trống)
 ├─ .env                    cấu hình thật (KHÔNG commit)
 ├─ .gitignore
 └─ .dockerignore
@@ -104,7 +104,7 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | `GET /api/v1/customers/1/bookings?limit=2&page=2` (token KH1 hoặc admin) | Booking theo mã khách, mới nhất trước (A20, mục 14); khách xem mã khác → 403 `NOT_OWNER` |
 | `GET /api/v1/offers` (token tài xế) → `PATCH /api/v1/offers/{id}` `{"status":"ACCEPTED"}` | Lời mời đang chờ (A23); nhận → `DRIVER_ASSIGNED` + `trip_id` (A24, mục 16) |
 | `POST /api/v1/payments/7/transactions` + `Idempotency-Key: k1` `{"simulate_result":"MANUAL"}` | 200 `PENDING`, `txn_id` `SIM-7-1` (A31, mục 19); gửi lại → header `Idempotency-Replayed: true` (mục 30) |
-| `POST /api/v1/payment-callbacks` + `X-Callback-Secret: cab-secret` `{"txn_id":"SIM-7-1"}` (không token) | 200 `COMPLETED` (A32, mục 19) |
+| `POST /api/v1/payment-callbacks` + `X-Callback-Secret:<khóa trong .env>` `{"txn_id":"SIM-7-1"}` (không token) | 200 `COMPLETED` (A32, mục 19) |
 | `GET /api/v1/notifications` (token bất kỳ) | Thông báo của chính mình, mới nhất trước (A33); sau mục 16: `TRIP_ACCEPTED`, `BOOKING_CREATED` |
 | `PATCH /api/v1/trips/1000` `{"status":"ARRIVED"}` (token tài xế của chuyến) | 200 kèm `history` (A28, mục 17); nhảy cóc → 409 `INVALID_STATUS_TRANSITION`; `COMPLETED` → tài xế về `ONLINE`, tiền mặt `COMPLETED` |
 | `PATCH /api/v1/trips/5` `{"status":"CANCELED","reason":"ban viec"}` (token KH1) | 200 `CANCELED` (A29, mục 18); ≈ 1 s sau Payment 5 `REFUNDED`, TX6 `ONLINE`, thông báo `PAYMENT_REFUNDED`, `TRIP_CANCELED` |

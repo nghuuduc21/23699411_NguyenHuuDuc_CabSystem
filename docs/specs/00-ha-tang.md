@@ -178,6 +178,8 @@ Quy ước chống lặp ở bên nghe (sinh viên xác nhận 2026-10-05, 02 m�
 
 ### 3.5 Biến môi trường — 14 biến (theo 03 mục 13) [ĐC]
 
+> **Sửa 2026-10-22 (ADR-022):** 5 biến bí mật trong `.env.example` để trống, mỗi máy tự sinh trong `.env`; phần dưới giữ để truy vết.
+
 `.env.example` có **sẵn giá trị dùng được**: sao chép thành `.env` là chạy. Khóa trong file là **khóa mẫu chỉ cho máy demo**; chạy thật phải thay trong `.env`. Đánh đổi phải nói khi thi: khóa mẫu nằm trên Git nên dữ liệu demo không thật sự bí mật.
 
 | # | Biến | Container nhận | Giá trị trong `.env.example` |
@@ -187,7 +189,7 @@ Quy ước chống lặp ở bên nghe (sinh viên xác nhận 2026-10-05, 02 m�
 | 3 | `JWT_TTL_SECONDS` | auth-service | `3600` |
 | 4 | `CUSTOMER_DATA_KEY` | **chỉ** customer-service | 32 byte base64 cố định (44 ký tự) |
 | 5 | `DRIVER_DATA_KEY` | **chỉ** driver-service | 32 byte base64 cố định, khác biến 4 |
-| 6 | `PAYMENT_CALLBACK_SECRET` | payment-service | `cab-secret` |
+| 6 | `PAYMENT_CALLBACK_SECRET` | payment-service | để trống (bí mật, tự đặt trong `.env`; 2026-10-22) |
 | 7 | `SIMULATION_MODE` | auth, payment, mọi service có seed | `true` (OTP trong response, `simulate_result`, chạy seed). **`false` khi chạy thật** |
 | 8 | `SEED_PASSWORD` | auth-service | `12345678` |
 | 9 | `PAYMENT_TIMEOUT_SECONDS` | payment-service | `600` |

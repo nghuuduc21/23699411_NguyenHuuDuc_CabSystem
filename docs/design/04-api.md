@@ -362,7 +362,7 @@ Ghi chú:
 |---|---|---|
 | A30 | `/{resource}/{id}` | — → 200 `{ "payment_id": 7, "booking_id": 7, "method": "ONLINE", "status": "COMPLETED", "amount": 56000, "fare": { "distance_m": 2026, "base_fare": 25000, "per_km_rate": 15000, "min_fare": 40000 }, "expires_at": "…", "paid_at": "…", "transactions": [ { "txn_id": "SIM-7-1", "type": "CHARGE", "attempt_no": 1, "status": "SUCCEEDED" } ] }` |
 | A31 | Mỗi lần thanh toán là **một giao dịch mới** (`payment_transactions`, file 03 mục 8.4) → `POST` tạo phần tử con (R7). Bỏ `/pay` (động từ). Khớp đúng nghiệp vụ "tối đa 3 lần thử" = tối đa 3 transaction | Header `Idempotency-Key: k1`; `{"simulate_result":"MANUAL"}` → 200 `{ "payment_id": 7, "status": "PENDING", "txn_id": "SIM-7-1", "txn_status": "PENDING", "attempt_no": 1, "attempts_left": 2, "expires_at": "…" }` |
-| A32 | Mỗi callback là **một thông báo kết quả** mà cổng thanh toán gửi tới; response được lưu (`callback_response`) để trả lại khi gửi lặp → là tài nguyên được tạo (R7). Không đặt dưới `/payments/{id}` vì Provider chỉ biết `txn_id` của nó. Bỏ `/payments/callback` (số ít, lẫn vào tập `payments`) | Header `X-Callback-Secret: cab-secret`; `{"txn_id":"SIM-7-1"}` → 200 `{ "txn_id": "SIM-7-1", "txn_status": "SUCCEEDED", "payment_id": 7, "status": "COMPLETED" }` |
+| A32 | Mỗi callback là **một thông báo kết quả** mà cổng thanh toán gửi tới; response được lưu (`callback_response`) để trả lại khi gửi lặp → là tài nguyên được tạo (R7). Không đặt dưới `/payments/{id}` vì Provider chỉ biết `txn_id` của nó. Bỏ `/payments/callback` (số ít, lẫn vào tập `payments`) | Header `X-Callback-Secret:<khóa trong .env>`; `{"txn_id":"SIM-7-1"}` → 200 `{ "txn_id": "SIM-7-1", "txn_status": "SUCCEEDED", "payment_id": 7, "status": "COMPLETED" }` |
 | A33 | Danh sách "của tôi", lọc theo token | — → 200 `{ "data": [ { "type": "TRIP_ACCEPTED", "title": "…", "body": "…", "data": { "booking_id": 1000, "trip_id": 1000 }, "created_at": "…" } ], "pagination": { … } }` |
 | A34 | Đánh giá là tài nguyên của context Rating → tập `ratings` ở gốc; `trip_id` trong body như mọi tham chiếu khác. Bỏ `/trips/{id}/rating` (số ít, lồng vào tài nguyên của service khác) | `{"trip_id":4,"score":5}` → 201 `{ "rating_id": 1000, "trip_id": 4, "driver_id": 13, "score": 5, "driver_avg": 5, "driver_count": 1 }` — không gửi `comment` thì response không có key `comment`; `driver_avg` làm tròn 1 chữ số (JSON in `5`, `4.5`) (spec 20-29, DG-M2) |
 | A35 | Lọc tập `ratings` theo chuyến (R5). Một chuyến có nhiều nhất một đánh giá (UNIQUE `trip_id`) nên trả một đối tượng | `?trip_id=4` → 200 đánh giá của chuyến; chưa có → 404 `RATING_NOT_FOUND` |
@@ -389,7 +389,7 @@ Ghi chú:
 | Điểm | Thiết kế | Vì sao |
 |---|---|---|
 | Ai gửi callback | **Adapter giả lập trong `payment-service`** gọi ngay hàm xử lý callback khi nhận A31 (thu) hoặc yêu cầu hoàn tiền. A32 là **cùng hàm** gọi từ ngoài qua Gateway. Với `MANUAL` adapter không gọi, nên A32 từ Postman là callback đầu tiên và làm Payment `PENDING → COMPLETED` (mục 19) | Không có bước chờ; người chấm thấy rõ bước "nhận callback" (Q57) |
-| Xác thực | Header `X-Callback-Secret: cab-secret` (`PAYMENT_CALLBACK_SECRET`); **không HMAC**. `payment-service` so sánh thời gian hằng | Giả lập đơn giản (giảng viên); khóa thuộc context Payment |
+| Xác thực | Header `X-Callback-Secret:<khóa trong .env>` (`PAYMENT_CALLBACK_SECRET`); **không HMAC**. `payment-service` so sánh thời gian hằng | Giả lập đơn giản (giảng viên); khóa thuộc context Payment |
 | Sai / thiếu khóa | 401 `INVALID_CALLBACK_SECRET` | |
 | Body | `txn_id` (bắt buộc), `result` (`SUCCESS` mặc định / `FAILED`), `amount` (tùy chọn; khác số tiền giao dịch → 400) | Luật thi: body một field |
 | Mã giao dịch lạ | 404 `TRANSACTION_NOT_FOUND` | |
@@ -544,7 +544,7 @@ Ký hiệu: `[KH1]` = tab Authorization → Bearer Token → dán token của KH
 | | (3) | (tùy chọn, phía tài xế) Tab đăng nhập TX1 sửa `"phone":"0910000006"` → copy token → tab GET `[TX6]` Send | `TRIP_CANCELED` cho chuyến 5 |
 | | (4) | (tùy chọn, hủy booking) Tab mục 15: thêm `"pay":"ONLINE"` → copy `booking_id` → tab GET `PATCH …/api/v1/bookings/<id>` `{"status":"CANCELED","reason":"doi y"}` | 201 `PENDING_PAYMENT`; 200 `CANCELED` |
 | 19 | 1 | `POST localhost:3000/api/v1/payments/7/transactions` — `[KH1]` — Headers `Idempotency-Key:k1` — `{"simulate_result":"MANUAL"}` | 200 `status` `PENDING`, `txn_id` `SIM-7-1`, `txn_status` `PENDING` |
-| | 2 | Nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:cab-secret`, body `{"txn_id":"SIM-7-1"}` | 200 `txn_status` `SUCCEEDED`, **`status` `COMPLETED`** |
+| | 2 | Nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:<khóa trong .env>`, body `{"txn_id":"SIM-7-1"}` | 200 `txn_status` `SUCCEEDED`, **`status` `COMPLETED`** |
 | | (3) | (tùy chọn) `GET …/api/v1/bookings/7` — `[KH1]` | `SEARCHING` (BRULE13: trả xong mới tìm tài xế) |
 | | Dự phòng | Chỉ request 1, **bỏ body** | 200 `COMPLETED` ngay (adapter tự gọi callback) |
 | 20 | 1 | `POST localhost:3000/api/v1/ratings` — `[KH1]` — `{"trip_id":4,"score":5}` | 201 `driver_id` 13, `driver_avg` 5, `driver_count` 1 |

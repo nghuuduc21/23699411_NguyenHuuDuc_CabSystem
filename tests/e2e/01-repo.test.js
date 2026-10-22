@@ -61,22 +61,36 @@ test('AC-HT-02 (mục 2): .gitignore có dòng .env và git check-ignore .env in
   assert.equal(r.stdout.trim(), '.env');
 });
 
-test('AC-HT-02 (mục 2): .env.example có đủ 14 biến và đều có giá trị (sao chép là chạy)', () => {
-  const vars = Object.fromEntries(
+function readEnvFile(name) {
+  return Object.fromEntries(
     fs
-      .readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8')
+      .readFileSync(path.join(REPO_ROOT, name), 'utf8')
       .split(/\r?\n/)
       .filter((l) => /^[A-Z_][A-Z0-9_]*=/.test(l))
-      .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]),
+      .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()]),
   );
-  const expected = [
-    'DB_PASSWORD', 'JWT_SECRET', 'JWT_TTL_SECONDS', 'CUSTOMER_DATA_KEY', 'DRIVER_DATA_KEY',
-    'PAYMENT_CALLBACK_SECRET', 'SIMULATION_MODE', 'SEED_PASSWORD', 'PAYMENT_TIMEOUT_SECONDS',
-    'OFFER_TIMEOUT_SECONDS', 'OTP_TTL_SECONDS', 'RATE_LIMIT_WINDOW_SECONDS', 'RATE_LIMIT_PUBLIC_MAX',
-    'RATE_LIMIT_ACCOUNT_MAX',
-  ];
-  assert.deepEqual(Object.keys(vars).sort(), [...expected].sort());
-  for (const k of expected) assert.ok(vars[k].trim() !== '', `${k} rỗng`);
+}
+
+const ENV_VARS = [
+  'DB_PASSWORD', 'JWT_SECRET', 'JWT_TTL_SECONDS', 'CUSTOMER_DATA_KEY', 'DRIVER_DATA_KEY',
+  'PAYMENT_CALLBACK_SECRET', 'SIMULATION_MODE', 'SEED_PASSWORD', 'PAYMENT_TIMEOUT_SECONDS',
+  'OFFER_TIMEOUT_SECONDS', 'OTP_TTL_SECONDS', 'RATE_LIMIT_WINDOW_SECONDS', 'RATE_LIMIT_PUBLIC_MAX',
+  'RATE_LIMIT_ACCOUNT_MAX',
+];
+const SECRET_VARS = ['DB_PASSWORD', 'JWT_SECRET', 'CUSTOMER_DATA_KEY', 'DRIVER_DATA_KEY', 'PAYMENT_CALLBACK_SECRET'];
+
+// File mẫu có trên Git nên biến bí mật phải để trống; biến không bí mật có giá trị mặc định.
+test('AC-HT-02 (mục 2): .env.example có đủ 14 biến, 5 biến bí mật để trống', () => {
+  const vars = readEnvFile('.env.example');
+  assert.deepEqual(Object.keys(vars).sort(), [...ENV_VARS].sort());
+  for (const k of SECRET_VARS) assert.equal(vars[k], '', `${k} trong .env.example phải để trống`);
+  for (const k of ENV_VARS.filter((v) => !SECRET_VARS.includes(v))) assert.ok(vars[k] !== '', `${k} rỗng`);
+});
+
+// .env của máy demo (không có trên Git) phải đủ khóa đúng dạng thì hệ thống mới khởi động.
+test('AC-HT-02 (mục 2): .env có đủ khóa bí mật đúng dạng và khác file mẫu', () => {
+  const vars = readEnvFile('.env');
+  for (const k of ENV_VARS) assert.ok(vars[k], `${k} rỗng trong .env`);
   assert.ok(vars.JWT_SECRET.length >= 32, 'JWT_SECRET < 32 ký tự');
   for (const k of ['CUSTOMER_DATA_KEY', 'DRIVER_DATA_KEY']) {
     assert.equal(Buffer.from(vars[k], 'base64').length, 32, `${k} không phải 32 byte base64`);

@@ -96,7 +96,7 @@ Bảo mật dùng module `node:crypto` có sẵn: **scrypt** băm mật khẩu v
 ```
 cab-system-project/
 ├── compose.yaml            21 container, mạng cab-net, 8 volume dữ liệu
-├── .env.example            14 biến mẫu cho máy demo (chép thành .env; .env KHÔNG commit)
+├── .env.example            14 tên biến, 5 biến bí mật để trống (chép thành .env rồi sinh khóa; .env KHÔNG commit)
 ├── .gitignore              bỏ node_modules/, .env, .env.*, log
 ├── README.md               cách chạy, danh sách API
 ├── CLAUDE.md               quy tắc dự án cho agent
@@ -243,7 +243,7 @@ Ký hiệu: `[KH1]` = token của khách 1, lấy từ response đăng nhập. M
 | Đăng nhập (mọi role) | A05 `POST /api/v1/auth/login` | Khách, admin: `{"email":"kh1@cab.vn","password":"12345678"}`; tài xế: `{"phone":"0910000001","password":"12345678"}` (đúng **một** định danh) | 200 `token`, `account_id`, `role`, `expires_in: 3600` | `auth.js` `login` → `token.js` ký JWT |
 | Xin OTP đăng ký tài xế | A07 `POST /api/v1/auth/otp` | `{"phone":"0911111111"}` | 201, có `otp` khi `SIMULATION_MODE=true` | `auth.js` `requestDriverOtp` |
 | Tạo tài khoản tài xế | A08 `POST /api/v1/auth/driver-register` | `{"phone":"0911111111","otp":"123456","password":"12345678"}` | 201 kèm token `role: driver` | `auth.js` `registerDriver` |
-| Cổng thanh toán báo kết quả | A32 `POST /api/v1/payment-callbacks` | Header `X-Callback-Secret: cab-secret`, body `{"txn_id":"SIM-7-1"}` | 200 `status: COMPLETED` | `payment-service/src/domain/payments.js` `handleProviderCallback` |
+| Cổng thanh toán báo kết quả | A32 `POST /api/v1/payment-callbacks` | Header `X-Callback-Secret:<khóa trong .env>`, body `{"txn_id":"SIM-7-1"}` | 200 `status: COMPLETED` | `payment-service/src/domain/payments.js` `handleProviderCallback` |
 
 Lỗi hay gặp:
 - **Đăng ký:** gửi kèm `phone` → 400 `INVALID_INPUT` (số điện thoại khách ở hồ sơ, ADR-021); email đã có → 409 `EMAIL_ALREADY_EXISTS`; email sai dạng (kể cả `' OR 1=1 --`) → 400 `INVALID_EMAIL`.
@@ -672,7 +672,7 @@ Tất cả trong **một giao dịch** của booking-service:
 | Gateway healthy nhưng `localhost:3000` không trả lời | `docker compose ps` thấy `3000/tcp` mà không có `0.0.0.0:3000->` | Container được tạo lúc cổng bị chiếm: `docker compose up -d --force-recreate gateway` |
 | Docker Desktop chưa bật | `failed to connect to the docker API … dockerDesktopLinuxEngine` | Mở Docker Desktop, chờ engine chạy |
 | MongoDB của Windows chiếm 27017 | Test "không gọi thẳng database được" đạt giả | Dừng dịch vụ MongoDB của Windows trước khi thi (cần quyền admin) |
-| Thiếu `.env` hoặc thiếu biến | Service `Exited (1)`, log `cấu hình sai, dừng service` kèm **tên biến** | `cp .env.example .env` |
+| Thiếu `.env` hoặc thiếu biến | Service `Exited (1)`, log `cấu hình sai, dừng service` kèm **tên biến** | `cp .env.example .env` rồi điền 5 biến bí mật (sinh khóa bằng `node -e …randomBytes(32)…`) |
 | Dữ liệu đã bị đổi khi luyện (TX1 bận, chuyến 5 đã hủy, B7 đã trả) | Demo ra kết quả khác kịch bản | `docker compose down -v` rồi `docker compose up -d --build` |
 | Đăng nhập liên tục bị 429 khi luyện | `Retry-After: n` | Chờ hết cửa sổ 10 giây |
 | Lời mời hết hạn trước khi kịp nhận (mục 16) | A24 → 409 `OFFER_EXPIRED` | Đặt xe lại; hạn là 300 giây |
@@ -683,8 +683,7 @@ Tất cả trong **một giao dịch** của booking-service:
 ## 14. Sổ tay lệnh vận hành
 
 ```bash
-# Dựng, xem, dừng
-cp .env.example .env
+# Dựng, xem, dừng (.env đã có sẵn trên máy; máy mới: cp .env.example .env rồi sinh 5 khóa)
 docker compose up -d --build              # dựng 21 container
 docker compose ps -a                      # trạng thái (healthy / Exited)
 docker compose logs -f booking-service    # log một service (JSON một dòng)

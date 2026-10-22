@@ -9,7 +9,7 @@
 // cùng đường code, mã đọc từ response. "≈ 1 s" = kiểm sau tối đa 2 giây.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED, call, kafkaMessages, psql, tokenOf } from './api.js';
+import { CALLBACK_SECRET, SEED, call, kafkaMessages, psql, tokenOf } from './api.js';
 import {
   FAR_FROM, FAR_TO, book201, bookingsDb, drainAllTestBookings, drainBooking, driversDb, kafkaNew, kafkaSnapshot,
   paymentsDb, releaseSeedDrivers, tripsDb, waitKafkaNew, waitOffer,
@@ -476,7 +476,7 @@ test('AC-CD-17 (mục 18 phụ, M11): A31 MANUAL → PENDING; A22 → 200; payme
   assert.equal(r.status, 200, r.text);
   const p = await waitPayment(b.payment_id, 'CANCELED');
   assert.equal(p.status, 'CANCELED');
-  const cb = await call('POST', '/payment-callbacks', { body: { txn_id: `SIM-${b.payment_id}-1` }, headers: { 'X-Callback-Secret': 'cab-secret' } });
+  const cb = await call('POST', '/payment-callbacks', { body: { txn_id: `SIM-${b.payment_id}-1` }, headers: { 'X-Callback-Secret': CALLBACK_SECRET } });
   assert.equal(cb.status, 200, cb.text);
   assert.equal(cb.body.txn_status, 'SUCCEEDED');
   assert.equal(cb.body.status, 'REFUNDED');

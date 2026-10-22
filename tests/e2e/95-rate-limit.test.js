@@ -7,7 +7,7 @@
 // và bật lại redis.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED, SEED_PASSWORD, call, createTracker, login, newDriverPhone, newEmail, tamperMiddle } from './api.js';
+import { CALLBACK_SECRET, SEED, SEED_PASSWORD, call, createTracker, login, newDriverPhone, newEmail, tamperMiddle } from './api.js';
 import { compose, run, sleep, waitFor, waitHealthy } from './helpers.js';
 
 const S = {};
@@ -151,7 +151,7 @@ test('AC-GH-02 (mục 29, phần 2) + AC-GH-08: chờ hết Retry-After của l�
 
 test('AC-GH-04 (mục 29): A32 payment-callbacks gửi 10 lần liên tục → 401 / 404 cả 10, không 429, không RateLimit-*', async () => {
   for (let i = 0; i < 10; i += 1) {
-    const r = await call('POST', '/payment-callbacks', { body: { txn_id: 'SIM-999-1' }, headers: i % 2 ? { 'X-Callback-Secret': 'cab-secret' } : {} });
+    const r = await call('POST', '/payment-callbacks', { body: { txn_id: 'SIM-999-1' }, headers: i % 2 ? { 'X-Callback-Secret': CALLBACK_SECRET } : {} });
     assert.ok([401, 404].includes(r.status), `lần ${i + 1}: ${r.status}`);
     assert.equal(h(r, 'ratelimit-limit'), null);
   }

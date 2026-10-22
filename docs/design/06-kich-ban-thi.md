@@ -17,7 +17,7 @@
 | Chọn method | Ô bên trái URL: `GET`, `POST`, `PATCH` (chỉ ba method) |
 | Gõ URL | `localhost:3000/api/v1/...` (Postman tự thêm `http://`). Chỉ health không có `/api/v1` |
 | Gắn token | Tab **Authorization** → Type **Bearer Token** → dán token (không gõ chữ `Bearer`) |
-| Header phụ | Tab **Headers** → **Bulk Edit** → gõ một dòng `Idempotency-Key:k1` hoặc `X-Callback-Secret:cab-secret` |
+| Header phụ | Tab **Headers** → **Bulk Edit** → gõ một dòng `Idempotency-Key:k1` hoặc `X-Callback-Secret:<khóa trong .env>` |
 | Body | Tab **Body** → **raw** → gõ JSON. "Text" hay "JSON" đều được. Đổi sang `GET` thì không cần xóa body (Gateway bỏ qua) |
 | Nhân bản tab | Chuột phải tab → **Duplicate Tab** — giữ tab cũ để gửi lại sau (mục 10, 15, 19) |
 
@@ -43,7 +43,7 @@ Ký hiệu: `[KH1]` = gắn token của KH1. `(tùy chọn)` = chỉ làm khi đ
 
 | # | Lệnh | Kết quả |
 |---|---|---|
-| 1 | `cp .env.example .env` | Có file `.env` (giá trị mẫu dùng được ngay) |
+| 1 | (đã làm sẵn trên máy) `.env` có đủ 14 biến; 5 biến bí mật tự sinh, không có trên Git | Không cần gõ gì lúc thi |
 | 2 | `docker compose up -d --build` | Toàn bộ container lên; seed tự chạy (`SIMULATION_MODE=true`) |
 | 3 | Postman `GET localhost:3000/health/services` | 200 `"status":"healthy"`, 8 service `"healthy"` → sẵn sàng |
 
@@ -68,7 +68,7 @@ Chấm lại từ đầu (seed bị dùng hỏng): `docker compose down -v` rồ
 | 2 | `git ls-files .env .env.example` | Chỉ in `.env.example` → `.env` không có trên GitHub |
 | (3) | (tùy chọn) `git check-ignore .env` | In ra `.env` |
 
-Nói gì: `.env` chứa mật khẩu database, `JWT_SECRET`, khóa mã hóa nên không commit. `.env.example` có **khóa mẫu chỉ cho máy demo** (giảng viên cho phép) để `cp` là chạy; chạy thật phải thay khóa mới trong `.env`.
+Nói gì: `.env` chứa mật khẩu database, `JWT_SECRET`, khóa mã hóa nên không commit. `.env.example` chỉ có **tên biến**: 5 biến bí mật để trống, giá trị thật chỉ nằm trong `.env` trên máy này. Ai clone repo phải tự sinh khóa (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Lộ khóa thì đổi khóa, xóa commit không đủ.
 
 ### Mục 3 — Nhiệm vụ Gateway (mô tả, ~30 s)
 
@@ -275,7 +275,7 @@ Chuẩn bị: seed booking **7** = payment **7** (`CAR_7`, online, `PENDING`, 56
 | # | Gõ | Kết quả |
 |---|---|---|
 | 1 | `POST localhost:3000/api/v1/payments/7/transactions`, `[KH1]`, Headers `Idempotency-Key:k1`, body `{"simulate_result":"MANUAL"}` | 200 `status` `PENDING`, `txn_id` `SIM-7-1`, `txn_status` `PENDING` |
-| 2 | Nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:cab-secret`, body `{"txn_id":"SIM-7-1"}` | 200 `txn_status` `SUCCEEDED`, **`status` `COMPLETED`** |
+| 2 | Nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:<khóa trong .env>`, body `{"txn_id":"SIM-7-1"}` | 200 `txn_status` `SUCCEEDED`, **`status` `COMPLETED`** |
 | (3) | (tùy chọn) Tab GET: `bookings/7`, `[KH1]` | `SEARCHING` |
 
 **Giữ nguyên hai tab** cho mục 30.
@@ -468,7 +468,7 @@ Giảng viên gọi lệch thứ tự: mục chỉ đọc (6, 11–14, 24–26, 
 | Bảng giá | Xe máy 10 000 + 5 000/km (tối thiểu 15 000); 4 chỗ 20 000 + 12 000/km (30 000); 7 chỗ 25 000 + 15 000/km (40 000) | |
 | Body hay gõ | Đặt xe `{"from":[10.82,106.68],"to":[10.83,106.69]}` (mặc định `CAR_4`, `CASH`); đánh giá `{"trip_id":4,"score":5}`; duyệt `{"approval_status":"APPROVED"}` | |
 | Giá trị `status` | Offer: `ACCEPTED` / `REJECTED`. Chuyến: `ARRIVED` → `PICKED_UP` → `IN_PROGRESS` → `COMPLETED`, hoặc `CANCELED`. Booking: `CANCELED`. Tài xế: `ONLINE` / `OFFLINE` | |
-| Header | Token ở tab Authorization; `Idempotency-Key:k1`; `X-Callback-Secret:cab-secret` | |
+| Header | Token ở tab Authorization; `Idempotency-Key:k1`; `X-Callback-Secret:<khóa trong .env>` | |
 | Mã giao dịch | `SIM-<payment_id>-<lần thử>` → `SIM-7-1` | |
 | Giả lập thanh toán | `simulate_result`: không gửi = thành công ngay; `FAILED`; `MANUAL` = chờ callback | |
 | Dữ liệu mới khi demo | Khách `new1@cab.vn` (lần hai `new2@cab.vn`), số hồ sơ `0901234567`; tài xế `0911111111` (lần hai `…12`) | |
@@ -477,8 +477,8 @@ Giảng viên gọi lệch thứ tự: mục chỉ đọc (6, 11–14, 24–26, 
 | Container database | `<context>-db`: `auth-db`, `customer-db`, … (PostgreSQL), `notification-db` (MongoDB) | |
 | Database, user | Database = tên context; user **`cab`**; mật khẩu `cab123` | |
 | Lệnh xem bảng | `docker exec customer-db psql -U cab -d customer -c "table customer_profiles"` | `table <bảng>` = `select *` |
-| Lệnh dựng / đặt lại / xem | `cp .env.example .env`; `docker compose up -d --build`; `docker compose down -v`; `docker compose ps -a` (21 container) | |
-| Giới hạn thời gian (`.env.example`) | Offer 300 s; thanh toán 600 s (B7: 1 ngày); OTP 300 s; token 3 600 s; rate limit 5 công khai / 10 s, 30 có token / 10 s | |
+| Lệnh dựng / đặt lại / xem | `docker compose up -d --build`; `docker compose down -v`; `docker compose ps -a` (21 container) | |
+| Giới hạn thời gian (`.env`) | Offer 300 s; thanh toán 600 s (B7: 1 ngày); OTP 300 s; token 3 600 s; rate limit 5 công khai / 10 s, 30 có token / 10 s | |
 | Hằng số | Bán kính 1 000 m; hệ số quãng đường 1,3; 3 lần thử thanh toán; 5 lần nhập OTP | |
 | Mã lỗi hay gặp | 400 sai dữ liệu (`INVALID_EMAIL`, `INVALID_PHONE`, `INVALID_ID`, `INVALID_INPUT`); 401 token / đăng nhập; 403 `FORBIDDEN` (sai role) và `NOT_OWNER` (không phải chủ); 404 (gồm đường dẫn thiếu `/api/v1`); 409 trùng (`EMAIL_ALREADY_EXISTS`, `PHONE_ALREADY_EXISTS`) **hoặc sai trạng thái**; 429; 503 service dừng | |
 

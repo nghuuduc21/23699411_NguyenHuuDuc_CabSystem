@@ -27,7 +27,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Kịch bản thi: request gõ tay, lệnh, câu trả lời vấn đáp cho từng mục chấm; những thứ phải nhớ | `docs/design/06-kich-ban-thi.md` | Có |
 | Luyện tập 30 mục: Postman environment + collection theo thứ tự thi, 3 cấp độ, bảng bấm giờ | `docs/study/03-luyen-tap-postman.md`, `postman/luyen-tap/` | Có |
 | Đặc tả từng phần việc | `docs/specs/` | `00-ha-tang`, `09-10-dang-ky-dang-nhap`, `11-ho-so-khach-hang`, `12-13-21-23-tai-xe`, `14-15-16-19-30-dat-xe-thanh-toan`, `17-18-chuyen-di-thong-bao`, `20-29-danh-gia-gioi-han` (đã code, đã kiểm thử) |
-| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-021 |
+| Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-022 |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
 
 ## Danh sách service (giảng viên chốt, không tự ý thêm bớt)
@@ -119,8 +119,8 @@ Khi thi, sinh viên **không được mở tài liệu**, phải tự giải th�
 | Đường dẫn và tên trường API | **Theo cấu trúc chuẩn của bài giảng: `/api/{version}/{resource}/{id}?{query-params}`**, ví dụ `GET http://localhost:3000/api/v1/customers/1`, `GET /api/v1/drivers?lat=10.82&lng=106.68&page=1&limit=2`. Tài nguyên là danh từ số nhiều; **không đặt động từ trong đường dẫn** (ngoại lệ có chủ đích: nhóm `/api/v1/auth/…` gồm `register`, `login`, `logout`, `otp`, `driver-register`, theo giảng viên 2026-10-14): đổi trạng thái bằng `PATCH /api/v1/{resource}/{id}` với body `{"status": ...}` (nhận/từ chối lời mời, cập nhật hay hủy chuyến, hủy booking, Online/Offline). Tên trường ngắn (`name`, `dob`, `vehicle`, `pay`, `from`, `to`); tên cột database vẫn đầy đủ. Giảng viên xác nhận 2026-10-03: bỏ `/api/v1` sẽ gây ấn tượng xấu |
 | **Được copy/paste** giá trị từ response | Token, mã booking, mã thanh toán lấy bằng copy từ response trước |
 | **Được dùng lại tab Postman** đã gõ ở mục trước và mở tab mới; **vừa làm vừa giải thích** trong cùng 30 giây | Chuỗi request phải ngắn hơn nữa vì thời gian giải thích nằm trong 30 giây; mục cần lặp (đổi trạng thái chuyến, gửi lại request cũ) dùng lại tab, chỉ sửa một giá trị |
-| `.env.example` chứa khóa mẫu cho máy demo | Được, miễn **không đưa cấu hình thật** (`.env`) lên công khai (giảng viên xác nhận) |
-| Lệnh terminal **phải gõ đầy đủ**, không chạy script soạn sẵn | Ít lệnh, lệnh ngắn: dựng hệ thống bằng `docker compose up -d --build`; tên container, database, user ngắn và theo một quy luật (ví dụ container `auth-db`, user `cab`, database `auth`). `.env.example` có sẵn giá trị dùng được cho máy demo, chỉ cần sao chép thành `.env` |
+| Cấu hình bí mật | `.env.example` chỉ có tên biến; **5 biến bí mật để trống**, khóa thật chỉ nằm trong `.env` trên máy thi (không commit). Thi trên máy cá nhân, mở VS Code, không clone lại nên `.env` luôn có sẵn (ADR-022, 2026-10-22; trước đó giảng viên cho phép khóa mẫu) |
+| Lệnh terminal **phải gõ đầy đủ**, không chạy script soạn sẵn | Ít lệnh, lệnh ngắn: dựng hệ thống bằng `docker compose up -d --build`; tên container, database, user ngắn và theo một quy luật (ví dụ container `auth-db`, user `cab`, database `auth`). `.env` đã có sẵn trên máy thi; dựng lại từ đầu chỉ cần `docker compose down -v` rồi `docker compose up -d --build` |
 | Không mở ghi chú; phải **học thuộc và giải thích** | Dữ liệu seed dễ nhớ và theo quy luật (khách `kh1@cab.vn`…, admin `admin@cab.vn`, tài xế `0910000001`…, cùng một mật khẩu; tài xế seed ở quanh một tọa độ mẫu dễ nhớ). Ít khái niệm kỹ thuật nhất có thể; thứ gì không phục vụ mục chấm hoặc không giải thích được thì bỏ |
 
 ## Cấu trúc thư mục mục tiêu
@@ -131,7 +131,7 @@ services/<tên>/           mỗi service: package.json, Dockerfile, src/, migrat
 tests/                    test tích hợp và end-to-end
 postman/                  collection theo số mục chấm
 compose.yaml              toàn hệ thống (8 service, database, Redis, Kafka, Kafka UI); chỉ gateway và Kafka UI có `ports`
-.env.example              mẫu biến môi trường (không commit .env)
+.env.example              mẫu biến môi trường, biến bí mật để trống (không commit .env)
 ```
 
 ## Quy ước code

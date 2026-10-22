@@ -1,5 +1,5 @@
 # Cab Booking System — toàn bộ hệ thống trong một file Compose (spec 00 mục 3.2): 21 container.
-#   Dựng:   cp .env.example .env   rồi   docker compose up -d --build
+#   Dựng:   cp .env.example .env, điền 5 biến bí mật, rồi   docker compose up -d --build
 #   Xem:    docker compose ps -a
 #   Đặt lại dữ liệu về seed:   docker compose down -v   rồi   docker compose up -d --build
 #

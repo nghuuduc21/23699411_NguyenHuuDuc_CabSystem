@@ -107,16 +107,23 @@ export function signJwt(payload, secret, header = { alg: 'HS256', typ: 'JWT' }) 
   return `${data}.${sig}`;
 }
 
-// Đọc JWT_SECRET từ `.env` của máy demo (chỉ đọc, không in ra). Không có thì trả null.
-export function jwtSecretFromEnv() {
+// Đọc một biến từ `.env` của máy demo (chỉ đọc, không in ra). Không có thì trả null.
+// Khóa bí mật không nằm trong code test vì .env.example trên Git để trống chúng.
+export function envFromFile(name) {
   try {
     const text = fs.readFileSync(path.join(REPO_ROOT, '.env'), 'utf8');
-    const m = /^JWT_SECRET=(.*)$/m.exec(text);
+    const m = new RegExp(`^${name}=(.*)$`, 'm').exec(text);
     return m ? m[1].trim() : null;
   } catch {
     return null;
   }
 }
+
+export function jwtSecretFromEnv() {
+  return envFromFile('JWT_SECRET');
+}
+
+export const CALLBACK_SECRET = envFromFile('PAYMENT_CALLBACK_SECRET');
 
 // Sửa MỘT ký tự ở giữa token (trong phần payload), không phải ký tự cuối (bit thừa base64url).
 export function tamperMiddle(token) {

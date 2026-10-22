@@ -19,6 +19,7 @@
 **Environment làm gì:** các request lưu kết quả vào biến bằng script ở tab *Tests*. Ví dụ đăng nhập xong thì `pm.environment.set('tok_kh1', token)`. Request sau dùng lại bằng `{{tok_kh1}}`. Nhờ vậy bạn **tập trung hiểu từng bước**, không mất công copy-paste. Bấm con mắt 👁 cạnh tên environment để xem giá trị đang có.
 
 | Biến | Lưu ở | Dùng ở |
+| `cb_secret` | **Tự điền một lần**: chép giá trị `PAYMENT_CALLBACK_SECRET` trong `.env` vào cột *Current value* (file environment trên Git để trống) | Mục 19 |
 |---|---|---|
 | `tok_kh1`, `tok_ad1`, `tok_tx1`, `tok_tx6` | 00 Chuẩn bị, Mục 10 | Hầu hết các mục |
 | `new_email`, `tok_new`, `new_id` | Mục 9 | Mục 11.3 |
@@ -86,7 +87,7 @@ Thứ tự thư mục trong collection chính là thứ tự thi (06 mục 3). B
 | 13 | 7 | Trình duyệt `localhost:8080` → Topics → Messages | 7 topic, có message | `kafka-init` trong `compose.yaml` |
 | 14 | 20 | `POST /api/v1/ratings` `{"trip_id":4,"score":5}` → gửi lại | 201 → 409 | `rating-service/src/domain/ratings.js` |
 | 15 | 18 | [KH1] `PATCH /api/v1/trips/5` `{"status":"CANCELED","reason":"ban viec"}` → `GET /notifications` | 200 → `PAYMENT_REFUNDED`, `TRIP_CANCELED` | `trips.js` `cancelTrip`, các `consumer.js` |
-| 16 | 19 | `POST /api/v1/payments/7/transactions` (`Idempotency-Key:k1`, MANUAL) → `POST /api/v1/payment-callbacks` (`X-Callback-Secret:cab-secret`) | PENDING → COMPLETED | `payment-service/src/domain/payments.js` |
+| 16 | 19 | `POST /api/v1/payments/7/transactions` (`Idempotency-Key:k1`, MANUAL) → `POST /api/v1/payment-callbacks` (`X-Callback-Secret:<khóa trong .env>`) | PENDING → COMPLETED | `payment-service/src/domain/payments.js` |
 | 17 | 30 | Send lại hai tab mục 19 → `GET /payments/7` | Body y hệt, `Idempotency-Replayed: true` | `payments.js` `payPayment` |
 | 18 | 21 | `POST /api/v1/auth/otp` → `auth/driver-register` → `POST /api/v1/drivers` | 201 otp → 201 token → 201 PENDING | `auth.js`, `drivers.js` `submitApplication` |
 | 19 | 22 | [AD1] `PATCH /api/v1/drivers/D` `{"approval_status":"APPROVED"}` | 200 APPROVED | `drivers.js` `approveDriver` |

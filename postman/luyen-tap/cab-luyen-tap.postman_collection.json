@@ -1707,11 +1707,11 @@
             "header": [
               {
                 "key": "X-Callback-Secret",
-                "value": "cab-secret"
+                "value": "{{cb_secret}}"
               }
             ],
             "url": "{{base}}/api/v1/payment-callbacks",
-            "description": "**Gõ:** nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:cab-secret`, body `{\"txn_id\":\"SIM-7-1\"}`\n**Kết quả:** 200 `txn_status` SUCCEEDED, **`status` COMPLETED**\n**Nói:** callback không có token, xác thực bằng khóa bí mật trong header. Payment phát Kafka K6 → Booking chuyển SEARCHING, mời TX4 (CAR_7).\n**Code:** `payments.js` `handleProviderCallback`.",
+            "description": "**Gõ:** nhân bản tab: URL `payment-callbacks`, Authorization **No Auth**, Headers `X-Callback-Secret:<PAYMENT_CALLBACK_SECRET trong .env>` (biến `{{cb_secret}}`), body `{\"txn_id\":\"SIM-7-1\"}`\n**Kết quả:** 200 `txn_status` SUCCEEDED, **`status` COMPLETED**\n**Nói:** callback không có token, xác thực bằng khóa bí mật trong header. Payment phát Kafka K6 → Booking chuyển SEARCHING, mời TX4 (CAR_7).\n**Code:** `payments.js` `handleProviderCallback`.",
             "auth": {
               "type": "noauth"
             },
@@ -1825,7 +1825,7 @@
             "header": [
               {
                 "key": "X-Callback-Secret",
-                "value": "cab-secret"
+                "value": "{{cb_secret}}"
               }
             ],
             "url": "{{base}}/api/v1/payment-callbacks",

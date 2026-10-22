@@ -7,14 +7,14 @@
 // `UPDATE payments SET expires_at = now()` để tiến trình nền (mỗi 1 giây) tự xử lý.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED, call, kafkaMessages, tokenOf } from './api.js';
+import { CALLBACK_SECRET, SEED, call, kafkaMessages, tokenOf } from './api.js';
 import {
   FAR_FROM, FAR_TO, book201, bookingsDb, drainAllTestBookings, drainBooking, kafkaNew, kafkaSnapshot, paymentsDb,
   waitBookingStatus, waitKafkaNew, waitOffer,
 } from './dat-xe.js';
 import { sleep, waitFor } from './helpers.js';
 
-const SECRET = 'cab-secret';
+const SECRET = CALLBACK_SECRET;
 let kh1, kh2, tx1, tx4, ad1;
 const S = {};
 

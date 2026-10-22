@@ -31,7 +31,7 @@ Chọn **B**.
 ## Vì sao
 
 1. Mục chấm 27 chỉ cần "sửa payload thì chữ ký không khớp → 401": HS256 làm được y như RS256.
-2. Một biến, có sẵn giá trị trong `.env.example`: dựng hệ thống chỉ cần `cp .env.example .env` và `docker compose up -d --build`.
+2. Một biến, sinh bằng một lệnh và đặt trong `.env` (ADR-022: `.env.example` để trống khóa).
 3. Chỉ hai bên giữ khóa, và cả hai đều nằm trong hệ thống của mình: lợi thế "bên kiểm tra không ký được" của RS256 không cần thiết ở đây.
 
 ## Cách demo mục chấm 27 (bổ sung theo yêu cầu giảng viên 2026-10-14)
@@ -48,14 +48,14 @@ Chọn **B**.
 | Rủi ro | Hệ quả | Cách giữ |
 |---|---|---|
 | **Ai có `JWT_SECRET` thì ký lại được token hợp lệ**, kể cả đổi `role` thành `admin` | Gateway không phân biệt được token giả với token thật | Khóa **chỉ** nằm ở `auth-service` (ký) và `gateway` (kiểm tra); `.env` không commit; **không** dán `JWT_SECRET` lên jwt.io hay đưa cho người khác khi demo — dán vào là chính tay mình ký token admin hợp lệ |
-| Khóa mẫu trong `.env.example` nằm trên Git | Ai đọc repo cũng ký được token cho **máy demo** | Chỉ dùng cho máy demo (giảng viên cho phép); chạy thật thay khóa trong `.env` |
+| ~~Khóa mẫu trong `.env.example` nằm trên Git~~ | Đã xử lý 2026-10-22 (ADR-022): file mẫu để trống, khóa thật chỉ trong `.env`. Khóa mẫu cũ còn trong lịch sử Git nhưng không còn dùng | — |
 | Dán token thật lên trang bên ngoài | Token còn hạn có thể bị dùng lại | Chỉ dán token demo; đăng xuất (FR42) hoặc chờ hết hạn sau khi demo |
 
 ## Đánh đổi
 
 - Lộ `JWT_SECRET` ở Gateway hoặc Auth là giả được token của bất kỳ ai, kể cả `admin`. Giảm thiểu: chỉ hai service nạp biến này; `.env` không commit.
 - Muốn cho bên thứ ba tự kiểm tra token thì phải đổi sang RS256 (đổi ở Auth và Gateway, không đổi service khác).
-- Khóa mẫu trong `.env.example` nằm trên Git: chỉ dùng cho máy demo, chạy thật phải thay.
+- Khóa thật chỉ nằm trong `.env` của máy (ADR-022); mất `.env` thì sinh khóa mới, token cũ mất hiệu lực.
 
 ## Câu trả lời mẫu khi vấn đáp
 

@@ -4249,7 +4249,7 @@
             "header": [
               {
                 "key": "X-Callback-Secret",
-                "value": "cab-secret"
+                "value": "{{cb_secret}}"
               }
             ],
             "url": {
@@ -4411,7 +4411,7 @@
             "header": [
               {
                 "key": "X-Callback-Secret",
-                "value": "cab-secret"
+                "value": "{{cb_secret}}"
               }
             ],
             "url": {

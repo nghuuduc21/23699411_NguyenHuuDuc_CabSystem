@@ -813,7 +813,7 @@ Quản lý khóa:
 | Biến | `CUSTOMER_DATA_KEY` (chỉ `customer-service`), `DRIVER_DATA_KEY` (chỉ `driver-service`) — mỗi biến 32 byte, dạng base64 (44 ký tự). Khóa ký JWT là việc khác: `JWT_SECRET` (ADR-016) |
 | Mỗi service một khóa | Lộ khóa của một service không giải được dữ liệu service khác |
 | Khóa không nằm ở | Mã nguồn, image, database, log |
-| `.env.example` | Có **khóa mẫu dùng được** để chạy demo bằng một lệnh sao chép (`CLAUDE.md` Ràng buộc khi thi). Khóa mẫu ghi rõ "chỉ cho máy demo"; chạy thật phải thay khóa mới trong `.env` — **đánh đổi phải nói khi thi**: khóa mẫu nằm trên Git nên dữ liệu demo không thật sự bí mật |
+| `.env.example` | Khóa **để trống**; mỗi máy tự sinh trong `.env` (ADR-022, 2026-10-22; trước đó là khóa mẫu). Không khóa nào nằm trên Git |
 | Thiếu khóa hoặc sai độ dài | Service **không khởi động** và ghi lỗi nêu tên biến |
 | Giới hạn | Ai đọc được biến môi trường của container thì có khóa. Triển khai thật dùng dịch vụ giữ bí mật (KMS / Vault) — ngoài phạm vi |
 
@@ -853,16 +853,16 @@ Redis không lưu dữ liệu nghiệp vụ, không cache, không session (`CLAU
 
 ## 13. Biến môi trường (rút gọn 2026-10-03 — 14 biến)
 
-Nguyên tắc: chỉ giữ biến là **bí mật** hoặc **giới hạn thời gian / ngưỡng cần chỉnh khi demo** [ĐC]. Con số nghiệp vụ đã chốt (3 lần thử, bán kính 1 km, hệ số 1,3, 5 lần nhập OTP) và deadline gRPC là **hằng số trong code** (ghi ở mục "Hằng số" dưới). `.env.example` có sẵn giá trị dùng được: `cp .env.example .env` là chạy (`CLAUDE.md` Ràng buộc khi thi).
+Nguyên tắc: chỉ giữ biến là **bí mật** hoặc **giới hạn thời gian / ngưỡng cần chỉnh khi demo** [ĐC]. Con số nghiệp vụ đã chốt (3 lần thử, bán kính 1 km, hệ số 1,3, 5 lần nhập OTP) và deadline gRPC là **hằng số trong code** (ghi ở mục "Hằng số" dưới). `.env.example` (có trên Git) **để trống 5 biến bí mật**; mỗi máy tự sinh khóa trong `.env` (không commit) — ADR-022; biến không bí mật giữ giá trị mặc định.
 
 | # | Biến | Service dùng | Giá trị trong `.env.example` | Truy vết |
 |---|---|---|---|---|
-| 1 | `DB_PASSWORD` | 7 PostgreSQL + MongoDB và service tương ứng (user `cab`) | `cab123` | Mục 1.3 |
-| 2 | `JWT_SECRET` | auth (ký), gateway (kiểm tra) | `demo-jwt-secret-chi-dung-cho-may-demo-32b` (≥ 32 ký tự) | ADR-016; mục chấm 27 |
+| 1 | `DB_PASSWORD` | 7 PostgreSQL + MongoDB và service tương ứng (user `cab`) | **để trống** (bí mật) | Mục 1.3 |
+| 2 | `JWT_SECRET` | auth (ký), gateway (kiểm tra) | **để trống** (bí mật, ≥ 32 ký tự) | ADR-016; mục chấm 27 |
 | 3 | `JWT_TTL_SECONDS` | auth | `3600` | NFR06 |
-| 4 | `CUSTOMER_DATA_KEY` | customer | 32 byte base64 cố định, ghi chú "chỉ cho máy demo" | ADR-012; mục chấm 24 |
-| 5 | `DRIVER_DATA_KEY` | driver | 32 byte base64 cố định, khác biến 4 | ADR-012 |
-| 6 | `PAYMENT_CALLBACK_SECRET` | payment | `cab-secret` | ADR-014; header `X-Callback-Secret` của A32 |
+| 4 | `CUSTOMER_DATA_KEY` | customer | **để trống** (bí mật, 32 byte base64) | ADR-012; mục chấm 24 |
+| 5 | `DRIVER_DATA_KEY` | driver | **để trống** (bí mật, khác biến 4) | ADR-012 |
+| 6 | `PAYMENT_CALLBACK_SECRET` | payment | **để trống** (bí mật, mỗi máy tự đặt trong `.env`; ngắn để gõ tay mục 19) | ADR-014; header `X-Callback-Secret` của A32 |
 | 7 | `SIMULATION_MODE` | auth, payment, **mọi service có seed** | `true`; **`false` khi chạy thật** | ADR-014: OTP trong response, `simulate_result`, **chạy seed khi khởi động** |
 | 8 | `SEED_PASSWORD` | auth | `12345678` | Mục 14 |
 | 9 | `PAYMENT_TIMEOUT_SECONDS` | payment | `600` [ĐC 10 phút] | BRULE17 |

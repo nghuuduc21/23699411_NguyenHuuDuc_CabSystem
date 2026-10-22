@@ -52,7 +52,7 @@ Khóa: `CUSTOMER_DATA_KEY` (chỉ `customer-service`), `DRIVER_DATA_KEY` (chỉ 
 - Số giấy phép mã hóa nên **không UNIQUE** được: hồ sơ trùng số giấy phép do admin phát hiện khi duyệt (FR39).
 - Không tìm khách theo tên; không sắp xếp theo field đã mã hóa (không FR nào trong 30 mục cần).
 - Mất khóa là mất dữ liệu đã mã hóa; không có xoay khóa (bỏ byte phiên bản khóa).
-- Khóa mẫu trong `.env.example` nằm trên Git để chạy demo bằng một lệnh sao chép: dữ liệu demo không thật sự bí mật; chạy thật phải thay khóa.
+- Khóa chỉ nằm trong `.env` của máy, `.env.example` để trống (ADR-022). Đổi khóa hoặc mất `.env` thì dữ liệu cũ không giải mã được: phải `docker compose down -v` để seed lại.
 - Seed phải chạy bằng code của service (băm, mã hóa), không viết SQL tay được.
 
 ## Câu trả lời mẫu khi vấn đáp
