@@ -172,7 +172,7 @@ test('AC-CD-06 (mục 17, 400/401/403/404): TX3 → NOT_OWNER; 999 → 404; abc 
   });
 });
 
-test('AC-CD-07 (mục 17, A27): KH1, TX1, AD1 → 200 (CASH, 45000, history); KH2, TX3 → 403 NOT_OWNER; trips/999 → 404', async () => {
+test('AC-CD-07 (mục 17, A27): KH1, TX1, AD1 → 200 (CASH, 45000, history, driver {11, "Tài Xế 1", "59A-00001"}); KH2, TX3 → 403 NOT_OWNER; trips/999 → 404', async () => {
   const T = S.c1.trip_id;
   for (const tok of [kh1, tx1, ad1]) {
     const r = await trip(T, tok);
@@ -183,6 +183,8 @@ test('AC-CD-07 (mục 17, A27): KH1, TX1, AD1 → 200 (CASH, 45000, history); KH
     assert.equal(r.body.fare, 45000);
     assert.equal(r.body.customer_id, 1);
     assert.equal(r.body.driver_id, 11);
+    // Thêm 2026-10-21 (CD10): khối driver chụp lúc nhận chuyến.
+    assert.deepEqual(r.body.driver, { driver_id: 11, name: 'Tài Xế 1', plate: '59A-00001' });
     assert.deepEqual(r.body.from, [10.82, 106.68]);
     assert.equal(r.body.history.length, 5);
     assert.match(r.body.ended_at, /Z$/);
@@ -198,6 +200,44 @@ test('AC-CD-07 (mục 17, A27): KH1, TX1, AD1 → 200 (CASH, 45000, history); KH
   const l = await call('GET', '/trips', { token: kh1 });
   assert.equal(l.status, 404, 'A26 chưa đăng ký');
   assert.deepEqual(l.body, { error: 'ROUTE_NOT_FOUND' });
+});
+
+// ---------- A27 khối driver (CD10, thêm 2026-10-21) ----------
+test('AC-CD-20 (mục 12, FR14, A27): trips/5 [KH1], [TX6], [AD1] → 200 cùng driver {16, "Tài Xế 6", "59A-00006"} (không lat/lng/license); [KH2], [TX1] → 403 chỉ {"error":"NOT_OWNER"}; A14 drivers/16 [KH1] → 403 FORBIDDEN', async () => {
+  for (const tok of [kh1, tx6, ad1]) {
+    const r = await trip(5, tok);
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.body.driver, { driver_id: 16, name: 'Tài Xế 6', plate: '59A-00006' }, r.text);
+    for (const k of ['lat', 'lng', 'license']) assert.ok(!(k in r.body.driver), `driver có key ${k}`);
+  }
+  for (const tok of [kh2, tx1]) {
+    const r = await trip(5, tok);
+    assert.equal(r.status, 403, r.text);
+    assert.deepEqual(r.body, { error: 'NOT_OWNER' });
+    assert.ok(!/Tài Xế 6|59A-00006/.test(r.text), 'body 403 lộ tên / biển số');
+  }
+  const d = await call('GET', '/drivers/16', { token: kh1 });
+  assert.equal(d.status, 403, d.text);
+  assert.deepEqual(d.body, { error: 'FORBIDDEN' });
+});
+
+test('AC-CD-21 (mục 16 → A27, CD10): driver của chuyến C1 là bản chụp lúc nhận — đổi biển số TX1 ở driver-db, A27 vẫn 59A-00001; trips có driver_name, driver_plate; trip-service không gọi driver-service', async () => {
+  const T = S.c1.trip_id;
+  const since = new Date(Date.now() - 1000).toISOString();
+  const r1 = await trip(T, kh1);
+  assert.equal(r1.status, 200, r1.text);
+  assert.deepEqual(r1.body.driver, { driver_id: 11, name: 'Tài Xế 1', plate: '59A-00001' });
+  try {
+    driversDb("update vehicles set license_plate = '59A-11111' where driver_id = 11");
+    const r2 = await trip(T, kh1);
+    assert.equal(r2.status, 200, r2.text);
+    assert.deepEqual(r2.body.driver, { driver_id: 11, name: 'Tài Xế 1', plate: '59A-00001' }, 'phải là bản chụp, không đọc lại Driver');
+  } finally {
+    driversDb("update vehicles set license_plate = '59A-00001' where driver_id = 11");
+  }
+  assert.equal(tripsDb(`select driver_name || '|' || driver_plate from trips where trip_id = ${T}`), 'Tài Xế 1|59A-00001');
+  const logs = compose('logs', '--no-log-prefix', '--since', since, 'trip-service').stdout;
+  assert.ok(!/driver-service|:50053/.test(logs), `log trip-service có lời gọi tới driver-service: ${logs.slice(-1000)}`);
 });
 
 // ---------- Mục 18 trên seed T5 ----------

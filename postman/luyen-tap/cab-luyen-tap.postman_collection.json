@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "d8b26f08-b695-4bb7-83fd-3f8cd3fdb598",
+    "_postman_id": "d711b3a4-d631-48d7-b6d7-d2d95d398dc0",
     "name": "CAB - Luyện tập 30 mục chấm",
     "description": "Bộ luyện tập theo đúng thứ tự thi (docs/design/06-kich-ban-thi.md mục 3). Mỗi request có: cách gõ khi thi, kết quả, câu nói, code chạy. Hướng dẫn: docs/study/03-luyen-tap-postman.md. KHI THI KHÔNG DÙNG — gõ tay từ đầu.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -803,6 +803,37 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('HTTP 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.6 (tùy chọn) Khách xem tài xế của chuyến mình",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base}}/api/v1/trips/5",
+            "description": "**Gõ:** tab GET [KH1]: `trips/5`\n**Kết quả:** 200 có `\"driver\":{\"driver_id\":16,\"name\":\"Tài Xế 6\",\"plate\":\"59A-00006\"}`\n**Nói:** khách không xem `/drivers/{id}` được, nhưng biết ai tới đón qua chuyến của mình. Tên và biển số được **chụp vào chuyến lúc tài xế nhận** (S3 ReserveDriver trả về → S5 CreateTrip lưu) nên không cần lời gọi trip → driver; chuyến cũ giữ đúng biển số xe đã chạy.\n**Code:** `driver-service/src/domain/drivers.js` `reserveDriver` → `booking-service/src/domain/bookings.js` `acceptOffer` → `trip-service/src/domain/trips.js` `getTrip`; cột ở `trip-service/migrations/002_ten-bien-so-tai-xe.sql`.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('có khối driver', () => pm.expect(pm.response.json().driver.plate).to.eql('59A-00006'));"
                 ]
               }
             }

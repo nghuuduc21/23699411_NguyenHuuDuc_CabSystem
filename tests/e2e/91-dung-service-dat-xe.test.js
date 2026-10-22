@@ -114,14 +114,15 @@ test('AC-DX-12 (mục 15, 503): dừng payment-service → A19 → 503 SERVICE_U
   });
 });
 
-test('AC-DX-17 (mục 15, Q24, DX7): dừng driver-service → A19 → 201 SEARCHING; ≈ 5 s sau A21 NO_DRIVER_FOUND; Kafka K3', async (tt) => {
+test('AC-DX-17 (mục 15, Q24, DX7; đổi 2026-10-21): dừng driver-service → A19 → 201 SEARCHING; trong 8 s A21 NO_DRIVER_FOUND (S2 chờ hết deadline 1 s mỗi lần do waitForReady); Kafka K3', async (tt) => {
   const snap = await kafkaSnapshot('booking.no-driver-found');
   await withStopped('driver-service', async () => {
     const t0 = Date.now();
     const r = await book(kh1);
     assert.equal(r.status, 201, r.text);
     assert.equal(r.body.status, 'SEARCHING');
-    const s = await waitBookingStatus(r.body.booking_id, 'NO_DRIVER_FOUND', 8000);
+    // Chờ tối đa 8 s kể từ lúc gửi A19 (spec 14 AC-DX-17 đổi 2026-10-21).
+    const s = await waitBookingStatus(r.body.booking_id, 'NO_DRIVER_FOUND', Math.max(0, 8000 - (Date.now() - t0)));
     tt.diagnostic(`NO_DRIVER_FOUND sau ${Date.now() - t0} ms`);
     assert.equal(s, 'NO_DRIVER_FOUND');
     const g = await call('GET', `/bookings/${r.body.booking_id}`, { token: kh1 });

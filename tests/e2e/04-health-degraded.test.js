@@ -22,14 +22,17 @@ describe('AC-HT-06 (mục 6, 503): dừng rating-service', () => {
     );
   });
 
-  test('AC-HT-06: GET /health/services → 503 unhealthy, rating-service unhealthy, 7 service còn lại healthy', async (t) => {
+  test('AC-HT-06: GET /health/services → 503 unhealthy, rating-service unhealthy, 7 service còn lại healthy; trả lời ≤ 1,5 s', async (t) => {
     const since = new Date(Date.now() - 1000).toISOString();
     const stop = compose('stop', 'rating-service');
     assert.equal(stop.status, 0, stop.stderr);
 
     const started = Date.now();
     const r = await getJson(`${GATEWAY_URL}/health/services`);
-    t.diagnostic(`thời gian trả lời /health/services khi rating-service dừng: ${Date.now() - started} ms`);
+    const ms = Date.now() - started;
+    t.diagnostic(`thời gian trả lời /health/services khi rating-service dừng: ${ms} ms`);
+    // Đổi 2026-10-21 (H14): health có waitForReady + deadline 1 000 ms → trả sau ≈ 1 s, không quá 1,5 s.
+    assert.ok(ms <= 1500, `/health/services mất ${ms} ms (> 1 500 ms)`);
 
     assert.equal(r.status, 503);
     assert.equal(r.body.status, 'unhealthy');

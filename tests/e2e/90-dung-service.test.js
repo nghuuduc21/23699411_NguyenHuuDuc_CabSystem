@@ -87,3 +87,38 @@ test('AC-TX-18 (mục 22, Kafka dừng): A15 trên hồ sơ PENDING mới → 20
     assert.match(logs.stdout + logs.stderr, /EVENT_PUBLISH_FAILED/);
   });
 });
+
+test('AC-HT-18 (spec 00 H14, mục 6, 8, 503): dừng rating-service → A36 503 SERVICE_UNAVAILABLE sau 2,5–3,5 s (hết deadline Gateway); /health/services 503 ≤ 1,5 s; A05 vẫn 200; bật lại → A36 lần đầu 200', async (tt) => {
+  const tok = await tokenOf(SEED.KH1);
+  const s = compose('stop', 'rating-service');
+  assert.equal(s.status, 0, s.stderr);
+  let started = false;
+  try {
+    const t0 = Date.now();
+    const r = await call('GET', '/ratings?driver_id=11', { token: tok });
+    const ms = Date.now() - t0;
+    tt.diagnostic(`A36 khi rating-service dừng: ${r.status} sau ${ms} ms`);
+    assert.equal(r.status, 503, r.text);
+    assert.deepEqual(r.body, { error: 'SERVICE_UNAVAILABLE' });
+    assert.ok(ms >= 2500 && ms <= 3500, `A36 503 sau ${ms} ms (mong đợi 2 500–3 500 ms)`);
+    const t1 = Date.now();
+    const h = await fetch('http://localhost:3000/health/services');
+    const hms = Date.now() - t1;
+    tt.diagnostic(`/health/services khi rating-service dừng: ${h.status} sau ${hms} ms`);
+    assert.equal(h.status, 503);
+    assert.equal((await h.json()).services['rating-service'], 'unhealthy');
+    assert.ok(hms <= 1500, `/health/services mất ${hms} ms`);
+    const l = await call('POST', '/auth/login', { body: { email: SEED.KH1, password: SEED_PASSWORD } });
+    assert.equal(l.status, 200, 'NFR05: đăng nhập không phụ thuộc rating-service');
+    compose('start', 'rating-service');
+    started = true;
+    assert.equal(await waitHealthy('rating-service', 180_000), 'running healthy');
+    const again = await call('GET', '/ratings?driver_id=11', { token: tok });
+    assert.equal(again.status, 200, `A36 lần đầu sau khi bật lại: ${again.status} ${again.text}`);
+    assert.equal(again.body.driver_id, 11);
+  } finally {
+    if (!started) compose('start', 'rating-service');
+    await waitHealthy('rating-service', 180_000);
+    await waitFor(() => fetch('http://localhost:3000/health/services').then((r) => r.status), (x) => x === 200, { timeoutMs: 60_000 });
+  }
+});

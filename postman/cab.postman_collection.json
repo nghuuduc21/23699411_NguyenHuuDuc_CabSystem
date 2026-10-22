@@ -889,7 +889,7 @@
     },
     {
       "name": "12 Xem tài xế theo mã (có token)",
-      "description": "Mục chấm 12 (AC-TX-26, 27, 28, 40). Theo giảng viên 2026-10-14: hồ sơ tài xế theo mã chỉ admin (mọi mã) và chính tài xế (mã của mình). Tab GET [KH1]: customers/2 → drivers/11 (403 FORBIDDEN) → Duplicate Tab, dán token [AD1] (tab admin) → 200 đầy đủ → drivers/999 (404) → (tab admin đổi token [TX1]: drivers/11 200 → drivers/12 403 NOT_OWNER).",
+      "description": "Mục chấm 12 (AC-TX-26, 27, 28, 40). Theo giảng viên 2026-10-14: hồ sơ tài xế theo mã chỉ admin (mọi mã) và chính tài xế (mã của mình). Tab GET [KH1]: customers/2 → drivers/11 (403 FORBIDDEN) → Duplicate Tab, dán token [AD1] (tab admin) → 200 đầy đủ → drivers/999 (404) → (tab admin đổi token [TX1]: drivers/11 200 → drivers/12 403 NOT_OWNER). Khách vẫn thấy tài xế CỦA CHUYẾN MÌNH qua GET /api/v1/trips/{id} (khối driver chụp lúc nhận, 12.7).",
       "item": [
         {
           "name": "12.1 Tab GET: drivers/11 [KH1] → 403",
@@ -1133,6 +1133,48 @@
                 "v1",
                 "drivers",
                 "abc"
+              ]
+            }
+          }
+        },
+        {
+          "name": "12.7 (test-agent) [KH1] GET /api/v1/trips/5 → driver của chuyến (A27, AC-TX-42, AC-CD-20)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"AC-TX-42: status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"AC-TX-42: driver = {16, Tài Xế 6, 59A-00006} (bản chụp lúc nhận, CD10)\", () => pm.expect(pm.response.json().driver).to.eql({ driver_id: 16, name: \"Tài Xế 6\", plate: \"59A-00006\" }));",
+                  "pm.test(\"AC-CD-20: driver không có lat, lng, license\", () => pm.expect(pm.response.json().driver).to.not.have.any.keys(\"lat\", \"lng\", \"license\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/api/v1/trips/5",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                "5"
               ]
             }
           }

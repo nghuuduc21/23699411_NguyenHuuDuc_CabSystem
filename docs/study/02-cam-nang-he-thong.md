@@ -134,7 +134,7 @@ cab-system-project/
 | `src/domain/*.js` | **Logic nghiệp vụ thuần**: quy tắc, máy trạng thái, kiểm tra | Không biết gRPC hay SQL là gì; nhận dependency từ ngoài vào nên test không cần database |
 | `src/*-repo.js` | Câu SQL (luôn `$1`, `$2`), giao dịch, khóa dòng | Ví dụ `bookings-repo.js` |
 | `src/grpc/server.js` | Mở cổng gRPC (`GRPC_PORT`), đọc metadata (`x-account-id`, `x-role`, `x-request-id`), gọi domain, đổi lỗi domain thành gRPC status | Tầng giao tiếp, mỏng |
-| `src/clients.js` | Client gRPC sang service khác (chỉ booking và rating có) | Có deadline, thử lại một lần khi `UNAVAILABLE` |
+| `src/clients.js` | Client gRPC sang service khác (chỉ booking và rating có) | Có deadline 1 giây, bật `waitForReady` (chờ kênh nối xong mới gửi) |
 | `src/events.js` | Gửi event Kafka sau khi commit | Nối Kafka lúc gửi lần đầu, nên Kafka dừng không chặn service khởi động |
 | `src/consumer.js` | Nghe topic Kafka (booking, driver, payment, notification) | Tự thử lại khi Kafka chưa sẵn sàng |
 | `src/health.js`, `src/healthcheck.js` | Trả `SERVING` khi database trả lời; Docker gọi `healthcheck.js` | |
@@ -265,7 +265,7 @@ Lỗi hay gặp:
 | Hủy booking (chưa có tài xế) | A22 `PATCH /api/v1/bookings/1000` | `{"status":"CANCELED","reason":"doi y"}` | 200; phát K4 → Payment hoàn tiền nếu đã trả | `cancelBooking` |
 | Thanh toán online | A31 `POST /api/v1/payments/7/transactions` | Header `Idempotency-Key: k1`; body `{}` hoặc `{"simulate_result":"MANUAL"}` / `"FAILED"` | 200 `status`, `txn_id`, `attempts_left` | `payments.js` `payPayment` |
 | Xem thanh toán | A30 `GET /api/v1/payments/7` | | 200 kèm các thành phần cước, danh sách giao dịch | `getPayment` |
-| Xem chuyến | A27 `GET /api/v1/trips/5` | | 200 kèm `history` | `trip-service/src/domain/trips.js` `getTrip` |
+| Xem chuyến | A27 `GET /api/v1/trips/5` | | 200 kèm `history` và khối `"driver":{"driver_id":16,"name":"Tài Xế 6","plate":"59A-00006"}`: đây là cách khách biết ai tới đón | `trip-service/src/domain/trips.js` `getTrip` |
 | Hủy chuyến (trước khi đón) | A29 `PATCH /api/v1/trips/5` | `{"status":"CANCELED","reason":"ban viec"}` | 200; phát K5 → hoàn tiền, trả tài xế về rảnh, báo hai bên | `cancelTrip` |
 | Đánh giá chuyến đã hoàn thành | A34 `POST /api/v1/ratings` | `{"trip_id":4,"score":5,"comment":"tot"}` | 201 kèm `driver_avg`, `driver_count` | `rating-service/src/domain/ratings.js` `createRating` |
 | Xem đánh giá | A35 `GET /api/v1/ratings?trip_id=3`, A36 `GET /api/v1/ratings?driver_id=11` | | 200 | `getRatingByTrip`, `getDriverRating` |
@@ -398,7 +398,8 @@ Service **tin** metadata này vì chỉ Gateway gọi được vào service: ser
 | S7 | rating → trip | `GetTripForRating` | Khách đánh giá | Phải biết chuyến có thật, của khách, đã xong | 503, không lưu đánh giá |
 
 - Lời gọi giữa service mang `x-role: system`. Thiếu `x-role` → `IDENTITY_MISSING`; có `x-role` nhưng sai → `FORBIDDEN`.
-- Mọi lời gọi có deadline 1 giây. Gặp `UNAVAILABLE` thì thử lại đúng một lần, và chỉ với rpc chạy lặp vẫn an toàn (lỗi L1, `booking-service/src/clients.js`).
+- Mọi lời gọi gRPC (Gateway → service và service → service) bật **`waitForReady`** (`new grpc.Metadata({ waitForReady: true })`): kênh vừa mất kết nối (service vừa khởi động lại, Docker đổi IP) thì **chờ nối lại rồi mới gửi**, trong giới hạn deadline (Gateway 3 giây, health 1 giây, service → service 1 giây). Đánh đổi: service chết hẳn thì 503 đến sau khi hết deadline thay vì ngay (spec 00 H14, ADR-020).
+- **S3 `ReserveDriver` trả thêm họ tên và biển số**; booking chép sang **S5 `CreateTrip`**, trip lưu vào cột `driver_name`, `driver_plate` (**chụp lúc nhận chuyến**, DX25). Vì vậy `GET /trips/{mã}` có khối `driver` mà không phải gọi driver-service, và **không có lời gọi trip → driver** (S6 đã bỏ). Giữa các service chỉ còn 6 rpc: S2, S3 (giữ, nhả), S4, S5, S7.
 
 ### 8.3 Kafka (bất đồng bộ)
 
@@ -581,7 +582,7 @@ Tất cả trong **một giao dịch** của booking-service:
 | customer | PostgreSQL `customer` | `customer_profiles` (`full_name_enc`, `date_of_birth_enc` là bytea mã hóa; `phone` rõ, bắt buộc) | PK = `account_id` |
 | driver | PostgreSQL `driver` | `drivers` (`license_number_enc`, `approval_status`, `availability`, `current_lat/lng`), `vehicles`, `vehicle_types` | Tìm trong 1 km bằng khung chữ nhật rồi Haversine (ADR-011, không PostGIS) |
 | booking | PostgreSQL `booking` | `bookings`, `driver_offers`, `driver_assignments` | |
-| trip | PostgreSQL `trip` | `trips`, `trip_status_history` | Bản chụp tọa độ, phương thức, cước từ booking |
+| trip | PostgreSQL `trip` | `trips`, `trip_status_history` | Bản chụp tọa độ, phương thức, cước từ booking; họ tên và biển số tài xế lúc nhận chuyến (`driver_name`, `driver_plate`, migration 002) |
 | payment | PostgreSQL `payment` | `fare_rates`, `fares`, `payments`, `payment_transactions`, `idempotency_keys` | Tiền là `integer` đồng |
 | rating | PostgreSQL `rating` | `ratings` (`trip_id` UNIQUE, score 1–5), `driver_ratings` | |
 | notification | MongoDB `notification` | collection `notifications` | UNIQUE (`event_id`, `recipient_id`) |
@@ -636,7 +637,7 @@ Tất cả trong **một giao dịch** của booking-service:
 | Tình huống | Hệ thống phản ứng | Vì sao | Kiểm tra / khắc phục |
 |---|---|---|---|
 | Một service dừng (ví dụ `rating-service`) | API của service đó → 503; mọi API khác vẫn chạy; `/health/services` báo service đó `unhealthy`, tổng `unhealthy` (503) | Database-per-service và gRPC có deadline, nên lỗi không lan | `docker compose start rating-service`; sau vài giây `/health/services` về `healthy` |
-| `payment-service` dừng lúc khách đặt xe | A19 → 503, không tạo booking | S4 đồng bộ: trả trước cần mã thanh toán ngay (đánh đổi so với NFR05) | Bật lại; lời gọi đầu sau khi bật đã thành công nhờ thử lại một lần (L1) |
+| `payment-service` dừng lúc khách đặt xe | A19 → 503, không tạo booking | S4 đồng bộ: trả trước cần mã thanh toán ngay (đánh đổi so với NFR05) | Bật lại; lời gọi đầu sau khi bật thành công nhờ `waitForReady` |
 | `payment-service` dừng lúc khách hủy chuyến | Hủy vẫn 200; hoàn tiền xảy ra khi Payment chạy lại | K5 nằm trong Kafka chờ consumer group `payment-service` | Sau khi bật lại mất khoảng 4–5 giây để vào lại consumer group |
 | `trip-service` dừng lúc tài xế nhận | 503, tài xế được nhả về `ONLINE`, lời mời vẫn `PENDING` | Một lần nhận chuyến mà không có Trip là vô nghĩa | Bật lại rồi bấm nhận lại |
 | `driver-service` dừng lúc ghép | Dispatcher thử S2 3 lần rồi `NO_DRIVER_FOUND` → K3 → hoàn tiền | Booking không treo mãi | — |

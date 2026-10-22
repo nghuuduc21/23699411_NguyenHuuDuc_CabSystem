@@ -407,17 +407,19 @@ const tripRpc = (request, metadata = { 'x-role': 'system' }) => grpcInternal({
   target: 'trip-service:50055', proto: 'trip.proto', pkg: 'cab.trip.v1', service: 'TripService', method: 'CreateTrip', request, metadata,
 });
 
-test('AC-DX-23 (mục 16, D8, gRPC nội bộ): ReserveDriver(11, B) ×2 → BUSY; (11, B2) → DRIVER_NOT_AVAILABLE; Release(11, B2) false; Release(11, B) true → ONLINE; thiếu x-role / customer', () => {
+test('AC-DX-23 (mục 16, D8, gRPC nội bộ): ReserveDriver(11, B) ×2 → BUSY kèm driver_name "Tài Xế 1", plate "59A-00001"; (11, B2) → DRIVER_NOT_AVAILABLE; Release(11, B2) false; Release(11, B) true → ONLINE; thiếu x-role / customer', () => {
   // TX1 đang BUSY cho booking của AC-DX-19 (chưa có spec 17 để hoàn thành chuyến) → nhả trước bằng chính rpc.
   const pre = driverRpc('ReleaseDriver', { driver_id: 11, booking_id: S.A.booking_id });
   assert.deepEqual(pre, { response: { driver_id: 11, released: true } });
   assert.equal(driversDb('select availability from drivers where driver_id = 11'), 'ONLINE');
   const B = 900000 + Math.floor(Math.random() * 1000);
   const B2 = B + 1;
+  // Đổi 2026-10-21 (DX25): cả hai lần trả thêm driver_name, plate (booking chép sang CreateTrip).
+  const busy = { driver_id: 11, booking_id: B, status: 'BUSY', driver_name: 'Tài Xế 1', plate: '59A-00001' };
   const r1 = driverRpc('ReserveDriver', { driver_id: 11, booking_id: B });
-  assert.deepEqual(r1, { response: { driver_id: 11, booking_id: B, status: 'BUSY' } });
+  assert.deepEqual(r1, { response: busy });
   const r2 = driverRpc('ReserveDriver', { driver_id: 11, booking_id: B });
-  assert.deepEqual(r2, { response: { driver_id: 11, booking_id: B, status: 'BUSY' } });
+  assert.deepEqual(r2, { response: busy });
   const r3 = driverRpc('ReserveDriver', { driver_id: 11, booking_id: B2 });
   assert.equal(r3.error?.status, 'FAILED_PRECONDITION', JSON.stringify(r3));
   assert.equal(r3.error.details, 'DRIVER_NOT_AVAILABLE');
@@ -438,11 +440,12 @@ test('AC-DX-23 (mục 16, D8, gRPC nội bộ): ReserveDriver(11, B) ×2 → BUS
   assert.equal(driversDb('select availability from drivers where driver_id = 11'), 'ONLINE');
 });
 
-test('AC-DX-24 (mục 16, T1, gRPC nội bộ): CreateTrip hai lần cùng booking, cùng tài xế → cùng trip_id, created true rồi false, Kafka một message; tài xế khác → BOOKING_ALREADY_ASSIGNED; không x-role → IDENTITY_MISSING, x-role sai → FORBIDDEN (DX22)', async () => {
+test('AC-DX-24 (mục 16, T1, gRPC nội bộ): CreateTrip hai lần cùng booking, cùng tài xế → cùng trip_id, created true rồi false, Kafka một message; tài xế khác → BOOKING_ALREADY_ASSIGNED; không x-role → IDENTITY_MISSING, x-role sai → FORBIDDEN (DX22); thiếu / rỗng driver_name, driver_plate → INVALID_INPUT; trips lưu đúng tên, biển số (DX25)', async () => {
   const B = 800000 + Math.floor(Math.random() * 1000);
   const req = {
     booking_id: B, customer_id: 1, driver_id: 11, vehicle_type: 'CAR_4', pickup_lat: P0[0], pickup_lng: P0[1],
     destination_lat: D0[0], destination_lng: D0[1], payment_method: 'CASH', fare_amount: 45000,
+    driver_name: 'Tài Xế 1', driver_plate: '59A-00001',
   };
   const snapK5 = await kafkaSnapshot('trip.status-changed');
   try {
@@ -466,8 +469,25 @@ test('AC-DX-24 (mục 16, T1, gRPC nội bộ): CreateTrip hai lần cùng booki
     assert.deepEqual(d.error && [d.error.status, d.error.details], ['UNAUTHENTICATED', 'IDENTITY_MISSING']);
     const f = tripRpc(req, { 'x-role': 'customer', 'x-account-id': '1' });
     assert.deepEqual(f.error && [f.error.status, f.error.details], ['PERMISSION_DENIED', 'FORBIDDEN']);
+    // Thêm 2026-10-21 (DX25): dòng trips lưu đúng họ tên, biển số đã gửi.
+    assert.equal(tripsDb(`select driver_name || '|' || driver_plate from trips where booking_id = ${B}`), 'Tài Xế 1|59A-00001');
+    // Thiếu / rỗng driver_name, driver_plate (booking mới) → INVALID_ARGUMENT INVALID_INPUT, không tạo Trip.
+    const B3 = B + 500;
+    const { driver_name: _n, driver_plate: _p, ...noSnap } = req;
+    const bad = [
+      { ...noSnap, booking_id: B3 },
+      { ...req, booking_id: B3, driver_name: '' },
+      { ...req, booking_id: B3, driver_plate: '' },
+      { ...req, booking_id: B3, driver_name: '   ' },
+      { ...noSnap, booking_id: B3, driver_name: 'Tài Xế 1' },
+    ];
+    bad.forEach((x, i) => {
+      const g = tripRpc(x);
+      assert.deepEqual(g.error && [g.error.status, g.error.details], ['INVALID_ARGUMENT', 'INVALID_INPUT'], `#${i} ${JSON.stringify(g)}`);
+    });
+    assert.equal(tripsDb(`select count(*) from trips where booking_id = ${B3}`), '0');
   } finally {
-    tripsDb(`delete from trip_status_history where trip_id in (select trip_id from trips where booking_id = ${B}); delete from trips where booking_id = ${B}`);
+    tripsDb(`delete from trip_status_history where trip_id in (select trip_id from trips where booking_id in (${B}, ${B + 500})); delete from trips where booking_id in (${B}, ${B + 500})`);
   }
 });
 

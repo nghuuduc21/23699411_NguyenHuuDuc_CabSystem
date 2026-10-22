@@ -78,13 +78,10 @@ test('AC-TX-28 (mục 12, 404/400/401): AD1 /drivers/999 → 404; /drivers/17 (c
   assert.deepEqual(e.body, { error: 'TOKEN_MISSING' });
 });
 
-test('AC-TX-42 (mục 12, FR14): KH1 GET /trips/5 (trip seed KH1–TX6) → 200 có driver.name, driver.plate của TX6', async () => {
+test('AC-TX-42 (mục 12, FR14; khớp lại 2026-10-21): KH1 GET /trips/5 (trip seed KH1–TX6) → 200 có "driver": {16, "Tài Xế 6", "59A-00006"}', async () => {
   const r = await call('GET', '/trips/5', { token: kh1 });
   assert.equal(r.status, 200, r.text);
-  assert.ok(r.body.driver, `không có driver: ${r.text}`);
-  assert.equal(r.body.driver.name, 'Tài Xế 6');
-  assert.equal(typeof r.body.driver.plate, 'string');
-  assert.equal(r.body.driver.plate, psql('driver-db', 'driver', 'select license_plate from vehicles where driver_id = 16'));
+  assert.deepEqual(r.body.driver, { driver_id: 16, name: 'Tài Xế 6', plate: '59A-00006' }, r.text);
 });
 
 // ---------- Mục 13 ----------

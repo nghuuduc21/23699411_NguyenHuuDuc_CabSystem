@@ -2,7 +2,8 @@
 //   AC-CD-08 (trip dừng → 503), AC-CD-19 (payment dừng, hủy vẫn 200, hoàn khi chạy lại), AC-HT-06 (driver dừng,
 //   chuyến vẫn hoàn thành, tài xế rảnh khi chạy lại), AC-TB-05, AC-TB-06 (notification dừng / restart),
 //   AC-DG-07 (trip dừng → đánh giá 503, không lưu), AC-DG-13 (restart rating không nhân đôi seed),
-//   AC-HT-15 (spec 00: restart / dừng-bật đổi IP → kênh gRPC không nối nhầm service).
+//   AC-HT-15 (spec 00: 8 lần restart / dừng-bật đổi IP → kênh gRPC không nối nhầm, lời gọi đầu không 503 — H14),
+//   AC-CD-22 (migration 002 trên trip-db "cũ").
 // Chạy bằng `npm run test:dung-service`. Mỗi test bật lại container ở `finally` và chờ healthy + /health/services 200.
 // "≈ 3 s sau khi chạy lại" đo từ lúc container healthy; test chờ tối đa 5 s và ghi thời gian thực tế.
 import { test, before, after } from 'node:test';
@@ -166,31 +167,83 @@ test('AC-DG-13 (mục 20, seed): restart rating-service → số dòng ratings v
   assert.deepEqual(snap(), before);
 });
 
-test('AC-HT-15 (spec 00, mục 6, ADR-020): restart customer + rating; rồi dừng cả hai và bật NGƯỢC thứ tự (đổi IP) → /health/services 8 healthy; A09, A36 trả đúng dữ liệu ngay lần gọi đầu', async () => {
-  const check = async (label) => {
-    const h = await fetch('http://localhost:3000/health/services').then((x) => x.json());
-    assert.equal(h.status, 'healthy', `${label}: ${JSON.stringify(h)}`);
-    assert.ok(Object.values(h.services).every((s) => s === 'healthy'), `${label}: ${JSON.stringify(h.services)}`);
-    const c = await call('GET', '/customers/1', { token: kh1 });
-    assert.equal(c.status, 200, `${label} A09: ${c.status} ${c.text}`);
-    assert.equal(c.body.customer_id, 1);
-    assert.equal(c.body.name, 'Nguyễn Văn An');
-    const r = await call('GET', '/ratings?driver_id=11', { token: kh1 });
-    assert.equal(r.status, 200, `${label} A36: ${r.status} ${r.text}`);
-    assert.equal(r.body.driver_id, 11);
-    assert.ok(r.body.count >= 1);
-  };
+// Đổi 2026-10-21 (spec 00 AC-HT-15, L2 của báo cáo 2026-10-21): lặp chuỗi restart → gọi ≥ 8 lần. Lần lẻ: `restart`
+// năm service; lần chẵn: dừng cả năm rồi bật NGƯỢC thứ tự để Docker cấp lại IP đổi chỗ cho nhau. Sau mỗi lần, MỌI API
+// phải 200 ngay lần gọi đầu (cho phép chậm hơn, ≤ 3 s, vì waitForReady chờ kênh nối lại).
+test('AC-HT-15 (spec 00, mục 6, ADR-020, H14): 8 lần restart / dừng-bật ngược customer, booking, payment, trip, rating → /health/services 8 healthy; A09, trips/5, bookings/5, payments/5, A36 đều 200 ngay lần gọi đầu, ≤ 3 s', async (tt) => {
+  const SVCS = ['customer-service', 'booking-service', 'payment-service', 'trip-service', 'rating-service'];
   const ip = (n) => compose('exec', '-T', n, 'hostname', '-i').stdout.trim();
-  const before = [ip('customer-service'), ip('rating-service')];
-  assert.equal(compose('restart', 'customer-service', 'rating-service').status, 0);
-  await healthyAgain('customer-service');
-  await healthyAgain('rating-service');
-  await check('sau restart');
-  assert.equal(compose('stop', 'customer-service', 'rating-service').status, 0);
-  assert.equal(compose('start', 'rating-service').status, 0);
-  assert.equal(compose('start', 'customer-service').status, 0);
-  await healthyAgain('rating-service');
-  await healthyAgain('customer-service');
-  const after = [ip('customer-service'), ip('rating-service')];
-  await check(`sau dừng / bật ngược (IP ${before.join(' ')} → ${after.join(' ')})`);
+  const calls = [
+    ['A09 customers/1', '/customers/1', (b) => b.customer_id === 1 && b.name === 'Nguyễn Văn An'],
+    ['A27 trips/5', '/trips/5', (b) => b.trip_id === 5],
+    ['A21 bookings/5', '/bookings/5', (b) => b.booking_id === 5],
+    ['payments/5', '/payments/5', (b) => b.payment_id === 5],
+    ['A36 ratings?driver_id=11', '/ratings?driver_id=11', (b) => b.driver_id === 11 && b.count >= 1],
+  ];
+  const failures = [];
+  for (let round = 1; round <= 8; round += 1) {
+    const before = SVCS.map(ip);
+    if (round % 2 === 1) {
+      assert.equal(compose('restart', ...SVCS).status, 0);
+    } else {
+      assert.equal(compose('stop', ...SVCS).status, 0);
+      for (const n of [...SVCS].reverse()) assert.equal(compose('start', n).status, 0);
+    }
+    for (const n of SVCS) assert.equal(await waitHealthy(n, 180_000), 'running healthy', `${n} lần ${round}`);
+    const h = await fetch('http://localhost:3000/health/services').then(async (x) => ({ status: x.status, body: await x.json() }));
+    const after = SVCS.map(ip);
+    const line = [`lần ${round} (${round % 2 ? 'restart' : 'dừng / bật ngược'}; IP ${before.join(' ')} → ${after.join(' ')}): health ${h.status}`];
+    if (h.status !== 200 || !Object.values(h.body.services).every((x) => x === 'healthy')) failures.push(`lần ${round} health ${JSON.stringify(h.body)}`);
+    for (const [label, url, ok] of calls) {
+      const t0 = Date.now();
+      const r = await call('GET', url, { token: kh1 });
+      const ms = Date.now() - t0;
+      line.push(`${label} ${r.status} ${ms} ms`);
+      if (r.status !== 200 || !ok(r.body)) failures.push(`lần ${round} ${label}: ${r.status} ${r.text} (${ms} ms)`);
+      else if (ms > 3000) failures.push(`lần ${round} ${label}: 200 nhưng ${ms} ms (> 3 s)`);
+    }
+    tt.diagnostic(line.join(' | '));
+  }
+  assert.deepEqual(failures, []);
+});
+
+// Mới 2026-10-21 (spec 17-18 AC-CD-22): migration 002 trên database "cũ". Giả lập database chạy từ trước migration 002:
+// bỏ hai cột, hai ràng buộc và dòng 002 trong schema_migrations (trip-db luôn được đặt lại về seed sau đợt test).
+test('AC-CD-22 (migration 002): trip-db chưa có driver_name / driver_plate → khởi động trip-service chạy 002: hai cột text nullable, hai ràng buộc; T3/T4/T5 điền tên, biển số; chuyến cũ chỉ có driver_id ở A27; khởi động lại lần hai không lỗi, không ghi đè', async () => {
+  const tdb = (sql) => psql('trip-db', 'trip', sql);
+  const old = await newTrip(kh1, tx1);
+  try {
+    tdb('ALTER TABLE trips DROP CONSTRAINT trips_driver_name_len, DROP CONSTRAINT trips_driver_plate_format, DROP COLUMN driver_name, DROP COLUMN driver_plate; '
+      + "DELETE FROM schema_migrations WHERE version = '002_ten-bien-so-tai-xe.sql'");
+    const since1 = new Date(Date.now() - 1000).toISOString();
+    assert.equal(compose('restart', 'trip-service').status, 0);
+    await healthyAgain('trip-service');
+    const log1 = compose('logs', '--no-log-prefix', '--since', since1, 'trip-service').stdout;
+    assert.match(log1, /002_ten-bien-so-tai-xe\.sql/, 'log khởi động phải ghi đã chạy 002');
+    assert.equal(
+      tdb("select string_agg(column_name || ':' || data_type || ':' || is_nullable, ',' order by column_name) from information_schema.columns where table_name = 'trips' and column_name in ('driver_name', 'driver_plate')"),
+      'driver_name:text:YES,driver_plate:text:YES',
+    );
+    assert.equal(
+      tdb("select string_agg(conname, ',' order by conname) from pg_constraint where conname in ('trips_driver_name_len', 'trips_driver_plate_format')"),
+      'trips_driver_name_len,trips_driver_plate_format',
+    );
+    const seedRows = () => tdb("select string_agg(trip_id || '|' || driver_name || '|' || driver_plate, ',' order by trip_id) from trips where trip_id in (3, 4, 5)");
+    assert.equal(seedRows(), '3|Tài Xế 1|59A-00001,4|Tài Xế 3|59A-00003,5|Tài Xế 6|59A-00006');
+    const a = await call('GET', `/trips/${old.trip_id}`, { token: kh1 });
+    assert.equal(a.status, 200, a.text);
+    assert.deepEqual(a.body.driver, { driver_id: 11 }, 'chuyến tạo trước migration: driver chỉ có driver_id');
+    // Lần hai: không chạy lại 002, không lỗi, không ghi đè.
+    const since2 = new Date(Date.now() - 1000).toISOString();
+    assert.equal(compose('restart', 'trip-service').status, 0);
+    await healthyAgain('trip-service');
+    const log2 = compose('logs', '--no-log-prefix', '--since', since2, 'trip-service').stdout;
+    assert.ok(!/"level":"error"/.test(log2), `log lần hai có lỗi: ${log2.slice(-1500)}`);
+    assert.ok(!/đã chạy","file":"002/.test(log2), 'lần hai không được chạy lại 002');
+    assert.equal(tdb("select count(*) from schema_migrations where version = '002_ten-bien-so-tai-xe.sql'"), '1');
+    assert.equal(seedRows(), '3|Tài Xế 1|59A-00001,4|Tài Xế 3|59A-00003,5|Tài Xế 6|59A-00006');
+  } finally {
+    await advance(old.trip_id, tx1, 'ACCEPTED', 'COMPLETED').catch(() => {});
+    await waitDriverFree(11, 3000);
+  }
 });

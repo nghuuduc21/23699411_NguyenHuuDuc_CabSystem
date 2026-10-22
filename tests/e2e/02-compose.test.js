@@ -65,7 +65,7 @@ for (const port of [50051, 50058]) {
   });
 }
 
-test('AC-HT-14 (mục 5, 6, ADR-020): mỗi service log "gRPC đang nghe" đúng cổng riêng; biến *_GRPC_ADDR ở gateway, booking, trip, rating đúng <tên>:<cổng>', () => {
+test('AC-HT-14 (mục 5, 6, ADR-020; đổi 2026-10-21): mỗi service log "gRPC đang nghe" đúng cổng riêng; *_GRPC_ADDR ở gateway, booking, rating đúng <tên>:<cổng>; trip KHÔNG có *_GRPC_ADDR (S6 bỏ); /health/services 8 healthy', async () => {
   const portOf = Object.fromEntries(GRPC_PORTS.map(([p, n]) => [n, p]));
   for (const [port, svc] of GRPC_PORTS) {
     const r = compose('logs', '--no-log-prefix', svc);
@@ -90,6 +90,11 @@ test('AC-HT-14 (mục 5, 6, ADR-020): mỗi service log "gRPC đang nghe" đúng
   assert.deepEqual(envOf('booking-service'), {
     DRIVER_GRPC_ADDR: addr('driver-service'), TRIP_GRPC_ADDR: addr('trip-service'), PAYMENT_GRPC_ADDR: addr('payment-service'),
   });
-  assert.deepEqual(envOf('trip-service'), { DRIVER_GRPC_ADDR: addr('driver-service') });
+  // Đổi 2026-10-21 (CD10): trip-service không gọi service nào (S6 bỏ) → không có biến *_GRPC_ADDR nào.
+  assert.deepEqual(envOf('trip-service'), {});
   assert.deepEqual(envOf('rating-service'), { TRIP_GRPC_ADDR: addr('trip-service') });
+  const h = await fetch('http://localhost:3000/health/services').then(async (r) => ({ status: r.status, body: await r.json() }));
+  assert.equal(h.status, 200, JSON.stringify(h.body));
+  assert.deepEqual(Object.keys(h.body.services).sort(), [...GRPC_PORTS.map(([, n]) => n)].sort());
+  assert.ok(Object.values(h.body.services).every((x) => x === 'healthy'), JSON.stringify(h.body.services));
 });

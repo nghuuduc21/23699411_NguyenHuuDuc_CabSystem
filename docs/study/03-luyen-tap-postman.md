@@ -2,7 +2,7 @@
 
 > Viết 2026-10-21. Đi kèm hai file trong `postman/luyen-tap/`:
 > - `cab-luyen-tap.postman_environment.json`: environment "CAB - Luyện tập", tự lưu token và mã;
-> - `cab-luyen-tap.postman_collection.json`: collection "CAB - Luyện tập 30 mục chấm", 77 request xếp **đúng thứ tự thi**.
+> - `cab-luyen-tap.postman_collection.json`: collection "CAB - Luyện tập 30 mục chấm", 78 request xếp **đúng thứ tự thi**.
 >
 > Mỗi request có phần mô tả (bảng bên phải Postman, nút 📄 *Documentation*) ghi bốn ý: **cách gõ khi thi, kết quả, câu nói, code chạy**.
 > Kịch bản gốc: `docs/design/06-kich-ban-thi.md`. Hiểu sâu code: `docs/study/02-cam-nang-he-thong.md`.
@@ -77,7 +77,7 @@ Thứ tự thư mục trong collection chính là thứ tự thi (06 mục 3). B
 | 4 | 9 | `POST /api/v1/auth/register` `{"email","password"}` → sửa thành `login` | 201 → 200 token | `auth-service/src/domain/auth.js` |
 | 5 | 10 | `POST /api/v1/auth/login`: KH1 email, admin email, TX1 phone | 3 token, 3 role | `auth.js` `login`, `domain/token.js` |
 | 6 | 11 | `GET /api/v1/customers/1` → `/customers/2` | 200 có `phone` → 403 | `customer-service/src/domain/customers.js` |
-| 7 | 12 | `GET /api/v1/drivers/11` [KH1] → [AD1] → `/drivers/999` | 403 → 200 → 404 | `routes.js` A14, `driver-service/src/domain/drivers.js` |
+| 7 | 12 | `GET /api/v1/drivers/11` [KH1] → [AD1] → `/drivers/999`; (tùy chọn) [KH1] `GET /trips/5` | 403 → 200 → 404; khối `driver` của chuyến | `routes.js` A14, `driver-service/src/domain/drivers.js` |
 | 8 | 13 | `GET /api/v1/drivers?lat=10.82&lng=106.68&limit=2` → `&page=2` | TX1, TX2 → TX3, TX4 | `drivers.js` `findNearbyDrivers` |
 | 9 | 14 | `GET /api/v1/customers/1/bookings?limit=2` → `&page=2` → `customers/2/…` | 7, 6 → 5, 4 → 403 | `booking-service/src/domain/bookings.js` `listBookings` |
 | 10 | 15 | `POST /api/v1/bookings` `{"from":[10.82,106.68],"to":[10.83,106.69]}` → [TX1] `GET /offers` | 201 `fare` 45000 → Offer PENDING | `bookings.js` `createBooking`, `dispatcher.js` |
