@@ -279,10 +279,10 @@ Mọi request của người dùng đều đi qua **QT20** (Gateway kiểm tra t
 
 | Thành phần | Nội dung |
 |---|---|
-| **Procedures** | 1. Tài xế cập nhật trạng thái **đúng thứ tự**: đã nhận → đã đến điểm đón → đã đón khách → đang đi → hoàn thành. Sai thứ tự → 409 (mục 17). <br> 2. Mỗi lần đổi trạng thái: Trip ghi lịch sử, phát K5; Notification báo khách. <br> 3. Khách xem chuyến: Trip trả thông tin chuyến, gọi Driver lấy tên, biển số, vị trí hiện tại của tài xế (S6). <br> 4. Khi hoàn thành: Driver nghe K5, trả tài xế về trạng thái rảnh; Payment nghe K5, ghi nhận tiền mặt nếu có (QT15). |
+| **Procedures** | 1. Tài xế cập nhật trạng thái **đúng thứ tự**: đã nhận → đã đến điểm đón → đã đón khách → đang đi → hoàn thành. Sai thứ tự → 409 (mục 17). <br> 2. Mỗi lần đổi trạng thái: Trip ghi lịch sử, phát K5; Notification báo khách. <br> 3. Khách xem chuyến: Trip trả thông tin chuyến kèm tên, biển số tài xế đã **chụp lúc nhận chuyến** (S3 → S5), không gọi Driver (sửa 2026-10-21, S6 bỏ; vị trí sống ngoài phiếu). <br> 4. Khi hoàn thành: Driver nghe K5, trả tài xế về trạng thái rảnh; Payment nghe K5, ghi nhận tiền mặt nếu có (QT15). |
 | **People** | P2 (cập nhật); P1 (theo dõi) |
 | **Hardware** | H2, H1 · H4 · H5 trip-db, driver-db · H7 |
-| **Software** | SW2 A28 `PATCH /api/v1/trips/{id}` (`status` = `ARRIVED` … `COMPLETED`), A27 `GET /api/v1/trips/{id}` → SW7 `UpdateTripStatus`, `GetTrip` → SW5 `GetDriverSummary` (S6) · SW13 K5 → SW5, SW8, SW9 |
+| **Software** | SW2 A28 `PATCH /api/v1/trips/{id}` (`status` = `ARRIVED` … `COMPLETED`), A27 `GET /api/v1/trips/{id}` → SW7 `UpdateTripStatus`, `GetTrip` (đọc `trips.driver_name`, `driver_plate`) · SW13 K5 → SW5, SW8, SW9 |
 | **Data** | Sửa D7 `trips` · Tạo D7 `trip_status_history`, D13 (K5) · Sửa D4 khi hoàn thành |
 
 ### QT14 — Hủy booking / hủy chuyến

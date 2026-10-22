@@ -130,7 +130,7 @@ flowchart LR
   BK -- R16: đã hủy / không tìm được tài xế --> PAY
   BK -- R5: tạo chuyến khi tài xế nhận --> TRIP
   TRIP -- R6: tài xế rảnh lại --> DRV
-  TRIP -- R7: thông tin tài xế, xe, vị trí --> DRV
+  TRIP -. R7: tên, biển số tài xế (chụp lúc nhận qua R4 → R5) .-> DRV
   TRIP -- R8: chuyến hoàn thành / bị hủy --> PAY
   RAT -- R10: chuyến hoàn thành chưa, của ai --> TRIP
   BK -- R12 --> NOTI
@@ -147,7 +147,7 @@ flowchart LR
 | R4 | Booking | Tài xế vừa bấm nhận **còn rảnh không**; nếu còn thì giữ chỗ | BRULE01, FR07, NFR14 | Có: chưa chắc tài xế còn rảnh thì không được xác nhận |
 | R5 | Booking | Trip tạo chuyến và trả mã chuyến | FR07, FR11, FR12; mục 16 → 17 | **Có** — đã chốt: nhận chuyến mà không có Trip là vô nghĩa (ADR-008) |
 | R6 | Driver | Chuyến của tài xế đã kết thúc hoặc bị hủy → rảnh lại | BRULE01, FR41 | Không: Trip không được kẹt vì Driver |
-| R7 | Trip | Tên tài xế, biển số, loại xe, vị trí hiện tại | FR13–FR15; UC10, UC22 | Có: cần dữ liệu để trả lời khách ngay |
+| R7 | Trip | Tên tài xế, biển số, loại xe, vị trí hiện tại | FR13–FR15; UC10, UC22 | **Sửa 2026-10-21:** tên, biển số là dữ liệu của chuyến **lúc nhận** → Driver trả kèm khi Booking giữ tài xế (R4), Booking chuyển vào R5, Trip tự lưu; xem chuyến **không** hỏi Driver (02 R7, spec 17-18 CD10). Vị trí hiện tại (FR15) ngoài phiếu, không làm |
 | R8 | Payment | Chuyến hoàn thành (ghi nhận tiền mặt) hoặc bị hủy (hoàn tiền) | FR17, FR40, BRULE14, BRULE15 | Không: NFR05 — Payment lỗi không được chặn việc kết thúc hay hủy chuyến |
 | R9 | Trip | Chuyến đã được thanh toán hay chưa | — | **Không nối**: không quy tắc nào của Trip phụ thuộc trạng thái tiền; "COMPLETED" ở mục 19 là của Payment |
 | R10 | Rating | Chuyến có hoàn thành không, của khách nào, tài xế nào | BRULE11, FR25; mục 20 | Có: chưa biết thì không được nhận đánh giá |

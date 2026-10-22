@@ -5,6 +5,7 @@
 > **Sửa 2026-10-03 lần 4 (giảng viên trả lời Q59–Q61) — ADR-018:** đường dẫn theo chuẩn bài giảng **`/api/{version}/{resource}/{id}?{query-params}`**; **không động từ trong đường dẫn**, đổi trạng thái bằng `PATCH` + `status`; tìm kiếm, lọc bằng query; chỉ dùng **GET, POST, PATCH**. **Giữ nguyên mã A01–A39** (mã = một thao tác nghiệp vụ = một rpc; nhiều mã có thể chung một đường dẫn — mục 1.10). Không đổi proto, rpc. Chuỗi request mục 5 viết lại: được dùng lại tab, 30 giây gồm cả giải thích. Đóng Q59, Q60, Q61.
 > **Sửa 2026-10-05 (sinh viên chốt):** A04 không nhận `email`, A05 chỉ nhận `phone` (ADR-019); A37, A10 nhận `email` tùy chọn, A09, A38 trả `email`; A11 dùng cho cả **nộp lại** hồ sơ bị từ chối → 200 (FR43); **không thêm API `/me` mới** — khách, tài xế xem hồ sơ bằng mã của mình (`account_id` trong response đăng nhập), người khác → 403; giữ các route `/me` đã có. Bỏ mã lỗi `EMAIL_ALREADY_EXISTS`.
 > **Sửa 2026-10-14 (theo yêu cầu giảng viên, sinh viên chốt) — ADR-021 thay ADR-019:** (1) health trả đúng chữ `healthy` / `ready` / `not_ready` / `unhealthy` (A01–A03); (2) nhóm xác thực `/api/v1/auth/…`: A04 `auth/register` `{"email","password"}`, A05 `auth/login` với **đúng một** trong `email` / `phone`, A07 `auth/otp`, A08 `auth/driver-register`; admin seed `admin@cab.vn`; (3) hồ sơ khách: bỏ `email`, thêm `phone` bắt buộc (A37, A10, A09, A38); (4) A14 chỉ admin (mọi mã) và tài xế (mã của mình, khác → 403 `NOT_OWNER`); khách → 403 `FORBIDDEN`; (5) A20 thành `GET /api/v1/customers/{id}/bookings` (khách chỉ mã của mình, admin mọi mã; bỏ `GET /api/v1/bookings`); (6) mục 27 demo bằng jwt.io (ADR-016); (7) rate limit theo IP cho bốn route công khai mới. Mã lỗi: thêm lại `EMAIL_ALREADY_EXISTS`; `INVALID_EMAIL` về auth; `INVALID_PHONE` thêm ở customer. Chuỗi gõ tay mục 6, 9, 10, 11, 12, 13, 14, 21, 24, 25, 27, 29 viết lại (mục 5). Tổng vẫn **39 mã API**, nay trên **32 đường dẫn**.
+> **Sửa 2026-10-21 (sinh viên chốt, M1 / L1 của báo cáo 2026-10-21):** A27 trả khối `driver` `{driver_id, name, plate}` lấy từ **bản chụp trong chuyến lúc nhận** (S3 → S5), không qua S6 (S6 bỏ, rpc `GetDriverSummary` bỏ); bỏ `lat`, `lng`, `driver_info_available`. Tổng còn **38 rpc nghiệp vụ**. Lời gọi gRPC bật `waitForReady` (spec 00): 503 khi service dừng đến sau tối đa hết deadline.
 > File này trả lời: **client gọi gì, ai được gọi, service nào xử lý, mỗi mục chấm gõ những request nào**. Chi tiết từng field và `.proto`: spec của từng mục chấm. Kịch bản học thuộc: file 06.
 > Ký hiệu: **[ĐC]** = đã chốt trong `CLAUDE.md` / `srs.md` / giảng viên. **[BA]** = BA tự chọn, chưa ai xác nhận (gom ở mục 9).
 
@@ -287,7 +288,7 @@ Ghi chú:
 
 - A11 khi hồ sơ đang `PENDING` hoặc `APPROVED` → 409 `DRIVER_ALREADY_EXISTS`; biển số trùng **tài xế khác** → 409 `LICENSE_PLATE_ALREADY_EXISTS`.
 - A11 khi hồ sơ đang `REJECTED` → **nộp lại** (FR43, sửa 2026-10-05): ghi đè thông tin và xe, về `PENDING`, xóa `reason` và người / thời điểm xét → **200** (sửa bản ghi đã có, không tạo mới — R3; 201 chỉ dành cho lần tạo đầu). Response cùng dạng lần đầu. Không giới hạn số lần nộp lại. Admin duyệt lại bằng A15 / A16.
-- A14 (sửa 2026-10-14): khách → **403 `FORBIDDEN`** ở Gateway (role không có trong route). Tài xế gọi mã **khác** mã của mình → **403 `NOT_OWNER`** ngay ở service, **không đọc database** (như A09 — không lộ "mã này có tài xế hay không"). Tài xế xem chính mình (mã = `account_id`) thấy cả hồ sơ `PENDING` / `REJECTED`, kèm `reason` khi `REJECTED` — đó là nơi thông báo `APPLICATION_REJECTED` dẫn tới. Admin: 200 mọi mã có hồ sơ (gồm chờ duyệt), 404 `DRIVER_NOT_FOUND` khi không có. Khách vẫn thấy họ tên, biển số tài xế của **chuyến mình** qua A27 (FR14, S6) và tài xế quanh mình qua A12.
+- A14 (sửa 2026-10-14): khách → **403 `FORBIDDEN`** ở Gateway (role không có trong route). Tài xế gọi mã **khác** mã của mình → **403 `NOT_OWNER`** ngay ở service, **không đọc database** (như A09 — không lộ "mã này có tài xế hay không"). Tài xế xem chính mình (mã = `account_id`) thấy cả hồ sơ `PENDING` / `REJECTED`, kèm `reason` khi `REJECTED` — đó là nơi thông báo `APPLICATION_REJECTED` dẫn tới. Admin: 200 mọi mã có hồ sơ (gồm chờ duyệt), 404 `DRIVER_NOT_FOUND` khi không có. Khách vẫn thấy họ tên, biển số tài xế của **chuyến mình** qua A27 (FR14; khối `driver` chụp lúc nhận chuyến — sửa 2026-10-21) và tài xế quanh mình qua A12.
 - A12: chỉ tài xế đã duyệt, `ONLINE`, trong **1 000 m** (D1–D3), sắp theo `distance_m` tăng dần rồi `driver_id`. `lat` ngoài −90…90 hoặc `lng` ngoài −180…180 → 400 `INVALID_COORDINATES`; chỉ có một trong `lat`, `lng` → 400 `INVALID_INPUT`. Cùng rpc với S2. Khách gọi `GET /api/v1/drivers` không có `lat` → biến thể A13 → 403 `FORBIDDEN`.
 - A15, A16 hồ sơ đã xét → 409 `APPLICATION_ALREADY_REVIEWED`; A16 thiếu `reason` → 400 `REASON_REQUIRED`.
 - A17 chưa được duyệt → 409 `DRIVER_NOT_APPROVED` (D6); không có vị trí và không gửi `lat`, `lng` → 400 `INVALID_INPUT`. A39 khi đang `BUSY` → 409 `DRIVER_NOT_AVAILABLE`. Đặt trạng thái đang có → 200 (không đổi gì). `{"status":"BUSY"}` → 400 (chỉ hệ thống đặt `BUSY`, qua S3).
@@ -327,20 +328,20 @@ Ghi chú:
 | Mã | Method, đường dẫn | Body / query | Role | Service — rpc | Mục chấm | FR / UC |
 |---|---|---|---|---|---|---|
 | A26 | `GET /api/v1/trips?status&page&limit` | Query | Cả ba | trip — `ListTrips` | Ngoài phiếu | FR30, FR34 / UC18, UC22 |
-| A27 | `GET /api/v1/trips/{id}` | — | customer (chủ), driver (chủ), admin | trip — `GetTrip` (→ S6) | Bổ trợ 16–18 | FR14 / UC10 |
+| A27 | `GET /api/v1/trips/{id}` | — | customer (chủ), driver (chủ), admin | trip — `GetTrip` (không gọi service khác) | Bổ trợ 16–18; vấn đáp 12 | FR14 / UC10 |
 | A28 | `PATCH /api/v1/trips/{id}` | `{"status":"ARRIVED"}` | driver (chủ) | trip — `UpdateTripStatus` | **17** | FR12 / UC11 |
 | A29 | `PATCH /api/v1/trips/{id}` | `{"status":"CANCELED","reason":"…"}` | customer (chủ), driver (chủ) | trip — `CancelTrip` | **18** | FR36, FR41 / UC27, UC32 |
 
 | Mã | Vì sao đặt như vậy | Request mẫu → response thành công |
 |---|---|---|
-| A27 | `/{resource}/{id}` | — → 200 `{ "trip_id": 1000, "booking_id": 1000, "status": "ACCEPTED", "pay": "CASH", "fare": 45000, "driver": { "driver_id": 11, "name": "Tài Xế 1", "plate": "59A-00001", "lat": 10.821, "lng": 106.68 }, "history": [ … ] }` |
+| A27 | `/{resource}/{id}` | — → 200 `{ "trip_id": 1000, "booking_id": 1000, "status": "ACCEPTED", "pay": "CASH", "fare": 45000, "driver_id": 11, "driver": { "driver_id": 11, "name": "Tài Xế 1", "plate": "59A-00001" }, "history": [ … ] }`. Seed: `[KH1]` `trips/5` → `"driver": { "driver_id": 16, "name": "Tài Xế 6", "plate": "59A-00006" }` |
 | A28 | Tiến trạng thái = `PATCH` + `status` (R4). Bỏ `/status` ở cuối đường dẫn: `status` đã nằm trong body | `{"status":"ARRIVED"}` → 200 `{ "trip_id": 1000, "status": "ARRIVED", "history": [ { "status": "ACCEPTED", "at": "…" }, { "status": "ARRIVED", "at": "…" } ] }` |
 | A29 | Hủy chuyến cũng là đổi trạng thái → **cùng đường dẫn** với A28, khác giá trị. Bỏ `/cancel` | `{"status":"CANCELED","reason":"ban viec"}` → 200 `{ "trip_id": 5, "status": "CANCELED", "canceled_by": "customer", "reason": "ban viec" }` |
 
 Ghi chú:
 
 - A26 làm sau khi xong 30 mục (Q32).
-- A27: phần `driver` lấy qua S6; `driver-service` không trả lời thì `driver: null` kèm `driver_info_available: false`.
+- A27 (sửa 2026-10-21): `driver.name`, `driver.plate` là **bản chụp lúc tài xế nhận chuyến** (S3 `ReserveDriver` trả → S5 `CreateTrip` mang → `trips.driver_name`, `driver_plate`). Xem chuyến không gọi Driver, nên `driver-service` dừng thì A27 vẫn đủ. Cả ba người xem được (khách, tài xế của chuyến, admin) thấy cùng khối; đây là cách khách biết ai tới đón vì A14 chặn khách. Không có vị trí sống (FR15 ngoài phiếu).
 - A28: phải đi **đúng thứ tự** `ACCEPTED → ARRIVED → PICKED_UP → IN_PROGRESS → COMPLETED` (FR12). Sai thứ tự (kể cả nhảy cóc) → 409 `INVALID_STATUS_TRANSITION`. Response có **luôn lịch sử**.
 - A29: thiếu `reason` → 400 `REASON_REQUIRED`; đã đón khách (`PICKED_UP` trở đi) → 409 `TRIP_NOT_CANCELABLE` (BRULE16). Hoàn tiền và thông báo đi bằng K5 sau đó.
 - Khách gửi `status` khác `CANCELED` → 403 `FORBIDDEN` (biến thể A28 chỉ cho driver); admin gửi bất kỳ → 403.
@@ -656,16 +657,15 @@ Tên file: `proto/<service>.proto`. Mọi mã là `int64` (`proto-loader` `longs
 | | `ApproveDriver`, `RejectDriver` | GW | A15, A16 (phát K7) |
 | | `SetAvailability` | GW | A17 (`ONLINE`), A39 (`OFFLINE`) |
 | | `UpdateLocation` | GW | A18 |
-| | `ReserveDriver`, `ReleaseDriver` | **booking** | **S3** |
-| | `GetDriverSummary` | **trip** | **S6** |
+| | `ReserveDriver`, `ReleaseDriver` | **booking** | **S3** (`ReserveDriver` trả thêm họ tên, biển số — 2026-10-21) |
 | booking | `CreateBooking` | GW | A19 (gọi S4; phát K1, rồi K2) |
 | | `ListBookings`, `GetBooking` | GW | A20, A21 |
 | | `CancelBooking` | GW | A22 (phát K4) |
 | | `ListOffers` | GW | A23 |
 | | `AcceptOffer` | GW | A24 (gọi S3, S5) |
 | | `RejectOffer` | GW | A25 |
-| trip | `CreateTrip` | **booking** | **S5** (phát K5 `ACCEPTED`) |
-| | `ListTrips`, `GetTrip` | GW | A26, A27 (gọi S6) |
+| trip | `CreateTrip` | **booking** | **S5** (mang họ tên, biển số tài xế; phát K5 `ACCEPTED`) |
+| | `ListTrips`, `GetTrip` | GW | A26, A27 (không gọi ai) |
 | | `UpdateTripStatus` | GW | A28 (phát K5) |
 | | `CancelTrip` | GW | A29 (phát K5 `CANCELED`) |
 | | `GetTripForRating` | **rating** | **S7** |
@@ -677,13 +677,13 @@ Tên file: `proto/<service>.proto`. Mọi mã là `int64` (`proto-loader` `longs
 | rating | `CreateRating` | GW | A34 (gọi S7) |
 | | `GetRatingByTrip`, `GetDriverRating` | GW | A35, A36 |
 
-Tổng: **39 rpc nghiệp vụ** (auth 4, customer 3, driver 11, booking 7, trip 6, payment 4, notification 1, rating 3) + health.
+Tổng: **38 rpc nghiệp vụ** (auth 4, customer 3, driver 10, booking 7, trip 6, payment 4, notification 1, rating 3) + health. (Bỏ `GetDriverSummary` 2026-10-21.)
 
 | Kiểm tra với file 02 | Kết quả |
 |---|---|
-| S2–S7 đều có rpc | `FindNearbyDrivers`, `ReserveDriver` / `ReleaseDriver`, `CreatePayment`, `CreateTrip`, `GetDriverSummary`, `GetTripForRating` |
+| S2–S5, S7 đều có rpc (S1, S6 đã bỏ) | `FindNearbyDrivers`, `ReserveDriver` / `ReleaseDriver`, `CreatePayment`, `CreateTrip`, `GetTripForRating` |
 | Không rpc nào đi **vào** booking, notification, auth, customer, rating từ service khác | Đúng |
-| rpc không có đường REST | `ReserveDriver`, `ReleaseDriver`, `GetDriverSummary`, `CreateTrip`, `CreatePayment`, `GetTripForRating` |
+| rpc không có đường REST | `ReserveDriver`, `ReleaseDriver`, `CreateTrip`, `CreatePayment`, `GetTripForRating` |
 | K1–K7 đều có thao tác phát | Như file 02 mục 6 |
 | Đăng xuất | Không có rpc: Gateway tự xử lý với Redis [ĐC] |
 | `GetTripByBooking` (Q35) | Chưa đưa vào; chờ spec mục 16 |

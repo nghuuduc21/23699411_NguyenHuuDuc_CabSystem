@@ -1,6 +1,7 @@
 # Cẩm nang hệ thống CAB: chức năng, API, code và vận hành
 
 > Viết 2026-10-07 từ code thật ở commit `f0c996b`, sau đợt hồi quy cả 30 mục chấm đều đạt.
+> **Sửa 2026-10-21 theo góp ý giảng viên 2026-10-14 (ADR-021):** health trả `healthy`/`ready`/`unhealthy`; khách và admin đăng ký/đăng nhập bằng **email** trong nhóm `/api/v1/auth/…`, tài xế bằng **số điện thoại**; số điện thoại khách nằm ở **hồ sơ**; `/drivers/{id}` chỉ admin và chính tài xế; booking theo mã khách `GET /api/v1/customers/{id}/bookings`.
 > Tài liệu này dùng để **hiểu sâu**, chi tiết hơn bài thi. Cách gõ khi thi xem `docs/design/06-kich-ban-thi.md`.
 > Mỗi khẳng định đều chỉ ra file code tương ứng để bạn mở ra đọc lại.
 
@@ -235,17 +236,18 @@ Ký hiệu: `[KH1]` = token của khách 1, lấy từ response đăng nhập. M
 
 | Chức năng | API | Body mẫu | Kết quả | Code xử lý |
 |---|---|---|---|---|
-| Xem Gateway còn sống | A01 `GET /health` | — | 200 | `gateway/src/health.js` `live` |
-| Gateway đủ phụ thuộc chưa (Redis, client gRPC) | A02 `GET /ready` | — | 200 / 503 | `health.js` `ready` |
-| Xem 8 service | A03 `GET /health/services` | — | `{"status":"UP","services":{...SERVING}}` | `health.js` `services`, gọi `grpc.health.v1.Health/Check` |
-| Đăng ký khách | A04 `POST /api/v1/accounts` | `{"phone":"0900000077","password":"12345678"}` | 201 `account_id` (≥ 1000), `role: customer` | `auth-service/src/domain/auth.js` `registerCustomer` |
-| Đăng nhập (mọi role) | A05 `POST /api/v1/auth/login` | `{"phone":"0900000001","password":"12345678"}` | 200 `token`, `account_id`, `role`, `expires_in: 3600` | `auth.js` `login` → `token.js` ký JWT |
-| Xin OTP đăng ký tài xế | A07 `POST /api/v1/otps` | `{"phone":"0911111111"}` | 201, có `otp` khi `SIMULATION_MODE=true` | `auth.js` `requestDriverOtp` |
-| Tạo tài khoản tài xế | A08 `POST /api/v1/driver-accounts` | `{"phone":"0911111111","otp":"123456","password":"12345678"}` | 201 kèm token `role: driver` | `auth.js` `registerDriver` |
+| Xem Gateway còn sống | A01 `GET /health` | — | 200 `{"status":"healthy"}` | `gateway/src/health.js` `live` |
+| Gateway đủ phụ thuộc chưa (Redis, client gRPC) | A02 `GET /ready` | — | 200 `ready` / 503 `not_ready` | `health.js` `ready` |
+| Xem 8 service | A03 `GET /health/services` | — | `{"status":"healthy","services":{"auth-service":"healthy",…}}`; hỏng → 503 `unhealthy` | `health.js` `services`, gọi `grpc.health.v1.Health/Check` |
+| Đăng ký khách | A04 `POST /api/v1/auth/register` | `{"email":"new1@cab.vn","password":"12345678"}` | 201 `account_id` (≥ 1000), `role: customer` | `auth-service/src/domain/auth.js` `registerCustomer` |
+| Đăng nhập (mọi role) | A05 `POST /api/v1/auth/login` | Khách, admin: `{"email":"kh1@cab.vn","password":"12345678"}`; tài xế: `{"phone":"0910000001","password":"12345678"}` (đúng **một** định danh) | 200 `token`, `account_id`, `role`, `expires_in: 3600` | `auth.js` `login` → `token.js` ký JWT |
+| Xin OTP đăng ký tài xế | A07 `POST /api/v1/auth/otp` | `{"phone":"0911111111"}` | 201, có `otp` khi `SIMULATION_MODE=true` | `auth.js` `requestDriverOtp` |
+| Tạo tài khoản tài xế | A08 `POST /api/v1/auth/driver-register` | `{"phone":"0911111111","otp":"123456","password":"12345678"}` | 201 kèm token `role: driver` | `auth.js` `registerDriver` |
 | Cổng thanh toán báo kết quả | A32 `POST /api/v1/payment-callbacks` | Header `X-Callback-Secret: cab-secret`, body `{"txn_id":"SIM-7-1"}` | 200 `status: COMPLETED` | `payment-service/src/domain/payments.js` `handleProviderCallback` |
 
 Lỗi hay gặp:
-- **Đăng ký:** gửi kèm `email` → 400 `INVALID_INPUT` (email chỉ ở hồ sơ, ADR-019); số điện thoại đã có → 409 `PHONE_ALREADY_EXISTS`.
+- **Đăng ký:** gửi kèm `phone` → 400 `INVALID_INPUT` (số điện thoại khách ở hồ sơ, ADR-021); email đã có → 409 `EMAIL_ALREADY_EXISTS`; email sai dạng (kể cả `' OR 1=1 --`) → 400 `INVALID_EMAIL`.
+- **Đăng nhập:** gửi cả `email` lẫn `phone`, hoặc không có cái nào → 400 `INVALID_INPUT`.
 - **Đăng nhập:** sai mật khẩu → 401 `INVALID_CREDENTIALS`; KH9 bị khóa → 403 `ACCOUNT_LOCKED`.
 - **OTP:** sai 5 lần thì mã hết hiệu lực → `OTP_EXPIRED`.
 
@@ -253,13 +255,12 @@ Lỗi hay gặp:
 
 | Chức năng | API | Body / query mẫu | Kết quả | Code xử lý |
 |---|---|---|---|---|
-| Tạo hồ sơ | A37 `POST /api/v1/customers` | `{"name":"An","dob":"2000-01-01","email":"an@cab.vn"}` | 201 | `customer-service/src/domain/customers.js` `createCustomer` |
-| Xem hồ sơ của mình | A38 `GET /api/v1/customers/me` hoặc A09 `GET /api/v1/customers/1` | — | 200 `{customer_id, name, dob, email}` | `getCustomer`; mã khác của mình → 403 `NOT_OWNER` |
-| Sửa hồ sơ | A10 `PATCH /api/v1/customers/me` | `{"email":null}` để xóa email | 200 | `updateCustomer` |
+| Tạo hồ sơ | A37 `POST /api/v1/customers` | `{"name":"An","phone":"0901234567","dob":"2000-01-01"}` (phone **bắt buộc**, dạng 0 + 9 số, không UNIQUE) | 201 | `customer-service/src/domain/customers.js` `createCustomer` |
+| Xem hồ sơ của mình | A38 `GET /api/v1/customers/me` hoặc A09 `GET /api/v1/customers/1` | — | 200 `{customer_id, name, phone, dob}` | `getCustomer`; mã khác của mình → 403 `NOT_OWNER` |
+| Sửa hồ sơ | A10 `PATCH /api/v1/customers/me` | `{"phone":"0907654321"}` (không xóa được phone: `null` → 400) | 200 | `updateCustomer` |
 | Tìm tài xế quanh mình | A12 `GET /api/v1/drivers?lat=10.82&lng=106.68&limit=2&page=1` | Thêm `vehicle=car_4` để lọc | 200 danh sách gần nhất trước, `pagination` | `driver-service/src/domain/drivers.js` `findNearbyDrivers` |
-| Xem một tài xế | A14 `GET /api/v1/drivers/11` | — | Bản công khai: tên, xe, biển số, trạng thái | `getDriver` |
 | Đặt xe | A19 `POST /api/v1/bookings` | `{"from":[10.82,106.68],"to":[10.83,106.69]}` (mặc định `CAR_4`, `CASH`); thêm `"pay":"online"`, `"vehicle":"CAR_7"` | 201 `booking_id`, `status`, `fare`, `distance_m`, `payment_id` | `booking-service/src/domain/bookings.js` `createBooking` |
-| Danh sách booking của mình | A20 `GET /api/v1/bookings?limit=2&page=1&status=canceled` | | 200 mới nhất trước | `listBookings` |
+| Danh sách booking theo mã của mình | A20 `GET /api/v1/customers/1/bookings?limit=2&page=1&status=canceled` | | 200 mới nhất trước; mã khác → 403 `NOT_OWNER` | `listBookings` (nhận `customer_id`) |
 | Xem một booking | A21 `GET /api/v1/bookings/7` | | 200 | `getBooking` (kiểm chủ) |
 | Hủy booking (chưa có tài xế) | A22 `PATCH /api/v1/bookings/1000` | `{"status":"CANCELED","reason":"doi y"}` | 200; phát K4 → Payment hoàn tiền nếu đã trả | `cancelBooking` |
 | Thanh toán online | A31 `POST /api/v1/payments/7/transactions` | Header `Idempotency-Key: k1`; body `{}` hoặc `{"simulate_result":"MANUAL"}` / `"FAILED"` | 200 `status`, `txn_id`, `attempts_left` | `payments.js` `payPayment` |
@@ -272,6 +273,7 @@ Lỗi hay gặp:
 | Đăng xuất | A06 `POST /api/v1/auth/logout` | | 200; token dùng lại → 401 `TOKEN_REVOKED` | `gateway/src/handlers/auth.js` ghi `revoked:{jti}` vào Redis |
 
 Khách **không được**:
+- xem hồ sơ tài xế theo mã (`/drivers/{id}` → 403 `FORBIDDEN` ở Gateway; khách biết tài xế của chuyến mình qua `GET /trips/{mã}`);
 - xem danh sách tài xế chờ duyệt (A13);
 - duyệt hồ sơ tài xế (A15, A16);
 - đổi trạng thái chuyến sang đón hay trả khách (A28, chỉ tài xế);
@@ -334,20 +336,21 @@ Admin **không được**:
 | Mã | Method, đường dẫn | Công khai | customer | driver | admin |
 |---|---|---|---|---|---|
 | A01–A03 | `GET /health`, `/ready`, `/health/services` | ✓ | ✓ | ✓ | ✓ |
-| A04 | `POST /api/v1/accounts` | ✓ | | | |
+| A04 | `POST /api/v1/auth/register` | ✓ | | | |
 | A05 | `POST /api/v1/auth/login` | ✓ | | | |
 | A06 | `POST /api/v1/auth/logout` | | ✓ | ✓ | ✓ |
-| A07, A08 | `POST /api/v1/otps`, `/api/v1/driver-accounts` | ✓ | | | |
+| A07, A08 | `POST /api/v1/auth/otp`, `/api/v1/auth/driver-register` | ✓ | | | |
 | A37 | `POST /api/v1/customers` | | ✓ | — | — |
 | A38, A10 | `GET`, `PATCH /api/v1/customers/me` | | ✓ | — | — |
 | A09 | `GET /api/v1/customers/{id}` | | ✓* | — | ✓ |
 | A11 | `POST /api/v1/drivers` | | — | ✓ | — |
 | A12 | `GET /api/v1/drivers?lat&lng` | | ✓ | — | ✓ |
 | A13 | `GET /api/v1/drivers` (không tọa độ) | | — | — | ✓ |
-| A14 | `GET /api/v1/drivers/{id}` | | ✓ (bản công khai) | ✓ (đầy đủ nếu là mình) | ✓ (đầy đủ) |
+| A14 | `GET /api/v1/drivers/{id}` | | — | ✓* (chỉ mã của mình) | ✓ |
 | A17, A39, A18 | `PATCH /api/v1/drivers/me` | | — | ✓ | — |
 | A15, A16 | `PATCH /api/v1/drivers/{id}` | | — | — | ✓ |
-| A19, A20 | `POST`, `GET /api/v1/bookings` | | ✓ | — | — |
+| A19 | `POST /api/v1/bookings` | | ✓ | — | — |
+| A20 | `GET /api/v1/customers/{id}/bookings` | | ✓* | — | ✓ |
 | A21 | `GET /api/v1/bookings/{id}` | | ✓* | — | ✓ |
 | A22 | `PATCH /api/v1/bookings/{id}` | | ✓* | — | — |
 | A23 | `GET /api/v1/offers` | | — | ✓ (của mình) | — |
@@ -574,8 +577,8 @@ Tất cả trong **một giao dịch** của booking-service:
 
 | Service | Database | Bảng chính | Ghi chú |
 |---|---|---|---|
-| auth | PostgreSQL `auth` | `accounts` (phone UNIQUE, `password_hash` scrypt, role, status), `otp_verifications` | Không còn email (migration 003) |
-| customer | PostgreSQL `customer` | `customer_profiles` (`full_name_enc`, `date_of_birth_enc` là bytea mã hóa; `email` rõ) | PK = `account_id` |
+| auth | PostgreSQL `auth` | `accounts` (`email` UNIQUE, `phone` UNIQUE, `password_hash` scrypt, role, status; CHECK: khách/admin có email, tài xế có phone), `otp_verifications` | Migration 004 (ADR-021) |
+| customer | PostgreSQL `customer` | `customer_profiles` (`full_name_enc`, `date_of_birth_enc` là bytea mã hóa; `phone` rõ, bắt buộc) | PK = `account_id` |
 | driver | PostgreSQL `driver` | `drivers` (`license_number_enc`, `approval_status`, `availability`, `current_lat/lng`), `vehicles`, `vehicle_types` | Tìm trong 1 km bằng khung chữ nhật rồi Haversine (ADR-011, không PostGIS) |
 | booking | PostgreSQL `booking` | `bookings`, `driver_offers`, `driver_assignments` | |
 | trip | PostgreSQL `trip` | `trips`, `trip_status_history` | Bản chụp tọa độ, phương thức, cước từ booking |
@@ -593,9 +596,9 @@ Tất cả trong **một giao dịch** của booking-service:
 
 | Nhóm | Dữ liệu |
 |---|---|
-| Khách | KH1–3 `090000000n` (mã 1–3), KH9 khóa (mã 9) |
+| Khách | KH1–3 `kh1@cab.vn`… (mã 1–3), KH9 `kh9@cab.vn` khóa (mã 9); hồ sơ KH1, KH2, KH9 có phone `090000000n` |
 | Tài xế | TX1–8 `091000000n` (mã 11–18), đứng ở 10.82n |
-| Admin | AD1 `0999999999` (mã 99) |
+| Admin | AD1 `admin@cab.vn` (mã 99) |
 | Mật khẩu | `12345678` cho tất cả |
 | Booking | B1–B7 của KH1; mã booking = mã thanh toán = mã chuyến |
 | Điểm mẫu | P0 (10.82, 106.68), D0 (10.83, 106.69) |
@@ -632,7 +635,7 @@ Tất cả trong **một giao dịch** của booking-service:
 
 | Tình huống | Hệ thống phản ứng | Vì sao | Kiểm tra / khắc phục |
 |---|---|---|---|
-| Một service dừng (ví dụ `rating-service`) | API của service đó → 503; mọi API khác vẫn chạy; `/health/services` báo `NOT_SERVING`, `status: DEGRADED` | Database-per-service và gRPC có deadline, nên lỗi không lan | `docker compose start rating-service`; sau vài giây `/health/services` về `SERVING` |
+| Một service dừng (ví dụ `rating-service`) | API của service đó → 503; mọi API khác vẫn chạy; `/health/services` báo service đó `unhealthy`, tổng `unhealthy` (503) | Database-per-service và gRPC có deadline, nên lỗi không lan | `docker compose start rating-service`; sau vài giây `/health/services` về `healthy` |
 | `payment-service` dừng lúc khách đặt xe | A19 → 503, không tạo booking | S4 đồng bộ: trả trước cần mã thanh toán ngay (đánh đổi so với NFR05) | Bật lại; lời gọi đầu sau khi bật đã thành công nhờ thử lại một lần (L1) |
 | `payment-service` dừng lúc khách hủy chuyến | Hủy vẫn 200; hoàn tiền xảy ra khi Payment chạy lại | K5 nằm trong Kafka chờ consumer group `payment-service` | Sau khi bật lại mất khoảng 4–5 giây để vào lại consumer group |
 | `trip-service` dừng lúc tài xế nhận | 503, tài xế được nhả về `ONLINE`, lời mời vẫn `PENDING` | Một lần nhận chuyến mà không có Trip là vô nghĩa | Bật lại rồi bấm nhận lại |

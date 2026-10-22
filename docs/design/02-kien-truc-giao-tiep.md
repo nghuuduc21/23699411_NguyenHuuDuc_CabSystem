@@ -10,6 +10,7 @@
 > **Sửa 2026-10-03 lần 3 (ADR-018):** chỉ đổi **nhãn đường dẫn REST** trong mục 7 và sơ đồ trình tự mục 8 theo file 04 lần 4 (`/api/v1/…`, đổi trạng thái bằng `PATCH` + `status`). **Không đổi đường giao tiếp, rpc hay topic nào.**
 > **Sửa 2026-10-05:** mỗi service một **cổng gRPC riêng** 50051–50058 (mục 2.3, ADR-020 — sửa lỗi L3); ghi rõ cách chống lặp event ở từng consumer (mục 6.4 — không có bảng event đã xử lý); A04 không còn email (ADR-019); A11 dùng cả cho nộp lại hồ sơ bị từ chối (FR43). **Không đổi đường giao tiếp, rpc hay topic nào.**
 > **Sửa 2026-10-14 (theo yêu cầu giảng viên, ADR-021 thay ADR-019):** tài khoản có email (khách, admin) hoặc số điện thoại (tài xế); hồ sơ khách có số điện thoại liên hệ, không còn email (mục 2.1); nhóm route xác thực `/api/v1/auth/…` (sơ đồ 8.1); danh sách booking theo mã khách `/api/v1/customers/{id}/bookings` vẫn do `booking-service` xử lý (G4); giá trị health đổi chữ (`healthy` / `unhealthy`, mục 2.2). **Không đổi đường giao tiếp, rpc hay topic nào** — Auth và Customer vẫn không gọi nhau.
+> **Sửa 2026-10-21 (sinh viên chốt sau báo cáo `docs/test-reports/2026-10-21-hoi-quy-gop-y-giang-vien.md`):** (1) M1 / L1: **bỏ S6** `GetDriverSummary`. Họ tên, biển số tài xế được **chụp vào chuyến lúc nhận**: S3 `ReserveDriver` trả thêm hai giá trị, S5 `CreateTrip` mang theo, Trip lưu và trả ở A27 (FR14). Không thêm đường mới; mã S6 bỏ trống như S1. (2) L2: mọi lời gọi gRPC bật `waitForReady`, giữ deadline (mục 4.2, ADR-020). Không đổi topic nào.
 > **Chưa chốt:** chỗ ghi **[GĐ-n]** là *giả định tạm*, liệt kê ở mục 11.
 > **Đồng bộ 2026-10-02 lần 4** (cùng lúc viết file 03, 04): Booking tính quãng đường, Payment tính cước (đóng Q38, GĐ-13); hạn thanh toán BRULE17 → K6 có thêm `CANCELED`; Redis dừng thì cho qua (đóng Q39); đăng xuất ở Gateway theo FR42 (đóng Q40); tìm tài xế bằng Haversine (ADR-011). Chỉ sửa các dòng bị ảnh hưởng.
 
@@ -28,7 +29,7 @@
 | Client → Gateway | REST/JSON | Cổng duy nhất cho nghiệp vụ (mục chấm 8) |
 | Gateway → service | gRPC, tới cả 8 service | Mỗi service có ít nhất một API cho người dùng |
 | Gateway → Redis | 2 việc | Bộ đếm rate limit; danh sách token đã thu hồi |
-| Service → service đồng bộ | **6 lời gọi gRPC** (S2–S7; S1 đã bỏ 2026-10-03) | Mặc định |
+| Service → service đồng bộ | **5 lời gọi gRPC** (S2–S5, S7; S1 đã bỏ 2026-10-03, S6 đã bỏ 2026-10-21) | Mặc định |
 | Service → service bất đồng bộ | **7 topic Kafka** (K1–K7) | Mỗi topic ghi lý do L1 / L2 / L3 |
 | Cặp service có nối | 10 / 28 | Mục 9 |
 | Cặp service **không** nối | 18 / 28 | Mục 9 |
@@ -39,9 +40,9 @@ Mỗi service dùng kiểu giao tiếp nào (ngoài việc nhận gRPC từ Gate
 |---|---|---|---|---|
 | `auth-service` | — | — | — | — |
 | `customer-service` | — | — | — | — |
-| `driver-service` | — | S2, S3, S6 | K7 | K5 |
+| `driver-service` | — | S2, S3 | K7 | K5 |
 | `booking-service` | S2, S3 → driver; S4 → payment; S5 → trip | — | K1, K2, K3, K4 | K6 |
-| `trip-service` | S6 → driver | S5, S7 | K5 | — |
+| `trip-service` | — | S5, S7 | K5 | — |
 | `payment-service` | — | S4 | K6 | K3, K4, K5 |
 | `notification-service` | — | — | — | K1–K7 |
 | `rating-service` | S7 → trip | — | — | — |
@@ -159,7 +160,6 @@ flowchart TB
   BK -->|S2 FindNearbyDrivers<br/>S3 ReserveDriver, ReleaseDriver| DRV
   BK -->|S4 CreatePayment| PAY
   BK -->|S5 CreateTrip| TRIP
-  TRIP -->|S6 GetDriverSummary| DRV
   RAT -->|S7 GetTripForRating| TRIP
 
   PAY -.->|K6 payment.status-changed| BK
@@ -201,9 +201,9 @@ Tên rpc là gợi ý ở mức nhóm; spec chốt từng rpc.
 | G9 | cả 8 service | Health check | Mục chấm 6 | 6 |
 | G10 | `redis` (không phải gRPC) | Tăng bộ đếm rate limit; ghi và tra token đã thu hồi | Mục 29; NFR06 | 27, 29 |
 
-Mọi lời gọi có deadline; hết deadline hoặc service không chạy → 503. Con số: Q25.
+Mọi lời gọi có deadline; hết deadline hoặc service không chạy → 503. Con số: Q25. **Từ 2026-10-21 mọi lời gọi gRPC (Gateway → service và service → service) bật `waitForReady`** (L2 của báo cáo 2026-10-21): service vừa chạy lại, đổi IP thì kênh chờ tự tìm lại địa chỉ trong hạn deadline rồi mới gửi, thay vì trả lỗi ngay. Service chết hẳn thì 503 đến sau khi hết deadline (≤ 3 s) — spec 00, ADR-020.
 
-Vì sao tài xế gửi vị trí là gRPC qua Gateway mà **không** phát lên Kafka: không context nào cần *dòng* vị trí. Booking hỏi khi cần ghép (S2), Trip hỏi khi khách mở màn hình theo dõi (S6).
+Vì sao tài xế gửi vị trí là gRPC qua Gateway mà **không** phát lên Kafka: không context nào cần *dòng* vị trí. Booking hỏi khi cần ghép (S2). (Màn hình theo dõi vị trí sống — FR15 — ngoài phiếu, chưa thiết kế.)
 
 ### 4.3 Service → service đồng bộ (gRPC)
 
@@ -211,16 +211,16 @@ Vì sao tài xế gửi vị trí là gRPC qua Gateway mà **không** phát lên
 |---|---|---|---|---|---|
 | ~~S1~~ | ~~`auth-service` → `customer-service`~~ | **Đã bỏ 2026-10-03** (góp ý giảng viên). Đăng ký chỉ tạo tài khoản; khách tạo hồ sơ bằng một request riêng sau khi đăng nhập. Mã S1 không dùng lại | — | FR26, FR27, BRULE18 | ADR-013 (thay ADR-004) |
 | S2 | `booking-service` → `driver-service` | `FindNearbyDrivers(tọa độ, loại xe, bán kính, limit)` — gọi lại ở mỗi vòng ghép | Không có danh sách ứng viên **mới nhất** thì không gửi Offer được | FR02–FR05, BRULE01–03, NFR02; mục 15 | Bộ ghép thử lại vài lần; vẫn lỗi thì kết luận `NO_DRIVER_FOUND` (K3) để booking không treo và khách được hoàn tiền (Q24) |
-| S3 | `booking-service` → `driver-service` | `ReserveDriver(driver_id, booking_id)` khi tài xế bấm nhận; `ReleaseDriver(driver_id, booking_id)` để nhả chỗ khi không tạo được chuyến | Chỉ được xác nhận phân công khi tài xế **còn rảnh** (B11, D8); tài xế đang chờ câu trả lời | BRULE01, FR07, AC06, NFR14; mục 16 | Booking trả 503 cho tài xế, Offer vẫn chờ đến hết hạn; tài xế bấm lại được vì `ReserveDriver` gọi lặp cho kết quả như cũ |
+| S3 | `booking-service` → `driver-service` | `ReserveDriver(driver_id, booking_id)` khi tài xế bấm nhận → trả thêm **họ tên và biển số xe đang dùng** (2026-10-21) để Booking chuyển vào S5; `ReleaseDriver(driver_id, booking_id)` để nhả chỗ khi không tạo được chuyến | Chỉ được xác nhận phân công khi tài xế **còn rảnh** (B11, D8); tài xế đang chờ câu trả lời | BRULE01, FR07, AC06, NFR14; mục 16 | Booking trả 503 cho tài xế, Offer vẫn chờ đến hết hạn; tài xế bấm lại được vì `ReserveDriver` gọi lặp cho kết quả như cũ |
 | S4 | `booking-service` → `payment-service` | `CreatePayment(booking_id, customer_id, loại xe, quãng đường ước tính tính bằng mét, phương thức)` → `payment_id`, số tiền, trạng thái, hạn thanh toán. Booking tính quãng đường; Payment áp bảng giá (đã chốt) | Booking phải trả **ngay** cho khách số tiền và mã thanh toán (B15) | FR16, FR35, BRULE08; mục 15, 19 | Booking trả 503, **không tạo booking** — đánh đổi so với NFR05 (mục 4.6, ADR-009). Gọi lặp cùng `booking_id` trả Payment cũ |
-| S5 | `booking-service` → `trip-service` | `CreateTrip(bản chụp booking + driver_id)` → `trip_id` | Tài xế nhận xong phải có ngay mã chuyến để cập nhật trạng thái; nhận chuyến mà không có Trip là vô nghĩa (B17) | FR07, FR11, FR12; mục 16 → 17 | Booking trả 503 cho tài xế; Booking vẫn `SEARCHING`, Offer vẫn chờ; tài xế bấm lại. Offer hết hạn mà chưa phân công: Booking gọi `ReleaseDriver`. ADR-008, Q35 |
-| S6 | `trip-service` → `driver-service` | `GetDriverSummary(driver_id)`: tên, biển số, loại xe, vị trí hiện tại | Khách mở màn hình theo dõi chuyến, cần dữ liệu ngay; vị trí là dữ liệu sống nên không sao chép sẵn được | FR13, FR14, FR15, UC10 | Trip vẫn trả thông tin chuyến, bỏ trống phần tài xế / vị trí kèm cờ "chưa cập nhật" (luồng thay thế của UC10) |
+| S5 | `booking-service` → `trip-service` | `CreateTrip(bản chụp booking + driver_id + họ tên, biển số tài xế lấy từ S3)` → `trip_id` | Tài xế nhận xong phải có ngay mã chuyến để cập nhật trạng thái; nhận chuyến mà không có Trip là vô nghĩa (B17). Họ tên, biển số đi kèm để khách thấy tài xế của chuyến ở A27 mà không gọi Driver lúc xem (2026-10-21) | FR07, FR11, FR12, FR14; mục 16 → 17, 12 (vấn đáp) | Booking trả 503 cho tài xế; Booking vẫn `SEARCHING`, Offer vẫn chờ; tài xế bấm lại. Offer hết hạn mà chưa phân công: Booking gọi `ReleaseDriver`. ADR-008, Q35 |
+| ~~S6~~ | ~~`trip-service` → `driver-service`~~ | **Đã bỏ 2026-10-21** (sinh viên chốt, M1 của báo cáo 2026-10-21). Tên, biển số tài xế (FR14) là dữ liệu **của chuyến lúc nhận** nên được chụp qua S3 → S5 và Trip tự lưu; xem chuyến không gọi Driver. Vị trí sống (FR15) ngoài phiếu, không làm. Mã S6 không dùng lại | — | FR14, UC10 | Driver dừng thì A27 vẫn đủ thông tin |
 | S7 | `rating-service` → `trip-service` | `GetTripForRating(trip_id)`: trạng thái, `customer_id`, `driver_id` | Chưa biết chuyến đã hoàn thành và thuộc về khách này thì không được nhận đánh giá | BRULE11, FR25, AC14; mục 20 | Rating trả 503; khách đánh giá lại sau |
 
 Ghi chú:
 
 - Thứ tự khi tài xế nhận: khóa Booking → S3 `ReserveDriver` → S5 `CreateTrip` → ghi `DRIVER_ASSIGNED`. Cả hai lời gọi đều lặp lại được theo `booking_id`.
-- S6 không phục vụ mục chấm nào trực tiếp (FR14, FR15 ngoài phiếu). **Làm sau cùng.**
+- S6 đã bỏ (2026-10-21). Vì sao chụp lúc nhận mà không gọi lúc xem: biển số của xe **đã chạy chuyến đó** là dữ liệu lịch sử; gọi lúc xem thì tài xế đổi xe sau này sẽ làm chuyến cũ hiện sai xe, và A27 lỗi theo Driver. Đánh đổi: tài xế đổi tên / xe thì chuyến cũ giữ giá trị cũ (đúng nghĩa); họ tên tài xế nằm thêm ở `trip-db`.
 - Không có gRPC nào đi **vào** `booking-service`, `notification-service`, `auth-service`, `customer-service`, `rating-service` từ service khác.
 - `auth-service` và `customer-service` không gọi và không bị service nào gọi.
 
@@ -278,7 +278,7 @@ Câu trả lời khi bị hỏi "NFR05 nói Payment lỗi không được làm n
 | R4 Booking → Driver: giữ chỗ | **gRPC** | S3 | Phải có **một** nơi quyết định "tài xế này còn rảnh" — nơi giữ trạng thái đó (D8) | "Nhận chuyến" chạm ba service. ADR-007, ADR-008 |
 | R5 Booking → Trip: tạo chuyến | **gRPC** — đã chốt | S5 | Tài xế cần mã chuyến ngay; nhận chuyến mà không có Trip là vô nghĩa | Trip lỗi thì không ai nhận được chuyến. ADR-008 |
 | R6 Trip → Driver: tài xế rảnh lại | **Kafka** **[GĐ-14]** | K5 | L2: chuyến đã xong thì việc ghi nhận không được lỗi theo Driver. L3: sự kiện này Payment và Notification cũng cần, topic đằng nào cũng có | Tài xế vừa xong chuyến còn hiện là bận thêm một nhịp; tệ nhất: lỡ một lần được mời |
-| R7 Trip → Driver: thông tin tài xế | **gRPC** | S6 | Khách cần xem ngay; vị trí là dữ liệu sống | Màn hình theo dõi phụ thuộc Driver; đã có đường lùi |
+| R7 Trip → Driver: thông tin tài xế | **Không nối** (đổi 2026-10-21; trước: gRPC S6) | — (họ tên, biển số đi qua S3 → S5 lúc nhận) | Khách cần biết ai tới đón (FR14); đó là dữ liệu của chuyến tại lúc nhận, Trip tự lưu. Vị trí sống (FR15) ngoài phiếu | Tài xế đổi tên / xe sau đó thì chuyến cũ giữ giá trị cũ; họ tên tài xế lưu thêm ở `trip-db` |
 | R8 Trip → Payment: chuyến hoàn thành / bị hủy | **Kafka** — đã chốt | K5 | L2: Payment lỗi không được chặn việc kết thúc hay hủy chuyến (NFR05). L3 | Tiền mặt được ghi nhận, tiền được hoàn sau sự việc một nhịp |
 | R9 Payment → Trip | **Không nối** | — | Không quy tắc nào của Trip phụ thuộc trạng thái tiền. "COMPLETED" ở mục 19 là của Payment | Màn hình chuyến không tự hiện trạng thái thanh toán; client hỏi Payment |
 | R10 Rating → Trip | **gRPC** | S7 | Rating phải biết ngay để nhận hay từ chối (BRULE11); đúng nguyên tắc đồng bộ là mặc định | Đánh giá phụ thuộc Trip đang chạy. ADR-007 |
@@ -682,7 +682,7 @@ sequenceDiagram
 
 ## 9. Cặp service không nối
 
-28 cặp giữa 8 service nghiệp vụ. **10 cặp có nối**: Booking–Driver (S2, S3); Booking–Payment (S4, K3, K4, K6); Booking–Trip (S5); Trip–Driver (S6, K5); Trip–Payment (K5); Rating–Trip (S7); và bốn cặp với Notification (Booking, Trip, Payment, Driver).
+28 cặp giữa 8 service nghiệp vụ. **10 cặp có nối**: Booking–Driver (S2, S3); Booking–Payment (S4, K3, K4, K6); Booking–Trip (S5); Trip–Driver (K5; S6 bỏ 2026-10-21); Trip–Payment (K5); Rating–Trip (S7); và bốn cặp với Notification (Booking, Trip, Payment, Driver).
 
 **18 cặp không nối:**
 
@@ -709,6 +709,7 @@ Ngay trong cặp có nối cũng chỉ nối **đúng chiều, đúng kiểu** c
 | Chiều / kiểu không có | Vì sao |
 |---|---|
 | Driver → Booking, Driver → Trip | Driver chỉ trả lời và nghe event; không gọi ai |
+| Trip → Driver bằng gRPC (S6 bỏ 2026-10-21) | Tên, biển số tài xế đã có trong chuyến từ lúc nhận (S3 → S5) |
 | Trip → Booking (cả gRPC lẫn Kafka) | **[GĐ-9b]** Booking không đổi sau khi bàn giao |
 | Booking → Trip bằng Kafka | Bàn giao là gRPC (S5); không còn topic `booking.driver-assigned` |
 | Payment → Booking bằng gRPC | Payment không được chờ hay lỗi theo Booking (R15) |
@@ -726,7 +727,7 @@ Thiết kế tham chiếu (`docs/reference/thiet-ke-da-duyet.md`) đã được 
 |---|---|---|---|
 | customer ↔ driver — "validate customer" | **Bỏ** | Không nối | Không FR/BRULE nào cần Driver hay Customer hỏi nhau. Gateway đã xác thực JWT và role |
 | driver ↔ booking — "matching / availability" | **Giữ, xác định chiều: booking → driver** | S2 `FindNearbyDrivers` (matching); S3 `ReserveDriver` (availability) | Booking là bên cần kết quả ngay (FR02–FR05, BRULE01–03) |
-| booking ↔ trip — "location / ETA lookup" | **Giữ đường, đổi mục đích**; phần location / ETA chuyển thành trip → driver | S5 `CreateTrip`; S6 `GetDriverSummary` | Giữa Booking và Trip, việc cần làm đồng bộ là **tạo chuyến** (ADR-008). Vị trí và xe là dữ liệu của Driver, bên cần xem là Trip (UC10) |
+| booking ↔ trip — "location / ETA lookup" | **Giữ đường, đổi mục đích**; bỏ location / ETA | S5 `CreateTrip` (mang theo tên, biển số tài xế lấy từ S3) | Giữa Booking và Trip, việc cần làm đồng bộ là **tạo chuyến** (ADR-008). Tên, biển số là dữ liệu của chuyến lúc nhận nên chụp vào Trip; vị trí sống / ETA (FR15) ngoài phiếu, không làm (S6 bỏ 2026-10-21) |
 | trip ↔ payment — "validate completed trip" | **Bỏ** | Trip → Payment chỉ qua K5 | Bản tham chiếu trả sau nên Payment phải hỏi "chuyến hoàn thành chưa". Ở đây trả trước: Payment không cần hỏi, chỉ cần được báo (R8) |
 | (không có) auth ↔ customer | **Giống tham chiếu: không nối** (bản trước của thiết kế này từng thêm S1, đã bỏ 2026-10-03) | Không nối | Góp ý giảng viên: đăng ký → đăng nhập → tạo hồ sơ là ba bước của người dùng (ADR-013) |
 | (không có) | **Thêm** | S4 booking → payment `CreatePayment` | Cước cố định tính khi đặt xe, trả trước (ADR-009) |

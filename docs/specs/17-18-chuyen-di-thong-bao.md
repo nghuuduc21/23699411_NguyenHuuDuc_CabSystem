@@ -3,7 +3,8 @@
 > Vòng 2, viết 2026-10-05. Mục chấm **17, 18**, vế "thông báo" của **16**; bổ trợ **7** (consumer group `driver-service`, `payment-service`, `notification-service` trên Kafka UI), **19** (thông báo kết quả thanh toán), **22** (tài xế nhận thông báo duyệt — AC20), **28** (sai role → 403). FR10, FR12, FR17, FR21–FR24, FR36, FR40, FR41.
 > Đầu vào: `CLAUDE.md` (Quyết định nghiệp vụ "Hoàn tiền", "Hủy và từ chối"; Quyết định kỹ thuật "Trả tài xế về rảnh sau chuyến", "Kết quả thanh toán, hoàn tiền", "Phát event Kafka", "Hệ thống ngoài", "Lỗi sai trạng thái"; Ràng buộc khi thi); `srs.md` (BR03, BR04.1, BR04.2, BR07, BR10; FR10, FR12, FR17, FR21–FR24, FR36, FR40, FR41; BRULE01, BRULE14–16; UC10, UC11, UC16, UC27, UC31, UC32; AC09–AC11, AC16, AC20, AC22–AC24; RTM08, RTM09, RTM12, RTM18, RTM23, RTM24); `docs/design/01` mục 6.4–6.7 (B12, B13, D9, T2–T8, M8–M12, N1–N5); `docs/design/02` K3–K7, mục 4.6, 6.2, 6.4, 7; `docs/design/03` mục 6, 7, 8, 9, 11.3, 14; `docs/design/04` A22, A27–A29, A33, mục 1, 1.10, 3, 4, 5.2; `docs/design/06` mục 16, 17, 18; ADR-014, ADR-017.
 > Phụ thuộc: **spec 00**, **09-10**, **12-13-21-23**, **14-15-16-19-30** (đã code ở `116e16e`: bảng `trips`, `trip_status_history` đủ cột; rpc `CreateTrip`; K5 `ACCEPTED`; K1–K4, K6; `ReleaseDriver`; seed B1–B7, T3–T5).
-> Ngoài phạm vi: A26 `ListTrips` (Q32 — làm sau 30 mục); S6 `GetDriverSummary` (FR14, mục 8.1); admin hủy chuyến (FR31, Q45); A34–A36 (spec 20).
+> Ngoài phạm vi: A26 `ListTrips` (Q32 — làm sau 30 mục); vị trí sống của tài xế (FR15, mục 8.2); admin hủy chuyến (FR31, Q45); A34–A36 (spec 20).
+> **Sửa 2026-10-21 (sinh viên chốt M1 / L1 của báo cáo `docs/test-reports/2026-10-21-hoi-quy-gop-y-giang-vien.md`):** A27 trả thêm khối **`driver` `{ driver_id, name, plate }`** cho khách của chuyến, tài xế của chuyến và admin (FR14). Họ tên, biển số **chụp lúc tài xế nhận chuyến**: S3 `ReserveDriver` trả về → Booking chép vào S5 `CreateTrip` → Trip lưu ở cột mới `trips.driver_name`, `driver_plate` (migration `002`). **Không** thêm đường giao tiếp, **không** làm S6. Mục sửa: 2.8, 3, 4.2, 5.1, 5.4, 7, 7.1, 8, 8.2, 9.1 (CD10), 9.2 (CD-M2 đóng). AC mới: AC-CD-20 … AC-CD-22. Phần S3, S5: spec 14-15-16-19-30 (DX25).
 > **Sửa 2026-10-05 lần 2 (sinh viên chốt, FR43):** nội dung thông báo `APPLICATION_REJECTED` đổi thành "Hồ sơ của bạn bị từ chối. Xem lý do tại hồ sơ tài xế và nộp lại." (mục 2.7) vì tài xế nay nộp lại được (spec 12-13-21-23 mục 2.6). Chống lặp ở consumer giữ nguyên (Payment, Driver bằng trạng thái; Notification bằng UNIQUE `event_id`, `recipient_id`; không bảng event đã xử lý — 02 mục 6.4). AC đổi: AC-TB-03; AC mới: AC-TB-09.
 > **Ghi chú 2026-10-14 (theo yêu cầu giảng viên, không đổi hành vi spec này):** mọi bước "A14 `drivers/{id}`" trong AC của spec này (AC-CD-04, AC-CD-12, AC-CD-15, AC-HT-01, AC-HT-06) dùng token **`[AD1]`** hoặc token của **chính tài xế** đó — khách gọi A14 nay bị 403 (spec 12-13-21-23 mục 4.5). Token khách lấy bằng A05 email (`kh1@cab.vn`); tài xế bằng số (spec 09-10). Tab GET của mục 16 đang ở URL `customers/2/bookings?…` (mục 14 đổi đường dẫn).
 > **Sửa 2026-10-07 (sinh viên chốt M1 của báo cáo hồi quy, CD-Q8):** giữ Kafka UI chỉ đọc; AC-HT-04, AC-HT-05, AC-TB-09 gửi message lặp bằng `kafka-console-producer.sh` trong container `kafka` (mục 8.0) thay cho "Kafka UI → Produce". Hành vi hệ thống không đổi.
@@ -119,7 +120,7 @@ Notification **không quyết định nghiệp vụ**: mỗi event → 0–2 th�
 
 ### 2.8 UC10 — Xem chuyến (A27, bổ trợ 16–18)
 
-Chỉ đọc. Khách / tài xế của chuyến, hoặc admin (T7). Trả chuyến và lịch sử; **không** có thông tin sống của tài xế (S6 để sau — CD10).
+Chỉ đọc. Khách / tài xế của chuyến, hoặc admin (T7). Trả chuyến, lịch sử và **tài xế của chuyến** (`driver`: mã, họ tên, biển số — FR14). Họ tên, biển số là **bản chụp lúc nhận chuyến** do Trip tự lưu, nên xem chuyến không gọi sang Driver (CD10). Đây là đường duy nhất khách thấy tài xế của mình vì A14 chỉ dành cho admin và chính tài xế (góp ý 2026-10-14). Không có vị trí sống (FR15, ngoài phiếu).
 
 ```mermaid
 sequenceDiagram
@@ -147,7 +148,7 @@ sequenceDiagram
 
 | Thành phần | Vai trò | Dữ liệu |
 |---|---|---|
-| `trip-service` | **Sở hữu** Trip: xem, tiến trạng thái, hủy; phát K5 mọi lần đổi | `trip-db` → `trips`, `trip_status_history` (không đổi schema) |
+| `trip-service` | **Sở hữu** Trip: xem, tiến trạng thái, hủy; phát K5 mọi lần đổi | `trip-db` → `trips` (thêm `driver_name`, `driver_plate` — migration `002`, mục 7), `trip_status_history` |
 | `booking-service` | **Sở hữu** Booking: hủy khi chưa có tài xế, `VOIDED` Offer, phát K4; gọi `ReleaseDriver` (S3) | `booking-db` (không đổi schema) |
 | `payment-service` | **Sở hữu** tiền: nghe K3, K4, K5 → hủy bỏ / hoàn / ghi nhận tiền mặt; phát K6 | `payment-db` (không đổi schema) |
 | `driver-service` | **Sở hữu** trạng thái nhận chuyến: nghe K5 → `ONLINE` | `driver-db` (không đổi schema) |
@@ -208,7 +209,8 @@ Role của đường dẫn: `customer`, `driver` (admin → 403 **trước** khi
 |---|---|
 | Token / role | Có / `customer` (chủ), `driver` (chủ), `admin` |
 | rpc | `GetTrip` |
-| Response 200 | `{ "trip_id": 1000, "booking_id": 1000, "status": "IN_PROGRESS", "vehicle": "CAR_4", "pay": "CASH", "fare": 45000, "customer_id": 1, "driver_id": 11, "from": [10.82, 106.68], "to": [10.83, 106.69], "started_at": "…Z", "created_at": "…Z", "history": [ { "status": "ACCEPTED", "at": "…Z" }, … ] }`. Có `from_address`, `to_address`, `ended_at`, `canceled_by`, `cancel_reason` khi có giá trị |
+| Response 200 | `{ "trip_id": 1000, "booking_id": 1000, "status": "IN_PROGRESS", "vehicle": "CAR_4", "pay": "CASH", "fare": 45000, "customer_id": 1, "driver_id": 11, "driver": { "driver_id": 11, "name": "Tài Xế 1", "plate": "59A-00001" }, "from": [10.82, 106.68], "to": [10.83, 106.69], "started_at": "…Z", "created_at": "…Z", "history": [ { "status": "ACCEPTED", "at": "…Z" }, … ] }`. Có `from_address`, `to_address`, `ended_at`, `canceled_by`, `cancel_reason` khi có giá trị |
+| Khối `driver` (thêm 2026-10-21) | **Luôn có**, cùng nội dung cho cả ba người xem được (khách, tài xế của chuyến, admin). `name` = `trips.driver_name`, `plate` = `trips.driver_plate` — giá trị **lúc nhận chuyến**, không đổi khi tài xế sửa hồ sơ / đổi xe sau đó. Giữ `driver_id` ở mức ngoài để không đổi response cũ. Chuyến tạo trước migration `002` (không có giá trị) → `driver` chỉ có `driver_id` (field NULL thì không có key — như A14). Không có `lat`, `lng` (vị trí sống, ngoài phiếu) |
 
 | Đường lỗi | HTTP | Mã |
 |---|---|---|
@@ -274,7 +276,8 @@ Quy ước như spec 14 mục 5 (`longs: Number`, `defaults: false`; tên field 
 |---|---|
 | `TripIdRequest` | `int64 trip_id = 1;` |
 | `HistoryItem` | `string status = 1; string at = 2;` |
-| `Trip` | `int64 trip_id = 1; int64 booking_id = 2; string status = 3; string vehicle = 4; string pay = 5; int32 fare = 6; int64 customer_id = 7; int64 driver_id = 8; repeated double from = 9; repeated double to = 10; optional string from_address = 11; optional string to_address = 12; optional string started_at = 13; optional string ended_at = 14; optional string canceled_by = 15; optional string cancel_reason = 16; string created_at = 17; repeated HistoryItem history = 18;` |
+| `TripDriver` (mới 2026-10-21) | `int64 driver_id = 1; optional string name = 2; optional string plate = 3;` |
+| `Trip` | `int64 trip_id = 1; int64 booking_id = 2; string status = 3; string vehicle = 4; string pay = 5; int32 fare = 6; int64 customer_id = 7; int64 driver_id = 8; repeated double from = 9; repeated double to = 10; optional string from_address = 11; optional string to_address = 12; optional string started_at = 13; optional string ended_at = 14; optional string canceled_by = 15; optional string cancel_reason = 16; string created_at = 17; repeated HistoryItem history = 18; TripDriver driver = 19;` — **thêm 19 ngày 2026-10-21**; Gateway thêm `driver` vào danh sách key trả của A27 |
 | `UpdateTripStatusRequest` → `UpdateTripStatusResponse` | `int64 trip_id = 1; string status = 2;` → `int64 trip_id = 1; string status = 2; repeated HistoryItem history = 3;` |
 | `CancelTripRequest` → `CancelTripResponse` | `int64 trip_id = 1; string reason = 2;` → `int64 trip_id = 1; string status = 2; string canceled_by = 3; string reason = 4;` |
 
@@ -310,6 +313,7 @@ Thứ tự trong service: danh tính → dữ liệu vào (400) → `SELECT … 
 
 | Service | Việc | Cách làm | Truy vết |
 |---|---|---|---|
+| trip | `GetTrip` (sửa 2026-10-21) | `SELECT` thêm `driver_name`, `driver_plate` từ `trips` → `driver = { driver_id, name, plate }` (bỏ key khi NULL). **Không** gọi `driver-service` | FR14, CD10 |
 | trip | `UpdateTripStatus` | Bảng kế tiếp hằng số `NEXT = { ACCEPTED: ARRIVED, ARRIVED: PICKED_UP, PICKED_UP: IN_PROGRESS, IN_PROGRESS: COMPLETED }`. Một giao dịch: khóa → `NEXT[hiện tại] === yêu cầu` hay không → `UPDATE trips SET status, started_at = CASE PICKED_UP …, ended_at = CASE COMPLETED …, updated_at` → `INSERT trip_status_history (from, to, changed_by = x-account-id, 'driver', changed_at = now())` → đọc lịch sử theo `changed_at, history_id` → commit → K5 | T2–T4, T8 |
 | trip | `CancelTrip` | Khóa → chủ theo role (`customer_id` / `driver_id`) → trạng thái ∈ {`ACCEPTED`, `ARRIVED`} → `UPDATE … status = 'CANCELED', canceled_by = role, cancel_reason, ended_at` → lịch sử có `reason` → commit → K5 có thêm `canceled_by` | T5, T6, BRULE16 |
 | trip | K5 | Tổng quát hóa `publishStatusChanged(trip, previous, canceledBy?)` đã có: `data = { trip_id, booking_id, customer_id, driver_id, status, previous_status }` (+ `canceled_by` khi `CANCELED`); key `trip_id`. **Không** lý do, tọa độ | 02 K5 |
@@ -337,7 +341,7 @@ Thứ tự trong service: danh tính → dữ liệu vào (400) → `SELECT … 
 | `booking` → Kafka **K3** (đã phát ở spec 14) → payment, notification | Kafka | **L1**: tiến trình nền kết luận; **L2**, **L3**. Spec này thêm **phần nghe** |
 | `payment` → Kafka **K6** `REFUNDED`, `COMPLETED` (tiền mặt) → notification (booking bỏ qua vì không còn `PENDING_PAYMENT`) | Kafka | **L1**: kết quả đến sau một event khác; **L3** (FR24) |
 | `driver` → Kafka **K7** (đã phát ở spec 12) → notification | Kafka | **L2** (AC20). Spec này thêm phần nghe |
-| `trip` → `payment`, `trip` → `driver` bằng gRPC | **Không có** | Trip không được chờ hay lỗi theo hai bên này (R6, R8) |
+| `trip` → `payment`, `trip` → `driver` bằng gRPC | **Không có** | Trip không được chờ hay lỗi theo hai bên này (R6, R8). A27 cũng **không** gọi Driver (S6 bỏ, 2026-10-21): họ tên, biển số đã được chụp vào `trips` lúc nhận chuyến qua S3 → S5 (CD10) |
 | `trip` → `booking` | **Không có** | Booking kết thúc ở `DRIVER_ASSIGNED` (R13, GĐ-9b) |
 | `payment` → `trip` | **Không có** | Không quy tắc nào của Trip phụ thuộc tiền (R9) |
 | Bất kỳ ai → `notification` bằng gRPC | **Không có** | Không ai được chờ Notification (NFR05) |
@@ -356,11 +360,22 @@ Consumer group mới (thấy ở Kafka UI → Consumers, mục 7): `driver-servi
 
 | Database | Thay đổi | Ghi chú |
 |---|---|---|
-| `trip-db` | **Không** migration mới | Cột `started_at`, `ended_at`, `cancel_reason`, `canceled_by`, `trip_status_history.reason` đã có (DX18) |
+| `trip-db` | **Migration mới `services/trip-service/migrations/002_ten-bien-so-tai-xe.sql`** (2026-10-21, CD10; không sửa `001`) | Cột `started_at`, `ended_at`, `cancel_reason`, `canceled_by`, `trip_status_history.reason` đã có (DX18). Thêm hai cột ở bảng dưới |
 | `booking-db` | Không | `VOIDED`, `canceled_by = 'customer'`, `cancel_reason` đã có |
 | `payment-db` | Không | `status_reason` đã có `BOOKING_CANCELED`, `NO_DRIVER_FOUND`, `TRIP_CANCELED`; UNIQUE một lần hoàn (M8) đã có |
 | `driver-db` | Không | CHECK D8 (`BUSY` ⇔ có `current_booking_id`) giữ đúng sau khi nhả |
 | `notification-db` | Thêm 2 index vào `INDEXES` của `services/notification-service/src/migrate.js` (tạo khi khởi động, gọi lại an toàn) | Bảng dưới |
+
+Migration `002` (bảng `trips`):
+
+| Cột | Kiểu | Ràng buộc | Lý do |
+|---|---|---|---|
+| `driver_name` | `text` | NULL, `CONSTRAINT trips_driver_name_len CHECK (driver_name IS NULL OR char_length(driver_name) BETWEEN 1 AND 100)` | Họ tên tài xế lúc nhận chuyến (FR14). `text` như `drivers.full_name`; **lưu rõ** — ở `driver-db` họ tên tài xế cũng không mã hóa (mục chấm 24 chỉ mã hóa họ tên, ngày sinh khách và số GPLX) |
+| `driver_plate` | `text` | NULL, `CONSTRAINT trips_driver_plate_format CHECK (driver_plate IS NULL OR driver_plate ~ '^[A-Z0-9.-]{5,15}$')` | Biển số của **xe đã chạy chuyến này**; cùng dạng với `vehicles.license_plate`. Không UNIQUE (một tài xế nhiều chuyến) |
+
+Nội dung file (một giao dịch): `ALTER TABLE trips ADD COLUMN driver_name text, ADD COLUMN driver_plate text` + hai CHECK trên; rồi `UPDATE trips SET driver_name = $tên, driver_plate = $biển WHERE trip_id = n AND driver_name IS NULL` cho T3 (`Tài Xế 1`, `59A-00001`), T4 (`Tài Xế 3`, `59A-00003`), T5 (`Tài Xế 6`, `59A-00006`) — để database đang có seed cũ (không `down -v`) cũng có giá trị. Seed của trip-service cũng chèn hai cột này (database mới).
+
+Vì sao **NULL được, không `NOT NULL`**: database đang chạy có thể còn chuyến tạo trước migration (chuyến test ≥ 1000) mà không ai biết tên, biển số lúc đó; `NOT NULL` làm migration lỗi. Chuyến mới luôn có giá trị vì `CreateTrip` từ chối khi thiếu (`INVALID_ARGUMENT`, spec 14 mục 5.3).
 
 Collection `notifications` (03 mục 9): `event_id` (string UUID), `recipient_id` (long — dùng `Long` của driver `mongodb`), `type`, `title`, `body` (string), `data` (object chỉ chứa các key của `NotificationData`), `created_at` (date).
 
@@ -369,7 +384,7 @@ Collection `notifications` (03 mục 9): `event_id` (string UUID), `recipient_id
 | `{ event_id: 1, recipient_id: 1 }` **unique** | `notifications_event_recipient_uq` | N4: event lặp không tạo thêm; một event vẫn cho hai người (TRIP_CANCELED) |
 | `{ recipient_id: 1, created_at: -1 }` | `notifications_recipient_created_idx` | A33: của tôi, mới nhất trước, phân trang |
 
-### 7.1 Seed cần cho 17, 18 (03 mục 14 — đã có, **không thêm**)
+### 7.1 Seed cần cho 17, 18 (03 mục 14 — đã có, **không thêm dòng**; 2026-10-21 điền thêm `driver_name`, `driver_plate` cho T3, T4, T5 theo seed tài xế "Tài Xế n" / `59A-0000n`)
 
 | Seed | Dùng ở |
 |---|---|
@@ -393,7 +408,7 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23, 14-15-16-19-30 đạt; `dock
 | AC-CD-04 | 17, AC11 | Sau AC-CD-03 | `"COMPLETED"`; ≈ 1 s sau A14 `drivers/11` `[AD1]`; A30 payment booking 1000 `[KH1]`; A33 `[KH1]` | 200 `COMPLETED`, `history` **5** mục đúng thứ tự; TX1 `ONLINE`; Payment `CASH` **`COMPLETED`**, có `paid_at`, không giao dịch; K6 `COMPLETED` `method` `CASH`; A33: `PAYMENT_COMPLETED`, `TRIP_COMPLETED` (mới nhất trước) |
 | AC-CD-05 | 17 (409) | Sau AC-CD-04 | A28 `COMPLETED` lại; `ARRIVED`; A29 `{"status":"CANCELED","reason":"x"}` `[TX1]` | 409 `INVALID_STATUS_TRANSITION` ×2; 409 `TRIP_NOT_CANCELABLE` |
 | AC-CD-06 | 17 (400/401/403/404) | Chuyến 1000 | `trips/1000` `[TX3]` `ARRIVED`; `trips/999`; `trips/abc`; `{"status":"ACCEPTED"}`; `{"status":"BUSY"}`; body rỗng; `{"status":"ARRIVED","reason":"x"}`; `[KH1]` `{"status":"ARRIVED"}`; `[AD1]` không body; không token | 403 `NOT_OWNER`; 404 `TRIP_NOT_FOUND`; 400 `INVALID_ID`; 400 `INVALID_INPUT` ×4; 403 `FORBIDDEN` ×2; 401 `TOKEN_MISSING` |
-| AC-CD-07 | 17 (A27) | Chuyến 1000 | A27 `[KH1]`, `[TX1]`, `[AD1]`, `[KH2]`, `[TX3]`, `trips/999` | 200 ×3 (`pay` `CASH`, `fare` 45000, `history`); 403 `NOT_OWNER` ×2; 404 `TRIP_NOT_FOUND` |
+| AC-CD-07 | 17 (A27) | Chuyến 1000 | A27 `[KH1]`, `[TX1]`, `[AD1]`, `[KH2]`, `[TX3]`, `trips/999` | 200 ×3 (`pay` `CASH`, `fare` 45000, `history`, `driver` `{11, "Tài Xế 1", "59A-00001"}` — thêm 2026-10-21); 403 `NOT_OWNER` ×2; 404 `TRIP_NOT_FOUND` |
 | AC-CD-08 | 17 (503) | `docker compose stop trip-service` | A28 bất kỳ | 503 `SERVICE_UNAVAILABLE`. `start` lại |
 | AC-CD-09 | **18** | Seed T5 | A29 `PATCH /api/v1/trips/5` `[KH1]` `{"status":"CANCELED","reason":"ban viec"}` | 200 `{trip_id 5, CANCELED, canceled_by customer, reason "ban viec"}`; `trip_status_history` thêm dòng `ACCEPTED → CANCELED`, `reason`, role `customer`; K5 `CANCELED`, `canceled_by` `customer`, **không** có lý do |
 | AC-HT-01 | **18** (AC22) | ≈ 1 s sau AC-CD-09 | A30 `payments/5` `[KH1]`; A14 `drivers/16` `[AD1]` | Payment `REFUNDED`, `status_reason` `TRIP_CANCELED`, `refunded_at`; `transactions`: `SIM-5-1` `CHARGE`, `SIM-R-5` `REFUND` `SUCCEEDED` 45000; K6 `REFUNDED`; TX6 `ONLINE` |
@@ -421,7 +436,11 @@ Tiền điều kiện: spec 00, 09-10, 12-13-21-23, 14-15-16-19-30 đạt; `dock
 | AC-TB-08 | NFR08, NFR10 | Sau các AC trên | `docker compose logs notification-service trip-service` | Có `notification_created`, `trip_status_changed`, `trip_canceled`; không có `title`, `body`, `reason` |
 | AC-TB-09 (mới 2026-10-05; **đổi 2026-10-07**, CD-Q8) | 22 (FR43, N4) | Sau AC-TB-03 (TX7 đã có một `APPLICATION_REJECTED`) | TX7 nộp lại A11 (spec 12-13-21-23 AC-TX-34) → A16 từ chối lần hai → ≈ 1 s A33 `[TX7]`; gửi lại y hệt message K7 lần hai (cùng key, cùng `event_id`; chép từ Kafka UI → Messages) bằng `kafka-console-producer.sh` (mục 8.0) → A33 | Hai thông báo `APPLICATION_REJECTED` (hai `event_id` khác nhau, cùng `body` mới); sau khi gửi lặp vẫn **hai** (chống trùng theo `event_id`, `recipient_id`). Nộp lại **không** tạo thông báo (không có event) |
 
-Tổng: **34 tiêu chí** (19 AC-CD, 6 AC-HT, 9 AC-TB).
+| AC-CD-20 (mới 2026-10-21) | 12 (FR14), A27 | Seed T5 (KH1, TX6; trước hay sau AC-CD-09 đều được — chuyến đã hủy vẫn giữ `driver`) | A27 `GET /api/v1/trips/5` `[KH1]`; `[TX6]`; `[AD1]`; `[KH2]`; `[TX1]` | 200 ×3, cùng khối **`"driver": {"driver_id": 16, "name": "Tài Xế 6", "plate": "59A-00006"}`** (không có `lat`, `lng`, `license`); 403 `NOT_OWNER` ×2 (body chỉ `{"error":"NOT_OWNER"}`, không lộ tên / biển số). Đồng thời A14 `drivers/16` `[KH1]` → 403 `FORBIDDEN` (khách chỉ thấy tài xế qua chuyến của mình) |
+| AC-CD-21 (mới 2026-10-21) | 16 → A27 (chụp lúc nhận) | Sau AC-DX-19 (chuyến 1000, TX1) | A27 `trips/1000` `[KH1]`; rồi đổi biển số TX1 trong `driver-db` (`docker exec driver-db psql -U cab -d driver -c "update vehicles set license_plate='59A-11111' where driver_id=11"`); A27 lại; trả biển số về `59A-00001` | 200 `driver` `{11, "Tài Xế 1", "59A-00001"}`; lần hai **vẫn** `59A-00001` (bản chụp lúc nhận, không đọc lại Driver); `table trips` dòng 1000 có `driver_name`, `driver_plate` đúng; log `trip-service` không có lời gọi tới `driver-service` |
+| AC-CD-22 (mới 2026-10-21) | Migration | Database đang chạy có seed cũ (chưa có hai cột) | Khởi động `trip-service` (chạy `002`); khởi động lại lần hai; `\d trips` | Có `driver_name`, `driver_plate` `text` nullable, `trips_driver_name_len`, `trips_driver_plate_format`; T3 / T4 / T5 có `Tài Xế 1` / `59A-00001`, `Tài Xế 3` / `59A-00003`, `Tài Xế 6` / `59A-00006`; lần hai không lỗi, không ghi đè. Chuyến cũ không có giá trị → A27 `driver` chỉ có `driver_id` |
+
+Tổng: **37 tiêu chí** (22 AC-CD, 6 AC-HT, 9 AC-TB) — thêm AC-CD-20 … 22 ngày 2026-10-21.
 
 ### 8.0 Gửi lại message Kafka (AC-HT-04, AC-HT-05, AC-TB-09)
 
@@ -464,7 +483,7 @@ Kết quả mong đợi theo phiếu chấm: **16** — nhận chuyến có `tri
 | Việc | Vì sao để sau |
 |---|---|
 | A26 `GET /api/v1/trips` (FR30, admin giám sát) | Q32: ngoài phiếu |
-| S6 `GetDriverSummary` → khối `driver` trong A27 (FR14, UC10) | Ngoài phiếu; A27 đã có `driver_id` |
+| Vị trí sống của tài xế trong A27 (FR15, UC10) | Ngoài phiếu. Nếu làm thì mới cần một lời gọi Trip → Driver lúc xem (vị trí đổi liên tục, không chụp được). Họ tên, biển số đã có từ 2026-10-21 (CD10) |
 | Admin hủy / xử lý sự cố chuyến (FR31, UC23) | Q45 chưa thiết kế |
 | A29 và A28 đồng thời trên cùng chuyến → một thắng, một 409 | `FOR UPDATE` bảo đảm; khó demo tay |
 | A22 và A24 đồng thời (B12) | Khóa dòng Booking đã có từ spec 14 |
@@ -487,7 +506,7 @@ Kết quả mong đợi theo phiếu chấm: **16** — nhận chuyến có `tri
 | CD7 | Chống trùng bằng `updateOne` + `$setOnInsert` + `upsert` | Một lệnh, không phải bắt lỗi trùng khóa | Mục 2.7 |
 | CD8 | Không thông báo `PICKED_UP`, `IN_PROGRESS` | BR10 chỉ liệt kê đến điểm đón, hoàn thành | Mục 2.7 |
 | CD9 | `TRIP_CANCELED` gửi cho **cả** khách và tài xế (kể cả người hủy) | Đơn giản, mục 18 khách thấy ngay; N5 vẫn đúng | Mục 2.7 |
-| CD10 | A27 không có khối `driver` (chưa làm S6) | S6 phục vụ FR14 ngoài phiếu, 02 ghi "làm sau cùng" | Mục 2.8, 4.2 |
+| CD10 (**đổi 2026-10-21**, sinh viên chốt) | A27 **có** khối `driver` `{driver_id, name, plate}`; họ tên, biển số **chụp lúc nhận chuyến** (S3 trả → S5 mang → `trips.driver_name`, `driver_plate`). Không làm S6. (Trước: A27 không có `driver`) | Khách cần biết ai tới đón (FR14) mà A14 đã chặn khách (góp ý 2026-10-14). Biển số của xe đã chạy chuyến là dữ liệu lịch sử của chuyến; xem chuyến không phải gọi Driver nên Driver dừng thì A27 vẫn đủ. Đánh đổi: tài xế đổi tên / xe sau đó thì chuyến cũ giữ giá trị cũ (đúng nghĩa lịch sử); họ tên tài xế nằm thêm ở `trip-db` (lưu rõ, như ở `driver-db`) | Mục 2.8, 4.2, 5.1, 5.4, 7; spec 14 DX25 |
 | CD11 | Ba consumer group mới đều `fromBeginning: true` | Không mất event phát trước khi group được tạo (Compose khởi động lệch nhau); consumer lặp an toàn | Mục 5.4 |
 | CD12 | K5 `COMPLETED` tiền mặt → K6 `COMPLETED` (`method` `CASH`) | FR17 "ghi nhận", FR24 báo khách; Booking bỏ qua vì không còn `PENDING_PAYMENT` | Mục 2.5 |
 | CD13 | Thông báo `OFFER_VOIDED` cho tài xế đang có Offer chờ khi khách hủy booking | 02 K4 "báo tài xế đang giữ Offer chờ" | Mục 2.7 |
@@ -499,7 +518,7 @@ Kết quả mong đợi theo phiếu chấm: **16** — nhận chuyến có `tri
 | # | Chỗ | Ghi chú | Spec theo |
 |---|---|---|---|
 | CD-M1 | 06 mục 18 và 04 mục 5.2 dùng **tab chuyến** + token KH1 cho A29 | Phải đổi token → ~36 s, Vượt. Spec dùng **tab GET** (~28 s). **Đã sửa 04, 06 (2026-10-05, CD-Q2)** | Tab GET |
-| CD-M2 | 04 A27 có khối `driver` (qua S6) | Spec để sau (CD10) | Không có `driver` |
+| CD-M2 | 04 A27 có khối `driver` (qua S6) | **Đóng 2026-10-21** (M1 của báo cáo 2026-10-21): A27 có `driver` `{driver_id, name, plate}` lấy từ bản chụp trong `trips`, không qua S6; đã sửa 02, 03, 04, 06 và spec 12-13-21-23 AC-TX-42 cho khớp | Có `driver` (CD10) |
 | CD-M3 | 03 mục 9 "danh sách `type` chốt ở spec" | Chốt 15 loại ở mục 2.7 (thêm `OFFER_VOIDED`, `TRIP_ARRIVED`, `TRIP_COMPLETED`, `PAYMENT_FAILED`, `PAYMENT_CANCELED`, `APPLICATION_REJECTED`, `BOOKING_CANCELED`) | Mục 2.7 |
 | CD-M4 | 01 N5 "bên **còn lại** được báo" | Spec báo cả hai (CD9) | Mục 2.7 |
 | CD-M5 | 03 mục 9 không nói `created_at` lấy từ đâu | CD6 | Mục 2.7 |

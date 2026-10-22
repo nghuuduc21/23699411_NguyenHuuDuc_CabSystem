@@ -1,6 +1,6 @@
 # ADR-020 — Mỗi service một cổng gRPC riêng (50051–50058)
 
-- Ngày: 2026-10-05. Trạng thái: **Đã chấp nhận** (sinh viên chốt 2026-10-05, sửa lỗi L3 khi kiểm thử). Thay quyết định H1 của spec `00-ha-tang` ("mọi service nghe cùng 50051").
+- Ngày: 2026-10-05; bổ sung 2026-10-21 (`waitForReady`, mục "Hệ quả"). Trạng thái: **Đã chấp nhận** (sinh viên chốt 2026-10-05, sửa lỗi L3 khi kiểm thử). Thay quyết định H1 của spec `00-ha-tang` ("mọi service nghe cùng 50051").
 - Liên quan: `docs/design/02` mục 2.3; `docs/design/03` mục 13 (hằng số); spec `00-ha-tang` mục 2.1, 3.1, 3.2, 3.5, AC-HT-11, AC-HT-14, AC-HT-15; mục chấm 5, 6, 8; NFR04, NFR15.
 
 ## Bối cảnh
@@ -24,7 +24,7 @@ Chọn **B**.
 | Điểm | Thiết kế |
 |---|---|
 | Cổng | Hằng số trong code của từng service; `healthcheck.js` dùng cùng hằng số |
-| Bên gọi | `AUTH_GRPC_ADDR=auth-service:50051` … `RATING_GRPC_ADDR=rating-service:50058` trong `compose.yaml` (Gateway 8 biến; booking: driver, payment, trip; trip: driver; rating: trip) |
+| Bên gọi | `AUTH_GRPC_ADDR=auth-service:50051` … `RATING_GRPC_ADDR=rating-service:50058` trong `compose.yaml` (Gateway 8 biến; booking: driver, payment, trip; rating: trip). Trip: không còn (S6 bỏ 2026-10-21) |
 | Mở ra ngoài | **Không** — không service nào có `ports`; mục chấm 8 vẫn chỉ có Gateway 3000 và Kafka UI 8080 |
 | Quy luật nhớ | Số cuối = thứ tự trong bảng 8 service của `CLAUDE.md` |
 
@@ -39,9 +39,20 @@ Chọn **B**.
 - Thêm 8 con số phải nhớ và cấu hình đúng; sai một biến `*_GRPC_ADDR` thì service đó `UNREACHABLE` (dễ thấy ở `/health/services`).
 - Không loại trừ hẳn mọi lỗi do IP bị cấp lại (ví dụ hai bản cùng service), nhưng không còn đi nhầm sang service khác.
 
+## Hệ quả và bổ sung 2026-10-21: `waitForReady` (lỗi L2)
+
+Cổng riêng biến "nối nhầm" thành "bị từ chối", nhưng lời gọi **đầu tiên** sau khi service chạy lại vẫn có thể gặp kênh đang ở trạng thái lỗi (vừa bị từ chối ở IP cũ, chưa phân giải lại tên) → grpc-js trả `UNAVAILABLE` ngay (3–8 ms) → Gateway 503 dù `/health/services` báo `healthy` (báo cáo `docs/test-reports/2026-10-21-hoi-quy-gop-y-giang-vien.md`, L2: AC-HT-15 đỏ 3/8 lần).
+
+| | Nội dung |
+|---|---|
+| Quyết định (sinh viên chốt 2026-10-21) | **Mọi** lời gọi gRPC — Gateway → service (gồm `Health/Check`) và service → service — bật **`waitForReady`**, đặt bằng `new grpc.Metadata({ waitForReady: true })` (cách `@grpc/grpc-js` đọc tùy chọn này). **Giữ deadline**: Gateway → service 3 s, health 1 s, service → service 1 s |
+| Vì sao | Lời gọi chờ kênh tự tìm lại địa chỉ và nối xong rồi mới gửi, trong hạn deadline; không phải tự viết vòng gọi lại (gọi lại thao tác ghi có thể gửi lặp) hay tự tạo lại kênh |
+| Đánh đổi | Service dừng hẳn thì 503 đến **sau khi hết deadline** (≤ 3 s) thay vì ngay; `/health/services` khi có service dừng mất ≈ 1 s; lời gọi nội bộ chờ tối đa 1 s mỗi lần (ví dụ bộ ghép thử S2 ba lần → `NO_DRIVER_FOUND` khi Driver dừng đến chậm hơn) |
+| Kiểm tra | Spec 00: AC-HT-15 (đổi), AC-HT-18, AC-HT-19 (mới); H14 |
+
 ## Câu trả lời mẫu khi vấn đáp
 
-"Mỗi service nghe gRPC một cổng riêng, auth 50051 đến rating 50058, chỉ trong mạng Compose, không mở ra ngoài. Trước đây cùng 50051 thì khi restart, Docker có thể cấp IP cũ cho container khác và Gateway nối nhầm sang service khác mà không báo lỗi. Cổng riêng thì nối nhầm sẽ bị từ chối, kênh tự tìm lại đúng service."
+"Mỗi service nghe gRPC một cổng riêng, auth 50051 đến rating 50058, chỉ trong mạng Compose, không mở ra ngoài. Trước đây cùng 50051 thì khi restart, Docker có thể cấp IP cũ cho container khác và Gateway nối nhầm sang service khác mà không báo lỗi. Cổng riêng thì nối nhầm sẽ bị từ chối, kênh tự tìm lại đúng service. Thêm nữa mọi lời gọi gRPC bật `waitForReady` có deadline: service vừa bật lại thì lời gọi chờ kênh nối xong rồi mới gửi, nên không bị 503 oan; service chết hẳn thì 503 sau tối đa 3 giây."
 
 ## Điều kiện xem lại
 

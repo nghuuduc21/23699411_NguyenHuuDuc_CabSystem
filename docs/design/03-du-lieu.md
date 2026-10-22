@@ -6,6 +6,7 @@
 > Rà soát cùng ngày: tạo ADR-015 (khóa chính), ADR-016 (HS256), ADR-017 (không outbox); tổng bảng sửa thành 17; `trips` cho địa chỉ NULL như `bookings`; mã giao dịch hoàn `SIM-R-<payment_id>`; mục 1.2 / 1.3 đúng thứ tự.
 > **Sửa 2026-10-05 (sinh viên chốt):** bỏ `accounts.email` bằng migration mới ở auth, thêm `customer_profiles.email` (tùy chọn, không UNIQUE, không mã hóa — mục 3.1, 4.1, ADR-019); seed email KH1, KH2 (mục 14); `drivers` cho nộp lại khi `REJECTED` (mục 5.2, FR43); ghi rõ chống lặp event không cần bảng riêng (mục 11.3); cổng gRPC riêng từng service (mục 13, ADR-020). **Ảnh `docs/architecture/bounded-context-db.png` cần vẽ lại** (hai bảng `accounts`, `customer_profiles`).
 > **Sửa 2026-10-14 (theo yêu cầu giảng viên, sinh viên chốt) — ADR-021 thay ADR-019:** `accounts` thêm lại `email` (UNIQUE, NULL được, chữ thường), `phone` thành NULL được, CHECK "đúng một định danh theo role" (mục 3.1; migration mới `004` ở auth); `customer_profiles` bỏ `email`, thêm `phone` bắt buộc, không UNIQUE, lưu rõ (mục 4.1; migration mới `003` ở customer); seed: khách và admin có email, admin bỏ số `0999999999`, hồ sơ có số điện thoại (mục 14); mục 11.4 cập nhật danh sách lưu rõ. **Ảnh `bounded-context-db` đã sửa ở file `.html`** (sinh viên xuất lại PNG).
+> **Sửa 2026-10-21 (sinh viên chốt, M1 / L1 của báo cáo 2026-10-21):** `trips` thêm `driver_name`, `driver_plate` (bản chụp lúc nhận chuyến, NULL được; migration mới `002` ở trip, điền T3–T5) — mục 7.1, 11.2, 14. S6 bỏ. Mục 11.4 ghi thêm: họ tên tài xế lưu rõ ở cả `driver-db` và `trip-db`. **Ảnh `bounded-context-db` cần thêm hai cột ở bảng `trips`** (sửa file `.html`, sinh viên xuất lại PNG).
 > File này trả lời: **mỗi service lưu gì, ở đâu, kiểu gì, vì sao**. Đường dẫn REST và rpc: file 04.
 > Ký hiệu: **[ĐC]** = đã chốt trong `CLAUDE.md` / `srs.md`. **[BA]** = BA tự chọn, chưa ai xác nhận (gom ở mục 16). Tên trạng thái viết HOA vẫn là đề xuất như ở file 01, trừ tên đã có trong SRS.
 
@@ -422,6 +423,8 @@ erDiagram
 | `pickup_address`, `destination_address` | `text` | NULL | Bản chụp; NULL khi booking không gửi địa chỉ (cùng quy tắc với `bookings`, mục 6.1) |
 | `payment_method` | `text` | NOT NULL, CHECK IN (`CASH`, `ONLINE`) | Bản chụp: tài xế biết có phải thu tiền mặt không (FR17) |
 | `fare_amount` | `integer` | NOT NULL, CHECK (> 0) | Bản chụp: số tiền phải thu |
+| `driver_name` (thêm 2026-10-21, migration `002`) | `text` | NULL, CHECK độ dài 1–100 | **Bản chụp lúc nhận chuyến** (S3 → S5): khách biết ai tới đón (FR14, A27) mà không xem được A14. Lưu rõ, như `drivers.full_name`. NULL chỉ ở chuyến tạo trước migration; `CreateTrip` mới luôn có |
+| `driver_plate` (thêm 2026-10-21, migration `002`) | `text` | NULL, CHECK `^[A-Z0-9.-]{5,15}$` | Bản chụp biển số **xe đã chạy chuyến này**; không UNIQUE. Tài xế đổi xe sau đó thì chuyến cũ vẫn đúng xe cũ |
 | `status` | `text` | NOT NULL, CHECK IN (`ACCEPTED`, `ARRIVED`, `PICKED_UP`, `IN_PROGRESS`, `COMPLETED`, `CANCELED`) | File 01 mục 6.5 |
 | `started_at` | `timestamptz` | NULL | Lúc đón khách = "chuyến bắt đầu" (BRULE16); `start_time` của SRS |
 | `ended_at` | `timestamptz` | NULL | Lúc `COMPLETED` hoặc `CANCELED`; `end_time` của SRS |
@@ -461,6 +464,8 @@ erDiagram
     text vehicle_type "bản chụp"
     text payment_method "bản chụp"
     int fare_amount "bản chụp"
+    text driver_name "chụp lúc nhận"
+    text driver_plate "chụp lúc nhận"
     text status
     timestamptz started_at
     timestamptz ended_at
@@ -751,7 +756,7 @@ Hệ quả phải nói được khi vấn đáp:
 | Hệ quả | Cách xử lý |
 |---|---|
 | Database không tự chặn ID "mồ côi" | ID luôn đến từ nguồn đã kiểm tra: token do Gateway xác thực, hoặc kết quả của một lời gọi gRPC |
-| Không JOIN được giữa hai service | Sao bản chụp (mục 11.2), hoặc gọi gRPC lúc cần (S6), hoặc client gọi hai API |
+| Không JOIN được giữa hai service | Sao bản chụp (mục 11.2), hoặc gọi gRPC lúc cần (S2, S7), hoặc client gọi hai API |
 | Không xóa dây chuyền | Hệ thống không có chức năng xóa tài khoản, booking, chuyến (không FR nào yêu cầu) |
 | Hai nơi có thể lệch nhau khi lỗi giữa chừng | Lời gọi lặp lại được theo ID (S3, S4, S5). Event gửi ngay sau commit, **có thể mất** nếu service dừng đúng lúc đó (ADR-017, rủi ro đã chấp nhận). Đăng ký và tạo hồ sơ không ghi hai database trong một thao tác nên không có khe hở này |
 
@@ -763,10 +768,11 @@ Hệ quả phải nói được khi vấn đáp:
 | Loại xe, tọa độ, địa chỉ, `payment_method`, `fare_amount` | booking | `trips` | S5 | Trip chạy hết chuyến mà không hỏi lại Booking (NFR05); tài xế thấy phải thu bao nhiêu (FR17) | Không: Booking không đổi sau bàn giao |
 | Bảng giá | payment (`fare_rates`) | `fares.base_fare`, `per_km_rate`, `min_fare` | Lúc tính cước | Giải thích được con số cuối dù giá đã đổi | Cố ý khác bảng giá hiện hành |
 | `customer_id`, `driver_id` của chuyến | trip | `ratings` | S7 | Tính điểm theo tài xế, kiểm tra chủ đánh giá | Không |
+| Họ tên tài xế, biển số xe đang dùng (thêm 2026-10-21) | driver (`drivers.full_name`, `vehicles.license_plate`) | `trips.driver_name`, `driver_plate` | S3 trả về → Booking chuyển vào S5 | Khách biết ai tới đón (FR14, A27) mà không được xem A14; xem chuyến không gọi Driver | **Cố ý** khác khi tài xế đổi tên / xe sau đó: chuyến giữ đúng xe đã chạy (dữ liệu lịch sử) |
 
 Bản chụp số điện thoại từ Auth sang hồ sơ khách **đã bỏ** 2026-10-03 (mục 4.1).
 
-**Không** sao: tên / biển số / vị trí tài xế sang Trip (lấy sống qua S6); trạng thái Payment sang Booking hay Trip (client hỏi Payment); điểm trung bình sang Driver (GĐ-11).
+**Không** sao: vị trí tài xế sang Trip (FR15, ngoài phiếu; S6 đã bỏ 2026-10-21); trạng thái Payment sang Booking hay Trip (client hỏi Payment); điểm trung bình sang Driver (GĐ-11).
 
 ### 11.3 Bảng phục vụ kỹ thuật
 
@@ -793,7 +799,7 @@ Ràng buộc 30 giây: event được gửi ngay trong request vừa commit, nê
 |---|---|---|---|
 | **Băm** | `accounts.password_hash`, `otp_verifications.otp_hash` | scrypt, salt ngẫu nhiên từng giá trị | Không |
 | **Mã hóa** | `customer_profiles.full_name_enc`, `date_of_birth_enc`; `drivers.license_number_enc` | AES-256-GCM, IV 12 byte ngẫu nhiên cho **từng giá trị** | Có, khi có khóa |
-| **Lưu rõ** (sửa 2026-10-03; 2026-10-14 theo ADR-021) | `accounts.email`, `accounts.phone`, `otp_verifications.phone`, `customer_profiles.phone` | — | — |
+| **Lưu rõ** (sửa 2026-10-03; 2026-10-14 theo ADR-021) | `accounts.email`, `accounts.phone`, `otp_verifications.phone`, `customer_profiles.phone`; họ tên tài xế `drivers.full_name` và bản chụp `trips.driver_name` (2026-10-21) — họ tên tài xế hiển thị cho khách (FR14), không thuộc phạm vi mã hóa | — | — |
 
 Phạm vi hẹp có chủ ý (ADR-012 sửa): **chỉ mã hóa trường cá nhân không dùng để tìm kiếm**. Số điện thoại là định danh đăng nhập và phải UNIQUE; mã hóa có IV ngẫu nhiên thì không tra và không UNIQUE được, phải thêm chỉ mục mù — thêm một khái niệm, một khóa, một cột. Bỏ đi để mọi thứ còn lại tự giải thích được khi thi.
 
@@ -942,7 +948,7 @@ Kết quả mục 13 tại P0, không lọc loại xe: 4 tài xế theo đúng t
 
 B7 có hạn thanh toán 1 ngày (khác 10 phút của BRULE17) để chấm lúc nào trong ngày cũng được; đây là **dữ liệu mẫu**, không phải quy tắc — booking tạo qua API vẫn hạn `PAYMENT_TIMEOUT_SECONDS`. B7 dùng `CAR_7` để sau khi thanh toán, lời mời đi tới TX4 chứ không giữ TX1.
 
-Mỗi Trip seed có đủ dòng `trip_status_history`; Offer và phân công của B3, B4, B5 có mã bằng mã booking. `driver_ratings` của TX1: `rating_count = 1`, `rating_sum = 5`. Không seed `notifications`.
+Mỗi Trip seed có `driver_name`, `driver_plate` theo tài xế của nó (2026-10-21): T3 `Tài Xế 1` / `59A-00001`, T4 `Tài Xế 3` / `59A-00003`, T5 `Tài Xế 6` / `59A-00006`. Mỗi Trip seed có đủ dòng `trip_status_history`; Offer và phân công của B3, B4, B5 có mã bằng mã booking. `driver_ratings` của TX1: `rating_count = 1`, `rating_sum = 5`. Không seed `notifications`.
 
 ## 15. Khác thiết kế tham chiếu
 

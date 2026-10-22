@@ -7,6 +7,7 @@
 > **Sửa 2026-10-05 lần 2** (sinh viên chốt): tài khoản chỉ có số điện thoại + mật khẩu, email nằm ở hồ sơ khách (mục 9, 11 — ADR-019); bị từ chối thì nộp lại bằng chính request nộp hồ sơ (mục 21, 22 — FR43); cổng gRPC riêng 50051–50058 (mục 8, mục 4 — ADR-020). Không thêm request vào chuỗi chính.
 > **Sửa 2026-10-07** (sinh viên chốt M1 báo cáo hồi quy): mục 7 thêm câu trả lời vấn đáp về Kafka UI chỉ đọc và chống lặp event. Không thêm request.
 > **Sửa 2026-10-14 (theo yêu cầu giảng viên, sinh viên chốt — ADR-021 thay ADR-019):** health trả `healthy` / `ready` / `unhealthy` (mục 6); khách, admin đăng ký / đăng nhập bằng **email**, tài xế bằng **số điện thoại**, nhóm route `/api/v1/auth/…` (mục 9, 10, 21, 25, 29); hồ sơ khách có `phone` thay `email` (mục 11, 24); xem tài xế theo mã chỉ admin và chính tài xế, thêm **tab admin** (mục 12); booking theo mã khách `customers/{id}/bookings` (mục 14); mục 27 demo bằng jwt.io (ADR-016). Mục 4 "Những thứ phải nhớ" đổi seed: `kh1@cab.vn`, `admin@cab.vn`.
+> **Sửa 2026-10-21** (sinh viên chốt sau báo cáo hồi quy 2026-10-21): mục 12 câu vấn đáp "khách thấy tài xế của chuyến mình" nay đúng với hệ thống — `GET /api/v1/trips/{id}` có khối `driver` chụp lúc nhận chuyến (M1 / L1); gRPC bật `waitForReady` nên request đầu sau khi bật lại một service không còn 503 (L2). Mục 6 (tùy chọn dừng `rating-service`): `/health/services` vẫn trả 503 sau ≈ 1 giây như cũ; nếu gọi API nghiệp vụ của service đang dừng thì 503 đến sau ≈ 3 giây (hết deadline), không phải ngay. Không thêm request vào chuỗi chính.
 > Cách dùng: học thuộc mục 4 ("những thứ phải nhớ") trước, rồi tập từng mục ở mục 2 theo thứ tự ở mục 3.
 
 ## 1. Sáu thao tác Postman dùng ở mọi mục
@@ -102,7 +103,7 @@ Nói gì: mỗi service **một container database riêng** → không nối nh�
 
 Thời gian: 1 gõ + 2 sửa ~15 s + nói ~10 s → **~25 s, Ổn**.
 
-Nói gì: `/health` = Gateway còn sống → `healthy`; `/ready` = Gateway đủ phụ thuộc **của chính nó** (Redis, 8 kênh gRPC) → `ready`, thiếu thì 503 `not_ready`; `/health/services` = hỏi gRPC Health của 8 service song song, deadline 1 giây → mỗi service `healthy` / `unhealthy`, có một service hỏng thì tổng là `unhealthy` và 503. Chữ trả về chốt theo yêu cầu của thầy. Ba đường này **không có `/api/v1`** vì không phải tài nguyên nghiệp vụ, và Docker healthcheck gọi đường cố định.
+Nói gì: `/health` = Gateway còn sống → `healthy`; `/ready` = Gateway đủ phụ thuộc **của chính nó** (Redis, 8 kênh gRPC) → `ready`, thiếu thì 503 `not_ready`; `/health/services` = hỏi gRPC Health của 8 service song song, deadline 1 giây → mỗi service `healthy` / `unhealthy`, có một service hỏng thì tổng là `unhealthy` và 503. (Nếu thầy hỏi vì sao 503 chậm ~1 giây: kênh gRPC bật `waitForReady`, chờ service trong hạn deadline rồi mới kết luận — để service vừa bật lại, đổi IP, không bị báo lỗi oan.) Chữ trả về chốt theo yêu cầu của thầy. Ba đường này **không có `/api/v1`** vì không phải tài nguyên nghiệp vụ, và Docker healthcheck gọi đường cố định.
 
 Nếu hỏi "mất database và không kết nối được có khác nhau không?": ra ngoài đều là `unhealthy`; lý do chi tiết nằm trong log Gateway — người gọi chỉ cần biết dùng được hay không.
 
@@ -183,7 +184,9 @@ Nói gì: đúng mẫu `/api/v1/customers/{mã}`; mã của mình là `account_i
 
 Thời gian: 1 sửa (~4 s) + nhân bản và dán token (~8 s) + 1 sửa (~3 s) + nói ~10 s → **~25 s, Ổn**. Tab GET vẫn giữ token KH1 cho mục 13, 14, 16.
 
-Nói gì: tài xế mã `10 + n`. Theo yêu cầu của thầy, hồ sơ tài xế theo mã chỉ **admin** (mọi mã) và **chính tài xế** (mã của mình) được xem: khách → 403 `FORBIDDEN` ngay ở Gateway vì role không có trong route; tài xế xem mã người khác → 403 `NOT_OWNER` ở service, so mã trước khi đọc database. Khách vẫn thấy họ tên, biển số tài xế **của chuyến mình** qua `GET /trips/{mã}` (FR14). Số giấy phép mã hóa trong database, chỉ giải mã cho admin và chủ.
+Nói gì: tài xế mã `10 + n`. Theo yêu cầu của thầy, hồ sơ tài xế theo mã chỉ **admin** (mọi mã) và **chính tài xế** (mã của mình) được xem: khách → 403 `FORBIDDEN` ngay ở Gateway vì role không có trong route; tài xế xem mã người khác → 403 `NOT_OWNER` ở service, so mã trước khi đọc database. Khách vẫn thấy họ tên, biển số tài xế **của chuyến mình** qua `GET /api/v1/trips/{mã}` (FR14): ví dụ KH1 xem `trips/5` thấy `"driver": {"driver_id": 16, "name": "Tài Xế 6", "plate": "59A-00006"}`. Hai giá trị này được **chụp vào chuyến lúc tài xế nhận**: Driver trả họ tên, biển số khi giữ tài xế (`ReserveDriver`), Booking chuyển sang Trip trong `CreateTrip`, Trip lưu lại. Vì sao chụp: biển số của xe **đã chạy chuyến đó** là lịch sử của chuyến — tài xế đổi xe sau này thì chuyến cũ vẫn đúng xe cũ; xem chuyến không phải gọi thêm Driver, Driver dừng vẫn xem được. Không thêm đường giao tiếp nào. Số giấy phép mã hóa trong database, chỉ giải mã cho admin và chủ.
+
+(Tùy chọn nếu thầy hỏi "khách biết tài xế nào tới đón bằng cách nào?") Tab GET `[KH1]`: sửa URL `drivers/11` → `trips/5` → 200 có khối `driver` (+~6 s).
 
 ### Mục 13 — Tài xế quanh tọa độ 1 km, limit + paging
 
