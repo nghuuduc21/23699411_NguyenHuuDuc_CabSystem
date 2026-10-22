@@ -11,6 +11,9 @@ import { createAuthHandlers } from '../src/handlers/auth.js';
 import { createBookingHandlers } from '../src/handlers/bookings.js';
 import { createPaymentHandlers } from '../src/handlers/payments.js';
 import { createAuthenticator } from '../src/token.js';
+import { createCallOptionsRecorder } from './grpc-call-options.js';
+
+const recorder = createCallOptionsRecorder();
 
 const SECRET = 'demo-jwt-secret-chi-dung-cho-may-demo-32b';
 const log = { info() {}, warn() {}, error() {} };
@@ -18,6 +21,7 @@ const log = { info() {}, warn() {}, error() {} };
 const calls = [];
 let next;
 const fakeRpc = (name) => (request, metadata, options, callback) => {
+  recorder.recordCallOptions(name, metadata, options);
   calls.push({ name, request, metadata: metadata.getMap() });
   const { err, res } = next(name, request);
   setImmediate(() => callback(err ?? null, res));
@@ -257,4 +261,8 @@ test('A32: hình thức sai → 400 (AC-TT-11)', async () => {
   await expectError(await send('POST', '/api/v1/payment-callbacks', { body: '{x' }), 400, 'INVALID_JSON');
   next = () => ({ err: { code: grpc.status.UNAUTHENTICATED, details: 'INVALID_CALLBACK_SECRET' } });
   await expectError(await send('POST', '/api/v1/payment-callbacks', { body: { txn_id: 'SIM-7-1' }, headers: { 'X-Callback-Secret': 'sai' } }), 401, 'INVALID_CALLBACK_SECRET');
+});
+
+test('mọi lời gọi gRPC của các route trên: waitForReady === true, deadline 3 000 ms (H14, AC-HT-19)', () => {
+  recorder.assertAllCallsWaitForReady();
 });

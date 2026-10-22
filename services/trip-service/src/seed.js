@@ -12,9 +12,10 @@ const CUSTOMER_ID = 1; // KH1
 const FARE_CAR_4 = 45000; // cước CAR_4 tuyến P0 → D0 (03 mục 6.3)
 
 export const SEED_TRIPS = [
-  { id: 3, driverId: 11, pay: 'CASH', status: 'COMPLETED' }, // TX1
-  { id: 4, driverId: 13, pay: 'ONLINE', status: 'COMPLETED' }, // TX3
-  { id: 5, driverId: 16, pay: 'ONLINE', status: 'ACCEPTED' }, // TX6 (đang BUSY với booking 5 ở driver-service)
+  // Họ tên, biển số theo seed tài xế "Tài Xế n" / 59A-0000n (n = mã − 10): bản chụp lúc nhận chuyến (CD10, DX25).
+  { id: 3, driverId: 11, name: 'Tài Xế 1', plate: '59A-00001', pay: 'CASH', status: 'COMPLETED' }, // TX1
+  { id: 4, driverId: 13, name: 'Tài Xế 3', plate: '59A-00003', pay: 'ONLINE', status: 'COMPLETED' }, // TX3
+  { id: 5, driverId: 16, name: 'Tài Xế 6', plate: '59A-00006', pay: 'ONLINE', status: 'ACCEPTED' }, // TX6 (đang BUSY với booking 5 ở driver-service)
 ];
 
 const FLOW = ['ACCEPTED', 'ARRIVED', 'PICKED_UP', 'IN_PROGRESS', 'COMPLETED'];
@@ -35,16 +36,16 @@ export async function runSeed({ pool, log, now = () => Date.now() }) {
       const inserted = await client.query(
         `INSERT INTO trips (trip_id, booking_id, customer_id, driver_id, vehicle_type, pickup_lat, pickup_lng,
                             destination_lat, destination_lng, payment_method, fare_amount, status,
-                            started_at, ended_at, created_at, updated_at)
+                            started_at, ended_at, created_at, updated_at, driver_name, driver_plate)
          OVERRIDING SYSTEM VALUE
-         VALUES ($1, $1, $2, $3, 'CAR_4', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         VALUES ($1, $1, $2, $3, 'CAR_4', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          ON CONFLICT DO NOTHING
          RETURNING trip_id`,
         [
           t.id, CUSTOMER_ID, t.driverId, P0[0], P0[1], D0[0], D0[1], t.pay, FARE_CAR_4, t.status,
           t.status === 'COMPLETED' ? at(2) : null, // started_at = lúc PICKED_UP
           t.status === 'COMPLETED' ? at(4) : null, // ended_at = lúc COMPLETED
-          at(0), at(steps - 1),
+          at(0), at(steps - 1), t.name, t.plate,
         ],
       );
       if (inserted.rowCount === 1) {

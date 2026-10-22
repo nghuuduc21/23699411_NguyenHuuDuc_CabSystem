@@ -7,6 +7,7 @@ const SYSTEM = { role: 'system' };
 const SNAPSHOT = {
   booking_id: 1000, customer_id: 1, driver_id: 11, vehicle_type: 'CAR_4', pickup_lat: 10.82, pickup_lng: 106.68,
   destination_lat: 10.83, destination_lng: 106.69, payment_method: 'CASH', fare_amount: 45000,
+  driver_name: 'Tài Xế 1', driver_plate: '59A-00001',
 };
 
 function setup({ publishFails = false } = {}) {
@@ -45,6 +46,9 @@ test('CreateTrip: tạo ACCEPTED, phát K5 một lần; gọi lặp cùng tài x
   const { logic, published, rows } = setup();
   assert.deepEqual(await logic.createTrip(SNAPSHOT, SYSTEM), { trip_id: 1000, status: 'ACCEPTED', created: true });
   assert.equal(rows.get(1000).snapshot.pickupAddress, null); // không gửi địa chỉ → NULL
+  // Bản chụp họ tên, biển số được chuyển xuống kho đúng giá trị gửi (DX25, AC-DX-24).
+  assert.equal(rows.get(1000).snapshot.driverName, 'Tài Xế 1');
+  assert.equal(rows.get(1000).snapshot.driverPlate, '59A-00001');
   assert.deepEqual(published, [{
     topic: TOPIC_TRIP_STATUS_CHANGED, key: '1000',
     data: { trip_id: 1000, booking_id: 1000, customer_id: 1, driver_id: 11, status: 'ACCEPTED', previous_status: null },
@@ -73,4 +77,16 @@ test('Kafka lỗi: chuyến vẫn tạo, trả thành công, log EVENT_PUBLISH_F
   assert.equal((await logic.createTrip(SNAPSHOT, SYSTEM)).created, true);
   assert.equal(errors[0].msg, 'EVENT_PUBLISH_FAILED');
   assert.equal(errors[0].topic, TOPIC_TRIP_STATUS_CHANGED);
+});
+
+test('CreateTrip: thiếu / rỗng / sai dạng driver_name, driver_plate → INVALID_INPUT, không tạo Trip (DX25)', async () => {
+  const { logic, rows } = setup();
+  const bads = [
+    { driver_name: undefined }, { driver_name: '' }, { driver_name: '   ' }, { driver_name: 'a'.repeat(101) },
+    { driver_plate: undefined }, { driver_plate: '' }, { driver_plate: '59a 001' },
+  ];
+  for (const bad of bads) {
+    await rejectsWith(logic.createTrip({ ...SNAPSHOT, ...bad }, SYSTEM), 'INVALID_ARGUMENT', 'INVALID_INPUT');
+  }
+  assert.equal(rows.size, 0);
 });

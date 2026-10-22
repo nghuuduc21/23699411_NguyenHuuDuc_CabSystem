@@ -212,6 +212,18 @@ export function createDriversRepo(pool) {
       return rowCount > 0;
     },
 
+    // DX25: họ tên và biển số xe đang dùng, trả kèm ReserveDriver để booking chép vào CreateTrip (chụp lúc nhận chuyến).
+    // full_name, license_plate lưu rõ (không mã hóa) nên đọc thẳng. Không có dòng → null.
+    async findNameAndPlate(driverId) {
+      const { rows } = await pool.query(
+        `SELECT d.full_name, v.license_plate
+         FROM drivers d JOIN vehicles v ON v.driver_id = d.driver_id
+         WHERE d.driver_id = $1`,
+        [driverId],
+      );
+      return rows[0] ?? null;
+    },
+
     // Đọc trạng thái nhận chuyến để biết vì sao reserve không khớp. Không có tài xế → null.
     async findAvailability(driverId) {
       const { rows } = await pool.query('SELECT availability, current_booking_id FROM drivers WHERE driver_id = $1', [driverId]);

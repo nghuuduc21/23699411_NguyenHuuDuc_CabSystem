@@ -38,6 +38,10 @@ message CreateTripRequest {
   optional string destination_address = 10;
   string payment_method = 11;           // CASH | ONLINE
   int32 fare_amount = 12;
+  // Thêm 2026-10-21 (DX25, CD10): họ tên, biển số tài xế CHỤP LÚC NHẬN, booking chép nguyên từ ReserveDriver.
+  // Trip lưu lại để A27 trả khối `driver` mà không phải gọi driver-service. Thiếu / rỗng → INVALID_INPUT.
+  string driver_name = 13;
+  string driver_plate = 14;
 }
 
 message CreateTripResponse {
@@ -54,6 +58,14 @@ message TripIdRequest {
 message HistoryItem {
   string status = 1;
   string at = 2;
+}
+
+// Tài xế của chuyến (FR14) trong A27. `optional`: chuyến tạo trước migration 002 không có tên, biển số
+// → chỉ có driver_id. Không có vị trí (vị trí sống ngoài phiếu).
+message TripDriver {
+  int64 driver_id = 1;
+  optional string name = 2;
+  optional string plate = 3;
 }
 
 // Tên field ngắn trùng tên JSON của API (`vehicle`, `pay`, `fare`, `from`, `to`); cột database vẫn tên đầy đủ.
@@ -77,6 +89,7 @@ message Trip {
   optional string cancel_reason = 16;
   string created_at = 17;
   repeated HistoryItem history = 18;
+  TripDriver driver = 19;               // thêm 2026-10-21 (CD10): bản chụp lúc nhận chuyến
 }
 
 message UpdateTripStatusRequest {

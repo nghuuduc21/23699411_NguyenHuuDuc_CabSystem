@@ -12,6 +12,9 @@ import { createBookingHandlers } from '../src/handlers/bookings.js';
 import { createTripHandlers } from '../src/handlers/trips.js';
 import { createNotificationHandlers } from '../src/handlers/notifications.js';
 import { createAuthenticator } from '../src/token.js';
+import { createCallOptionsRecorder } from './grpc-call-options.js';
+
+const recorder = createCallOptionsRecorder();
 
 const SECRET = 'demo-jwt-secret-chi-dung-cho-may-demo-32b';
 const log = { info() {}, warn() {}, error() {} };
@@ -19,6 +22,7 @@ const log = { info() {}, warn() {}, error() {} };
 const calls = [];
 let next;
 const fakeRpc = (name) => (request, metadata, options, callback) => {
+  recorder.recordCallOptions(name, metadata, options);
   calls.push({ name, request, metadata: metadata.getMap() });
   const { err, res } = next(name, request);
   setImmediate(() => callback(err ?? null, res));
@@ -138,6 +142,7 @@ test('A27: cả ba role gọi được; lọc field, bỏ field optional rỗng;
   next = () => ({ res: {
     trip_id: 1000, booking_id: 1000, status: 'ACCEPTED', vehicle: 'CAR_4', pay: 'CASH', fare: 45000, customer_id: 1, driver_id: 11,
     from: [10.82, 106.68], to: [10.83, 106.69], created_at: 'c', history: [{ status: 'ACCEPTED', at: 'a', extra: 1 }], _started_at: 'started_at',
+    driver: { driver_id: 11, name: 'Tài Xế 1', plate: '59A-00001', _name: 'name', _plate: 'plate' },
   } });
   for (const t of [KH1, TX1, AD1]) {
     const res = await send('GET', '/api/v1/trips/1000', { t });
@@ -145,6 +150,7 @@ test('A27: cả ba role gọi được; lọc field, bỏ field optional rỗng;
     assert.deepEqual(await res.json(), {
       trip_id: 1000, booking_id: 1000, status: 'ACCEPTED', vehicle: 'CAR_4', pay: 'CASH', fare: 45000, customer_id: 1, driver_id: 11,
       from: [10.82, 106.68], to: [10.83, 106.69], created_at: 'c', history: [{ status: 'ACCEPTED', at: 'a' }],
+      driver: { driver_id: 11, name: 'Tài Xế 1', plate: '59A-00001' }, // CD10: bản chụp lúc nhận chuyến
     });
   }
   assert.deepEqual(calls[0].request, { trip_id: '1000' });
@@ -206,4 +212,8 @@ test('A33 lỗi (AC-TB-04): limit=abc, page=0 → INVALID_PAGINATION; foo=1 → 
   assert.equal(calls.length, 0);
   next = () => ({ err: { code: grpc.status.UNAVAILABLE, details: 'x' } });
   await expectError(await send('GET', '/api/v1/notifications', { t: KH1 }), 503, 'SERVICE_UNAVAILABLE');
+});
+
+test('mọi lời gọi gRPC của các route trên: waitForReady === true, deadline 3 000 ms (H14, AC-HT-19)', () => {
+  recorder.assertAllCallsWaitForReady();
 });

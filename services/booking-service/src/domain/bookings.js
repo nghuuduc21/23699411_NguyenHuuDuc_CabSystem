@@ -190,9 +190,10 @@ export function createBookingLogic({ bookings, services, dispatcher, events, log
         checkPendingOffer(offer);
         if (booking.status !== 'SEARCHING') throw conflict('INVALID_STATUS_TRANSITION');
 
-        // S3: Driver là nơi DUY NHẤT biết tài xế còn rảnh không (D8, B11).
+        // S3: Driver là nơi DUY NHẤT biết tài xế còn rảnh không (D8, B11). Kết quả có họ tên, biển số (DX25).
+        let reservation;
         try {
-          await services.reserveDriver({ driver_id: accountId, booking_id: booking.booking_id }, requestId);
+          reservation = await services.reserveDriver({ driver_id: accountId, booking_id: booking.booking_id }, requestId);
         } catch (err) {
           // Tài xế đã tắt Online / bận → 409, Offer giữ PENDING đến hết hạn (DX-Q6 đã chốt).
           if (err?.statusName === 'FAILED_PRECONDITION' || err?.statusName === 'NOT_FOUND') throw conflict('DRIVER_NOT_AVAILABLE');
@@ -210,6 +211,9 @@ export function createBookingLogic({ bookings, services, dispatcher, events, log
             ...(booking.pickup_address !== null ? { pickup_address: booking.pickup_address } : {}),
             ...(booking.destination_address !== null ? { destination_address: booking.destination_address } : {}),
             payment_method: booking.payment_method, fare_amount: booking.fare_amount,
+            // DX25: chép NGUYÊN họ tên, biển số từ S3 để Trip chụp lại lúc nhận (khách xem ở A27, FR14).
+            // Booking không tự lưu hai giá trị này: chúng thuộc về chuyến, không phải yêu cầu đặt xe.
+            driver_name: reservation?.driver_name, driver_plate: reservation?.plate,
           }, requestId);
           tripId = trip.trip_id;
         } catch (err) {

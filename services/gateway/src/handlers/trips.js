@@ -5,11 +5,15 @@ import { buildMetadata, callUnary } from '../grpc/clients.js';
 import { grpcErrorToHttp } from '../grpc/errors.js';
 import { pick } from './pick.js';
 
-const TRIP_KEYS = [
-  'trip_id', 'booking_id', 'status', 'vehicle', 'pay', 'fare', 'customer_id', 'driver_id', 'from', 'to', 'from_address',
-  'to_address', 'started_at', 'ended_at', 'canceled_by', 'cancel_reason', 'created_at',
+// Hai nửa để khối `driver` nằm ngay sau `driver_id` như ví dụ response của spec 17-18 mục 4.2.
+const TRIP_KEYS_HEAD = ['trip_id', 'booking_id', 'status', 'vehicle', 'pay', 'fare', 'customer_id', 'driver_id'];
+const TRIP_KEYS_TAIL = [
+  'from', 'to', 'from_address', 'to_address', 'started_at', 'ended_at', 'canceled_by', 'cancel_reason', 'created_at',
 ];
 const history = (items) => (items ?? []).map((h) => pick(h, ['status', 'at']));
+// Khối `driver` (spec 17-18 CD10, thêm 2026-10-21): tài xế của chuyến cho khách thấy ai tới đón (FR14). Lọc key như
+// mọi chỗ khác để không lọt `_name`, `_plate` (oneof ẩn của field optional); không có thì không có key `driver`.
+const driverView = (d) => (d ? { driver: pick(d, ['driver_id', 'name', 'plate']) } : {});
 
 export function createTripHandlers({ tripClient }) {
   const forward = (method, build, toJson) => async (req, res) => {
@@ -26,7 +30,9 @@ export function createTripHandlers({ tripClient }) {
 
   return {
     // A27: khách / tài xế của chuyến, admin.
-    byId: forward('GetTrip', (req) => ({ trip_id: req.params.id }), (r) => ({ ...pick(r, TRIP_KEYS), history: history(r.history) })),
+    byId: forward('GetTrip', (req) => ({ trip_id: req.params.id }), (r) => ({
+      ...pick(r, TRIP_KEYS_HEAD), ...driverView(r.driver), ...pick(r, TRIP_KEYS_TAIL), history: history(r.history),
+    })),
     // A28: 200 kèm lịch sử để người chấm thấy đủ trình tự mà không phải gọi thêm request (mục 17).
     update: forward('UpdateTripStatus', withId, (r) => ({ ...pick(r, ['trip_id', 'status']), history: history(r.history) })),
     // A29: canceled_by lấy từ role trong token ở trip-service.

@@ -10,6 +10,9 @@ import { buildRoutes } from '../src/routes.js';
 import { createAuthHandlers } from '../src/handlers/auth.js';
 import { createRatingHandlers } from '../src/handlers/ratings.js';
 import { createAuthenticator } from '../src/token.js';
+import { createCallOptionsRecorder } from './grpc-call-options.js';
+
+const recorder = createCallOptionsRecorder();
 
 const SECRET = 'demo-jwt-secret-chi-dung-cho-may-demo-32b';
 const log = { info() {}, warn() {}, error() {} };
@@ -17,6 +20,7 @@ const log = { info() {}, warn() {}, error() {} };
 const calls = [];
 let next;
 const fakeRpc = (name) => (request, metadata, options, callback) => {
+  recorder.recordCallOptions(name, metadata, options);
   calls.push({ name, request, metadata: metadata.getMap() });
   const { err, res } = next(name, request);
   setImmediate(() => callback(err ?? null, res));
@@ -144,4 +148,8 @@ test('AC-DG-11 (Gateway): query sai → 400 (INVALID_INPUT / INVALID_ID); không
   for (const [p, error] of cases) assert.deepEqual(await json(await send('GET', p, { t: KH1 })), [400, { error }], p);
   assert.deepEqual(await json(await send('GET', '/api/v1/ratings?trip_id=4')), [401, { error: 'TOKEN_MISSING' }]);
   assert.equal(calls.length, 0);
+});
+
+test('mọi lời gọi gRPC của các route trên: waitForReady === true, deadline 3 000 ms (H14, AC-HT-19)', () => {
+  recorder.assertAllCallsWaitForReady();
 });

@@ -247,8 +247,16 @@ export function createDriverLogic({ drivers, cipher, events, log }) {
         // Còn lại: OFFLINE, hoặc đang bận booking khác.
         if (!sameBooking) throw new DriverError('FAILED_PRECONDITION', 'DRIVER_NOT_AVAILABLE');
       }
+      // DX25: trả họ tên, biển số (cả khi gọi lặp) để Trip chụp lại; khách xem ở A27 mà không cần A14 hay S6.
+      // Tài xế đã giữ được thì chắc chắn có hồ sơ và xe (nộp cùng lúc ở A11); không đọc được là lỗi bất thường.
+      const summary = await drivers.findNameAndPlate(driverId);
+      if (!summary) throw new DriverError('INTERNAL', 'INTERNAL');
+      // Không ghi họ tên, biển số vào log (dữ liệu cá nhân).
       log.info('driver_reserved', { driver_id: driverId, booking_id: bookingId });
-      return { driver_id: driverId, booking_id: bookingId, status: 'BUSY' };
+      return {
+        driver_id: driverId, booking_id: bookingId, status: 'BUSY',
+        driver_name: summary.full_name, plate: summary.license_plate,
+      };
     },
 
     // S3 ReleaseDriver (D9, DX6): chỉ nhả khi đang giữ ĐÚNG booking này, về ONLINE (trước khi giữ tài xế

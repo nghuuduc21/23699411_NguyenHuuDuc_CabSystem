@@ -119,7 +119,10 @@ function setup(overrides = {}) {
       return { payment_id: req.booking_id, amount, status: 'PENDING', ...(req.method === 'ONLINE' ? { expires_at: '2026-10-04T00:10:00.000Z' } : {}) };
     },
     async findNearbyDrivers(req) { calls.push(['findNearbyDrivers', req]); return { data: CANDIDATES }; },
-    async reserveDriver(req) { calls.push(['reserveDriver', req]); return { ...req, status: 'BUSY' }; },
+    async reserveDriver(req) {
+      calls.push(['reserveDriver', req]);
+      return { ...req, status: 'BUSY', driver_name: `Tài Xế ${req.driver_id - 10}`, plate: `59A-0000${req.driver_id - 10}` };
+    },
     async releaseDriver(req) { calls.push(['releaseDriver', req]); return { driver_id: req.driver_id, released: true }; },
     async createTrip(req) { calls.push(['createTrip', req]); return { trip_id: 1000, status: 'ACCEPTED', created: true }; },
     ...overrides,
@@ -225,6 +228,7 @@ test('A24 nhận: Reserve → CreateTrip (bản chụp) → DRIVER_ASSIGNED, có
   assert.deepEqual(calls.find(([n]) => n === 'createTrip')[1], {
     booking_id: 1000, customer_id: 1, driver_id: 11, vehicle_type: 'CAR_4', pickup_lat: 10.82, pickup_lng: 106.68,
     destination_lat: 10.83, destination_lng: 106.69, pickup_address: 'IUH', payment_method: 'CASH', fare_amount: 45000,
+    driver_name: 'Tài Xế 1', driver_plate: '59A-00001', // chép nguyên từ S3 (DX25)
   });
   const view = await logic.getBooking({ booking_id: 1000 }, KH1);
   assert.equal(view.status, 'DRIVER_ASSIGNED');

@@ -18,6 +18,7 @@ function setup() {
     pickup_lng: 106.68, destination_lat: 10.83, destination_lng: 106.69, pickup_address: null, destination_address: null,
     payment_method: pay, fare_amount: 45000, started_at: null, ended_at: null, canceled_by: null, cancel_reason: null,
     created_at: new Date('2026-10-05T01:00:00Z'),
+    driver_name: `Tài Xế ${driverId - 10}`, driver_plate: `59A-0000${driverId - 10}`,
   });
   let db = {
     trips: new Map([[1000, base(1000, 11, 'CASH', 'ACCEPTED')], [4, base(4, 13, 'ONLINE', 'COMPLETED')], [5, base(5, 16, 'ONLINE', 'ACCEPTED')]]),
@@ -179,6 +180,7 @@ test('A27: khách, tài xế của chuyến, admin xem được (có history); n
     trip_id: 1000, booking_id: 1000, status: 'ACCEPTED', vehicle: 'CAR_4', pay: 'CASH', fare: 45000, customer_id: 1, driver_id: 11,
     from: [10.82, 106.68], to: [10.83, 106.69], created_at: '2026-10-05T01:00:00.000Z',
     history: [{ status: 'ACCEPTED', at: '2026-10-05T01:01:00.000Z' }],
+    driver: { driver_id: 11, name: 'Tài Xế 1', plate: '59A-00001' },
   });
   assert.equal((await logic.getTrip({ trip_id: 1000 }, TX1)).trip_id, 1000);
   assert.equal((await logic.getTrip({ trip_id: 1000 }, AD1)).trip_id, 1000);
@@ -191,6 +193,14 @@ test('A27: khách, tài xế của chuyến, admin xem được (có history); n
   assert.equal(canceled.canceled_by, 'customer');
   assert.equal(canceled.cancel_reason, 'ban viec');
   assert.match(canceled.ended_at, /Z$/);
+  // Chuyến đã hủy vẫn giữ tài xế của chuyến (AC-CD-20).
+  assert.deepEqual(canceled.driver, { driver_id: 16, name: 'Tài Xế 6', plate: '59A-00006' });
+});
+
+test('A27: chuyến tạo trước migration 002 (không có tên, biển số) → driver chỉ có driver_id (AC-CD-22)', async () => {
+  const s = setup();
+  Object.assign(s.db.trips.get(1000), { driver_name: null, driver_plate: null });
+  assert.deepEqual((await s.logic.getTrip({ trip_id: 1000 }, AD1)).driver, { driver_id: 11 });
 });
 
 test('Kafka lỗi: A28 / A29 vẫn thành công, log EVENT_PUBLISH_FAILED (NFR05)', async () => {

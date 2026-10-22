@@ -164,7 +164,6 @@ services:
       SERVICE_NAME: trip-service
       DATABASE_URL: postgres://cab:${DB_PASSWORD}@trip-db:5432/trip
       KAFKA_BROKERS: kafka:9092
-      DRIVER_GRPC_ADDR: driver-service:50053
       SIMULATION_MODE: ${SIMULATION_MODE}
     depends_on:
       trip-db: { condition: service_healthy }

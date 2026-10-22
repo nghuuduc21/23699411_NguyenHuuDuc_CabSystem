@@ -8,7 +8,7 @@
 // Danh tính: metadata `x-role: system` (DX2 đã chốt), KHÔNG gửi x-account-id (không có tài khoản nào đứng sau),
 // kèm `x-request-id` để lần theo một request qua log của nhiều service.
 // Mọi lời gọi có deadline 1 000 ms (03 mục 13): service kia treo thì booking không treo theo.
-// Rpc lặp an toàn được thử lại MỘT lần khi UNAVAILABLE (lỗi L1 — xem callWithRetry).
+// Mọi lời gọi bật `waitForReady` (spec 00 H14, ADR-020 bổ sung 2026-10-21 — xem systemMetadata).
 import grpc from '@grpc/grpc-js';
 import { loadProto } from './grpc/server.js';
 
@@ -21,22 +21,26 @@ const CHANNEL_OPTIONS = {
   'grpc.dns_min_time_between_resolutions_ms': 1000,
 };
 
-// `waitForReady` là tùy chọn của Metadata trong grpc-js (không phải của call options): true = kênh đang lỗi kết nối
-// thì lời gọi CHỜ kênh nối lại (trong deadline) thay vì báo UNAVAILABLE ngay.
-function systemMetadata(requestId, waitForReady = false) {
-  const metadata = new grpc.Metadata({ waitForReady });
+// `waitForReady` là tùy chọn của Metadata trong grpc-js (không phải của call options), nên phải tạo bằng
+// `new grpc.Metadata({ waitForReady: true })` rồi đặt x-role, x-request-id vào CHÍNH đối tượng đó.
+// Vì sao (lỗi L1 2026-10-05, L2 2026-10-21): service kia dừng rồi chạy lại (Docker có thể đổi IP), kênh gRPC của
+// booking đang ở trạng thái "lỗi kết nối"; lời gọi mặc định bị từ chối NGAY (UNAVAILABLE) dù service đã healthy
+// → khách nhận 503 oan. Có waitForReady, lời gọi CHỜ kênh tự phân giải lại tên và nối xong rồi mới gửi, trong hạn
+// deadline 1 s. Đánh đổi: service dừng hẳn thì lỗi (DEADLINE_EXCEEDED → 503) đến sau 1 s thay vì ngay.
+// Thay cho cách cũ "UNAVAILABLE thì gọi lại một lần" (H14): không còn vòng lặp, không gửi lặp thao tác ghi.
+export function systemMetadata(requestId) {
+  const metadata = new grpc.Metadata({ waitForReady: true });
   metadata.set('x-role', 'system');
   if (requestId) metadata.set('x-request-id', requestId);
   return metadata;
 }
 
-// Gọi một rpc unary MỘT lần. Lỗi gRPC được gắn thêm `statusName` (tên status dạng chữ, ví dụ "FAILED_PRECONDITION")
-// để logic nghiệp vụ đọc mà không phải import thư viện gRPC.
-// `waitForReady`: false = kênh đang lỗi kết nối thì báo UNAVAILABLE ngay; true = chờ kênh nối lại (trong deadline).
-function callOnce(client, method, request, requestId, waitForReady) {
+// Gọi một rpc unary. Lỗi gRPC được gắn thêm `statusName` (tên status dạng chữ, ví dụ "FAILED_PRECONDITION")
+// để logic nghiệp vụ đọc mà không phải import thư viện gRPC. Export để unit test kiểm metadata và deadline (AC-HT-19).
+export function call(client, method, request, requestId) {
   return new Promise((resolve, reject) => {
     const options = { deadline: Date.now() + SERVICE_DEADLINE_MS };
-    client[method](request, systemMetadata(requestId, waitForReady), options, (err, response) => {
+    client[method](request, systemMetadata(requestId), options, (err, response) => {
       if (err) {
         err.statusName = Object.keys(grpc.status).find((name) => grpc.status[name] === err.code) ?? 'UNKNOWN';
         reject(err);
@@ -46,38 +50,6 @@ function callOnce(client, method, request, requestId, waitForReady) {
     });
   });
 }
-
-// Lỗi L1 (báo cáo kiểm thử 2026-10-05): payment-service / trip-service dừng rồi chạy lại, đã healthy, mà lời gọi
-// ĐẦU TIÊN từ booking vẫn UNAVAILABLE, lần hai mới được. Vì sao: lúc service kia dừng, kênh gRPC của booking rơi vào
-// trạng thái "lỗi kết nối" (TRANSIENT_FAILURE) và chỉ nối lại khi có lời gọi mới. Ở trạng thái đó, lời gọi mặc định
-// (không chờ kênh sẵn sàng) bị báo UNAVAILABLE NGAY, dù service đã chạy lại → khách nhận 503 oan; lời gọi đó lại
-// khiến kênh nối lại, nên lần hai được.
-//
-// Cách sửa (sinh viên chốt): gặp UNAVAILABLE thì THỬ LẠI MỘT LẦN, lần này `waitForReady` để CHỜ kênh nối lại thay vì
-// thất bại ngay. Mỗi lần vẫn deadline 1 000 ms riêng → service thật sự dừng thì khách chờ thêm tối đa ~1 giây rồi vẫn
-// nhận 503 (không treo). Đo trong container sau khi sửa: payment-service vừa healthy → lời gọi đầu ~30 ms, thành công. Chỉ thử lại khi UNAVAILABLE: các lỗi khác (FAILED_PRECONDITION, INVALID_ARGUMENT…)
-// là câu trả lời thật của service, gọi lại cũng vậy; DEADLINE_EXCEEDED thì đã chờ hết 1 giây rồi.
-//
-// Chỉ dùng cho rpc LẶP AN TOÀN (gọi hai lần cho cùng kết quả như gọi một lần) — vì UNAVAILABLE không chắc là
-// request chưa tới service (kết nối có thể đứt sau khi service đã xử lý):
-//   CreatePayment: lặp an toàn — đã có Payment cho booking_id thì trả Payment cũ (M1, UNIQUE booking_id).
-//   CreateTrip:    lặp an toàn — đã có Trip cho booking_id + cùng tài xế thì trả Trip cũ (T1, UNIQUE booking_id).
-//   ReserveDriver: lặp an toàn — đang giữ đúng booking này thì trả như lần đầu (D8).
-//   ReleaseDriver: lặp an toàn — chỉ nhả khi đang giữ đúng booking; lần hai trả released = false, không lỗi (D9).
-// FindNearbyDrivers (chỉ đọc) KHÔNG thử lại ở đây: bộ ghép đã tự thử 3 lần cách 1 giây (DX7); thử lại thêm ở đây sẽ
-// kéo dài thời gian kết luận "không có tài xế" khi driver-service dừng (AC-DX-17 ≈ 5 giây).
-export async function callWithRetry(attempt) {
-  try {
-    return await attempt(false);
-  } catch (err) {
-    if (err?.statusName !== 'UNAVAILABLE') throw err;
-    return attempt(true);
-  }
-}
-
-const call = (client, method, request, requestId) => callOnce(client, method, request, requestId, false);
-const callSafe = (client, method, request, requestId) =>
-  callWithRetry((waitForReady) => callOnce(client, method, request, requestId, waitForReady));
 
 export function createServiceClients({ driverAddr, paymentAddr, tripAddr }) {
   const { DriverService } = loadProto('driver.proto').cab.driver.v1;
@@ -89,11 +61,11 @@ export function createServiceClients({ driverAddr, paymentAddr, tripAddr }) {
 
   return {
     findNearbyDrivers: (req, requestId) => call(driver, 'FindNearbyDrivers', req, requestId),
-    reserveDriver: (req, requestId) => callSafe(driver, 'ReserveDriver', req, requestId),
-    releaseDriver: (req, requestId) => callSafe(driver, 'ReleaseDriver', req, requestId),
+    reserveDriver: (req, requestId) => call(driver, 'ReserveDriver', req, requestId),
+    releaseDriver: (req, requestId) => call(driver, 'ReleaseDriver', req, requestId),
     // expires_at là field `optional`: chỉ có với thanh toán ONLINE.
-    createPayment: (req, requestId) => callSafe(payment, 'CreatePayment', req, requestId),
-    createTrip: (req, requestId) => callSafe(trip, 'CreateTrip', req, requestId),
+    createPayment: (req, requestId) => call(payment, 'CreatePayment', req, requestId),
+    createTrip: (req, requestId) => call(trip, 'CreateTrip', req, requestId),
     close() {
       driver.close();
       payment.close();

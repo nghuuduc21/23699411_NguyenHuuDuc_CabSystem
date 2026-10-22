@@ -8,15 +8,15 @@
 // Vì sao gộp NOT_SERVING / UNREACHABLE / quá hạn thành một chữ `unhealthy`: người gọi chỉ cần biết dùng được hay
 // không. Lý do cụ thể ghi vào log `warn` của Gateway (xem bằng `docker compose logs gateway`).
 // Phụ thuộc truyền từ ngoài vào (redisPing, healthClients, log) để test không cần Redis và service thật.
-import { HEALTH_DEADLINE_MS } from './grpc/clients.js';
+import { HEALTH_DEADLINE_MS, healthMetadata } from './grpc/clients.js';
 
 const DEADLINE_EXCEEDED = 4; // mã gRPC status
 
 // Hỏi một service. Không bao giờ ném lỗi; trả { healthy, reason } — `reason` chỉ dùng để ghi log.
 export function checkService(client, deadlineMs = HEALTH_DEADLINE_MS) {
   return new Promise((resolve) => {
-    client.Check({ service: '' }, { deadline: Date.now() + deadlineMs }, (err, response) => {
-      // Không kết nối được (service dừng) hoặc quá deadline (service treo).
+    client.Check({ service: '' }, healthMetadata(), { deadline: Date.now() + deadlineMs }, (err, response) => {
+      // Không kết nối được hoặc quá deadline. Có waitForReady nên service dừng hẳn thường báo DEADLINE_EXCEEDED.
       if (err) resolve({ healthy: false, reason: err.code === DEADLINE_EXCEEDED ? 'DEADLINE_EXCEEDED' : 'UNREACHABLE' });
       // Service trả lời nhưng không SERVING: thường là mất database của nó.
       else if (response.status !== 'SERVING') resolve({ healthy: false, reason: 'NOT_SERVING' });

@@ -9,6 +9,9 @@ import { buildRoutes } from '../src/routes.js';
 import { createAuthHandlers } from '../src/handlers/auth.js';
 import { createCustomerHandlers } from '../src/handlers/customers.js';
 import { createAuthenticator } from '../src/token.js';
+import { createCallOptionsRecorder } from './grpc-call-options.js';
+
+const recorder = createCallOptionsRecorder();
 
 const SECRET = 'demo-jwt-secret-chi-dung-cho-may-demo-32b';
 const log = { info() {}, warn() {}, error() {} };
@@ -17,6 +20,7 @@ const log = { info() {}, warn() {}, error() {} };
 const calls = [];
 let next;
 const fakeRpc = (name) => (request, metadata, options, callback) => {
+  recorder.recordCallOptions(name, metadata, options);
   calls.push({ name, request, metadata: metadata.getMap(), deadline: options.deadline });
   const { err, res } = next(name, request);
   setImmediate(() => callback(err ?? null, res));
@@ -178,4 +182,8 @@ test('Đường dẫn cũ đã bỏ → 404 ROUTE_NOT_FOUND (AC-HS-18)', async (
   await expectJson(await send('GET', '/customers/1', { t: KH1 }), 404, { error: 'ROUTE_NOT_FOUND' });
   await expectJson(await send('PATCH', '/api/v1/customers/1', { t: KH1, body: { name: 'X' } }), 404, { error: 'ROUTE_NOT_FOUND' });
   assert.equal(calls.length, 0);
+});
+
+test('mọi lời gọi gRPC của các route trên: waitForReady === true, deadline 3 000 ms (H14, AC-HT-19)', () => {
+  recorder.assertAllCallsWaitForReady();
 });

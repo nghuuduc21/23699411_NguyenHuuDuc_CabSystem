@@ -9,8 +9,9 @@ const NAMES = ['auth-service', 'customer-service', 'rating-service'];
 // Client giả: 'SERVING' / 'NOT_SERVING' trả lời bình thường; 'DOWN' lỗi như service đã dừng; 'SLOW' quá deadline.
 function fakeClient(state) {
   return {
-    Check(req, opts, callback) {
+    Check(req, metadata, opts, callback) {
       assert.ok(opts.deadline, 'mọi lời gọi gRPC phải có deadline');
+      assert.equal(metadata.getOptions().waitForReady, true, 'Health/Check phải bật waitForReady (H14)');
       if (state === 'DOWN') callback(Object.assign(new Error('UNAVAILABLE'), { code: 14 }));
       else if (state === 'SLOW') callback(Object.assign(new Error('DEADLINE_EXCEEDED'), { code: 4 }));
       else callback(null, { status: state });
@@ -86,4 +87,13 @@ test('A03: một service dừng, một mất database → 503 unhealthy cùng ch
     { msg: 'service_unhealthy', service: 'customer-service', reason: 'NOT_SERVING', request_id: 'r1' },
     { msg: 'service_unhealthy', service: 'rating-service', reason: 'UNREACHABLE', request_id: 'r1' },
   ]);
+});
+
+test('checkService: deadline 1 000 ms và waitForReady === true (AC-HT-19)', async () => {
+  let seen;
+  const t0 = Date.now();
+  await checkService({ Check(req, metadata, opts, cb) { seen = { metadata, opts }; cb(null, { status: 'SERVING' }); } });
+  assert.equal(seen.metadata.getOptions().waitForReady, true);
+  const left = seen.opts.deadline - t0;
+  assert.ok(left >= 1000 && left <= 1050, `deadline ${left} ms`);
 });

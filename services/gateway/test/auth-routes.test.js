@@ -7,6 +7,9 @@ import { createApp } from '../src/app.js';
 import { buildRoutes } from '../src/routes.js';
 import { createAuthHandlers } from '../src/handlers/auth.js';
 import { createAuthenticator, readBearer } from '../src/token.js';
+import { createCallOptionsRecorder } from './grpc-call-options.js';
+
+const recorder = createCallOptionsRecorder();
 
 const SECRET = 'demo-jwt-secret-chi-dung-cho-may-demo-32b';
 const warns = [];
@@ -16,6 +19,7 @@ const log = { info() {}, warn: (msg, f) => warns.push({ msg, ...f }), error() {}
 const calls = [];
 let next;
 const fakeRpc = (name) => (request, metadata, options, callback) => {
+  recorder.recordCallOptions(name, metadata, options);
   calls.push({ name, request, metadata: metadata.getMap(), deadline: options.deadline });
   const { err, res } = next(name, request);
   setImmediate(() => callback(err ?? null, res));
@@ -208,4 +212,8 @@ test('readBearer: phân biệt thiếu và sai dạng', () => {
   assert.deepEqual(readBearer('bearer abc'), { token: 'abc' });
   assert.deepEqual(readBearer('Bearer a b'), { error: 'TOKEN_INVALID' });
   assert.deepEqual(readBearer('abc'), { error: 'TOKEN_INVALID' });
+});
+
+test('mọi lời gọi gRPC của các route trên: waitForReady === true, deadline 3 000 ms (H14, AC-HT-19)', () => {
+  recorder.assertAllCallsWaitForReady();
 });

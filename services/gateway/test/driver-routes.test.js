@@ -10,6 +10,9 @@ import { buildRoutes } from '../src/routes.js';
 import { createAuthHandlers } from '../src/handlers/auth.js';
 import { createDriverHandlers } from '../src/handlers/drivers.js';
 import { createAuthenticator } from '../src/token.js';
+import { createCallOptionsRecorder } from './grpc-call-options.js';
+
+const recorder = createCallOptionsRecorder();
 
 const SECRET = 'demo-jwt-secret-chi-dung-cho-may-demo-32b';
 const log = { info() {}, warn() {}, error() {} };
@@ -18,6 +21,7 @@ const log = { info() {}, warn() {}, error() {} };
 const calls = [];
 let next;
 const fakeRpc = (name) => (request, metadata, options, callback) => {
+  recorder.recordCallOptions(name, metadata, options);
   calls.push({ name, request, metadata: metadata.getMap(), deadline: options.deadline });
   const { err, res } = next(name, request);
   setImmediate(() => callback(err ?? null, res));
@@ -265,4 +269,8 @@ test('A17 / A39 / A18: body sai → 400; khách, admin → 403 (AC-TX-23, 24, 25
   assert.equal(calls.length, 0);
   next = () => ({ err: { code: grpc.status.FAILED_PRECONDITION, details: 'DRIVER_NOT_APPROVED' } });
   await expectError(await send('PATCH', '/api/v1/drivers/me', { t: TX1, body: { status: 'ONLINE' } }), 409, 'DRIVER_NOT_APPROVED');
+});
+
+test('mọi lời gọi gRPC của các route trên: waitForReady === true, deadline 3 000 ms (H14, AC-HT-19)', () => {
+  recorder.assertAllCallsWaitForReady();
 });

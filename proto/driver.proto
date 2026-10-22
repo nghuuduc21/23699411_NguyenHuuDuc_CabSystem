@@ -1,6 +1,6 @@
 // Hợp đồng gRPC của driver-service (spec 12-13-21-23 mục 5.2). Mục chấm 12, 13, 21, 22, 23.
 // Gateway gọi 8 rpc đầu. booking-service gọi FindNearbyDrivers (S2), ReserveDriver, ReleaseDriver (S3)
-// với metadata `x-role: system` (spec 14-15-16-19-30 mục 5.4, 5.5). GetDriverSummary (spec sau) CHƯA khai báo.
+// với metadata `x-role: system` (spec 14-15-16-19-30 mục 5.4, 5.5). GetDriverSummary (S6) bỏ hẳn (2026-10-21, CD10).
 // Danh tính người gọi KHÔNG nằm trong message mà trong metadata `x-account-id`, `x-role` do Gateway
 // dựng từ token đã kiểm tra: tài xế không tự khai được mã của mình (driver_id = account_id).
 // Lỗi trả bằng gRPC status kèm `details` đúng bằng mã lỗi, ví dụ NOT_FOUND + "DRIVER_NOT_FOUND".
@@ -159,6 +159,10 @@ message Reservation {
   int64 driver_id = 1;
   int64 booking_id = 2;
   string status = 3;                   // BUSY
+  // Thêm 2026-10-21 (DX25): họ tên, biển số xe đang dùng; booking chép vào CreateTrip để Trip chụp lại
+  // (khách xem tài xế của chuyến ở A27 mà không gọi driver-service). Gọi lặp cũng trả hai giá trị này.
+  string driver_name = 4;
+  string plate = 5;
 }
 
 message ReleaseDriverRequest {

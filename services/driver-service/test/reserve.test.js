@@ -19,6 +19,10 @@ function setup() {
       Object.assign(d, { availability: 'BUSY', current_booking_id: bookingId });
       return true;
     },
+    // JOIN drivers + vehicles theo seed "Tài Xế n" / 59A-0000n (n = mã − 10).
+    async findNameAndPlate(id) {
+      return state.has(id) ? { full_name: `Tài Xế ${id - 10}`, license_plate: `59A-000${String(id - 10).padStart(2, '0')}` } : null;
+    },
     async findAvailability(id) { return state.get(id) ? { ...state.get(id) } : null; },
     async release(id, bookingId) {
       const d = state.get(id);
@@ -44,9 +48,11 @@ async function rejectsWith(promise, kind, code) {
 
 test('ReserveDriver: giữ; gọi lặp cùng booking trả như lần đầu; booking khác → DRIVER_NOT_AVAILABLE', async () => {
   const { logic, state } = setup();
-  assert.deepEqual(await logic.reserveDriver({ driver_id: 11, booking_id: 1000 }, SYSTEM), { driver_id: 11, booking_id: 1000, status: 'BUSY' });
+  const first = { driver_id: 11, booking_id: 1000, status: 'BUSY', driver_name: 'Tài Xế 1', plate: '59A-00001' };
+  assert.deepEqual(await logic.reserveDriver({ driver_id: 11, booking_id: 1000 }, SYSTEM), first);
   assert.deepEqual(state.get(11), { availability: 'BUSY', current_booking_id: 1000 });
-  assert.equal((await logic.reserveDriver({ driver_id: 11, booking_id: 1000 }, SYSTEM)).status, 'BUSY');
+  // Gọi lặp: trả như lần đầu, KỂ CẢ họ tên, biển số (DX25, AC-DX-23).
+  assert.deepEqual(await logic.reserveDriver({ driver_id: 11, booking_id: 1000 }, SYSTEM), first);
   await rejectsWith(logic.reserveDriver({ driver_id: 11, booking_id: 1001 }, SYSTEM), 'FAILED_PRECONDITION', 'DRIVER_NOT_AVAILABLE');
   await rejectsWith(logic.reserveDriver({ driver_id: 15, booking_id: 1001 }, SYSTEM), 'FAILED_PRECONDITION', 'DRIVER_NOT_AVAILABLE');
   await rejectsWith(logic.reserveDriver({ driver_id: 99, booking_id: 1001 }, SYSTEM), 'NOT_FOUND', 'DRIVER_NOT_FOUND');

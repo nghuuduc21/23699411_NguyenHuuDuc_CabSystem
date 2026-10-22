@@ -4,7 +4,7 @@
 //
 // Danh tính: metadata `x-role: system` (DG3), KHÔNG gửi x-account-id: Trip chỉ báo sự thật, quy tắc "đúng khách" là
 // của Rating. Kèm `x-request-id` để lần theo một request qua log của nhiều service.
-// Deadline 1 000 ms (03 mục 13): Trip treo thì khách nhận 503 chứ không treo theo.
+// Deadline 1 000 ms (03 mục 13): Trip treo thì khách nhận 503 chứ không treo theo. Có waitForReady (H14).
 import grpc from '@grpc/grpc-js';
 import { loadProto } from './grpc/server.js';
 
@@ -17,19 +17,24 @@ const CHANNEL_OPTIONS = {
   'grpc.dns_min_time_between_resolutions_ms': 1000,
 };
 
-// `waitForReady` là tùy chọn của Metadata trong grpc-js: true = kênh đang lỗi kết nối thì CHỜ kênh nối lại
-// (trong deadline) thay vì báo UNAVAILABLE ngay.
-function systemMetadata(requestId, waitForReady) {
-  const metadata = new grpc.Metadata({ waitForReady });
+// `waitForReady` là tùy chọn của Metadata trong grpc-js nên phải tạo bằng `new grpc.Metadata({ waitForReady: true })`
+// rồi đặt x-role, x-request-id vào CHÍNH đối tượng đó (spec 00 H14, ADR-020 bổ sung 2026-10-21).
+// Vì sao (lỗi L1, L2): trip-service vừa dừng rồi chạy lại (Docker có thể đổi IP), kênh gRPC còn ở trạng thái
+// "lỗi kết nối"; lời gọi mặc định bị từ chối NGAY dù Trip đã sẵn sàng → khách nhận 503 oan. Có waitForReady, lời gọi
+// CHỜ kênh nối lại trong deadline 1 s rồi mới gửi. Đánh đổi: Trip dừng hẳn → 503 sau ≈ 1 s thay vì ngay.
+// Thay cho cách cũ "UNAVAILABLE thì gọi lại một lần" (H14 đã loại): không còn vòng lặp.
+export function systemMetadata(requestId) {
+  const metadata = new grpc.Metadata({ waitForReady: true });
   metadata.set('x-role', 'system');
   if (requestId) metadata.set('x-request-id', requestId);
   return metadata;
 }
 
 // Lỗi gRPC được gắn `statusName` (ví dụ "NOT_FOUND") để logic nghiệp vụ đọc mà không phải import thư viện gRPC.
-function callOnce(client, method, request, requestId, waitForReady) {
+// Export để unit test kiểm metadata và deadline (AC-HT-19).
+export function call(client, method, request, requestId) {
   return new Promise((resolve, reject) => {
-    client[method](request, systemMetadata(requestId, waitForReady), { deadline: Date.now() + SERVICE_DEADLINE_MS }, (err, response) => {
+    client[method](request, systemMetadata(requestId), { deadline: Date.now() + SERVICE_DEADLINE_MS }, (err, response) => {
       if (err) {
         err.statusName = Object.keys(grpc.status).find((name) => grpc.status[name] === err.code) ?? 'UNKNOWN';
         reject(err);
@@ -40,25 +45,11 @@ function callOnce(client, method, request, requestId, waitForReady) {
   });
 }
 
-// Cùng cách sửa lỗi L1 như booking-service: trip-service vừa dừng rồi chạy lại thì kênh gRPC còn ở trạng thái
-// "lỗi kết nối" và lời gọi đầu bị UNAVAILABLE ngay dù Trip đã sẵn sàng. Gặp UNAVAILABLE thì thử lại MỘT lần, lần này
-// chờ kênh nối lại. GetTripForRating chỉ đọc nên gọi hai lần cũng an toàn. Trip thật sự dừng → khách chờ thêm tối đa
-// ~1 giây rồi vẫn nhận 503.
-export async function callWithRetry(attempt) {
-  try {
-    return await attempt(false);
-  } catch (err) {
-    if (err?.statusName !== 'UNAVAILABLE') throw err;
-    return attempt(true);
-  }
-}
-
 export function createTripClient(addr) {
   const { TripService } = loadProto('trip.proto').cab.trip.v1;
   const trip = new TripService(addr, grpc.credentials.createInsecure(), CHANNEL_OPTIONS);
   return {
-    getTripForRating: (tripId, requestId) =>
-      callWithRetry((waitForReady) => callOnce(trip, 'GetTripForRating', { trip_id: tripId }, requestId, waitForReady)),
+    getTripForRating: (tripId, requestId) => call(trip, 'GetTripForRating', { trip_id: tripId }, requestId),
     close: () => trip.close(),
   };
 }

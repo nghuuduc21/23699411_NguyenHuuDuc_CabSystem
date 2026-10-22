@@ -39,6 +39,20 @@ export function checkLng(value) {
   return value;
 }
 
+// Họ tên, biển số tài xế chụp vào chuyến (DX25). Cùng giới hạn với CHECK của migration 002: kiểm ở đây để dữ liệu
+// sai trả INVALID_INPUT rõ ràng thay vì lỗi CHECK của database (INTERNAL). proto3 `string` không gửi = chuỗi rỗng.
+const PLATE = /^[A-Z0-9.-]{5,15}$/;
+export function checkDriverName(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (text === '' || [...text].length > 100) throw invalid();
+  return text;
+}
+export function checkPlate(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!PLATE.test(text)) throw invalid();
+  return text;
+}
+
 // proto3: field `optional` không gửi là undefined.
 export const isPresent = (value) => value !== undefined && value !== null;
 

@@ -5,7 +5,7 @@
 const TRIP_COLUMNS = 'trip_id, booking_id, customer_id, driver_id, status';
 const VIEW_COLUMNS = `trip_id, booking_id, customer_id, driver_id, status, vehicle_type, pickup_lat, pickup_lng, destination_lat,
   destination_lng, pickup_address, destination_address, payment_method, fare_amount, started_at, ended_at, canceled_by,
-  cancel_reason, created_at`;
+  cancel_reason, created_at, driver_name, driver_plate`;
 
 // Lịch sử cũ nhất trước; cùng thời điểm thì theo mã dòng (các lệnh trong một giao dịch có cùng now()).
 async function selectHistory(db, tripId) {
@@ -78,7 +78,7 @@ export function createTripsRepo(pool) {
       }
     },
 
-    // A27: chuyến + lịch sử.
+    // A27: chuyến + lịch sử + bản chụp họ tên, biển số tài xế (CD10) — đọc từ chính trip-db, không gọi Driver.
     async findTripView(tripId) {
       const { rows } = await pool.query(`SELECT ${VIEW_COLUMNS} FROM trips WHERE trip_id = $1`, [tripId]);
       if (rows.length === 0) return null;
@@ -96,12 +96,13 @@ export function createTripsRepo(pool) {
         const { rows } = await client.query(
           `INSERT INTO trips (booking_id, customer_id, driver_id, vehicle_type, pickup_lat, pickup_lng,
                               destination_lat, destination_lng, pickup_address, destination_address,
-                              payment_method, fare_amount, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'ACCEPTED')
+                              payment_method, fare_amount, driver_name, driver_plate, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'ACCEPTED')
            ON CONFLICT (booking_id) DO NOTHING
            RETURNING ${TRIP_COLUMNS}`,
           [s.bookingId, s.customerId, s.driverId, s.vehicleType, s.pickupLat, s.pickupLng,
-            s.destinationLat, s.destinationLng, s.pickupAddress, s.destinationAddress, s.paymentMethod, s.fareAmount],
+            s.destinationLat, s.destinationLng, s.pickupAddress, s.destinationAddress, s.paymentMethod, s.fareAmount,
+            s.driverName, s.driverPlate],
         );
         if (rows.length === 0) {
           await client.query('ROLLBACK');

@@ -7,7 +7,7 @@
 // (Driver trả tài xế về rảnh, Payment ghi nhận tiền mặt / hoàn tiền, Notification báo tin) tự nghe. Nhờ vậy tài xế
 // bấm "hoàn thành" không bao giờ lỗi chỉ vì một trong ba service kia đang dừng (NFR05).
 import {
-  ADDRESS_MAX, CANCELABLE, checkId, checkLat, checkLng, checkReason, checkTripId, conflict, DRIVER_STEPS, invalid,
+  ADDRESS_MAX, CANCELABLE, checkDriverName, checkId, checkPlate, checkLat, checkLng, checkReason, checkTripId, conflict, DRIVER_STEPS, invalid,
   isPresent, NEXT, PAYMENT_METHODS, requireRole, requireSystem, TripError,
 } from './rules.js';
 
@@ -64,6 +64,10 @@ export function createTripLogic({ trips, events, log }) {
         destinationAddress: isPresent(req.destination_address) ? req.destination_address : null,
         paymentMethod: req.payment_method,
         fareAmount: req.fare_amount,
+        // Bản chụp họ tên, biển số tài xế lúc nhận (CD10, DX25): booking chép từ kết quả ReserveDriver.
+        // Thiếu / rỗng → INVALID_INPUT, để chuyến mới LUÔN có giá trị cho khối `driver` ở A27.
+        driverName: checkDriverName(req.driver_name),
+        driverPlate: checkPlate(req.driver_plate),
       };
       if (snapshot.vehicleType === null) throw invalid();
       if (!PAYMENT_METHODS.includes(snapshot.paymentMethod)) throw invalid();
@@ -126,6 +130,11 @@ export function createTripLogic({ trips, events, log }) {
       if (trip.ended_at !== null) out.ended_at = iso(trip.ended_at);
       if (trip.canceled_by !== null) out.canceled_by = trip.canceled_by;
       if (trip.cancel_reason !== null) out.cancel_reason = trip.cancel_reason;
+      // Tài xế của chuyến (FR14): bản chụp lúc nhận, cùng nội dung cho khách, tài xế, admin. Không gọi Driver (CD10).
+      // Chuyến tạo trước migration 002 không có tên / biển số → khối chỉ có driver_id (NULL thì không có key).
+      out.driver = { driver_id: trip.driver_id };
+      if (trip.driver_name != null) out.driver.name = trip.driver_name;
+      if (trip.driver_plate != null) out.driver.plate = trip.driver_plate;
       return out;
     },
 

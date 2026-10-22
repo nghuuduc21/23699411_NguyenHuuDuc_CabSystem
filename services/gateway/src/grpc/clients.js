@@ -96,8 +96,12 @@ export function createNotificationClient(addr) {
 //   x-account-id (= sub, dạng chuỗi), x-role: chỉ khi route có token.
 //   `extra`: metadata riêng của một route, chỉ ghi khi có giá trị — `idempotency-key` (A31, từ header
 //   Idempotency-Key), `x-callback-secret` (A32, từ header X-Callback-Secret; Gateway KHÔNG giữ khóa, chỉ chuyển).
+//   `waitForReady: true` (spec 00 H14, ADR-020 bổ sung 2026-10-21): là tùy chọn của Metadata trong grpc-js nên phải
+//   đặt khi tạo đối tượng. Vì sao (lỗi L2): service vừa chạy lại, Docker có thể đổi IP; kênh cũ đang ở trạng thái lỗi
+//   nên lời gọi mặc định bị từ chối NGAY → 503 dù service đã healthy. Có waitForReady, lời gọi CHỜ kênh tự phân giải
+//   lại tên và nối xong (trong deadline 3 s) rồi mới gửi. Đánh đổi: service dừng hẳn thì 503 sau 3 s thay vì ngay.
 export function buildMetadata(req, extra = {}) {
-  const metadata = new grpc.Metadata();
+  const metadata = new grpc.Metadata({ waitForReady: true });
   metadata.set('x-request-id', req.requestId);
   if (req.identity) {
     metadata.set('x-account-id', req.identity.accountId);
@@ -107,6 +111,12 @@ export function buildMetadata(req, extra = {}) {
     if (typeof value === 'string' && value !== '') metadata.set(key, value);
   }
   return metadata;
+}
+
+// Metadata của Health/Check: không mang danh tính, chỉ bật waitForReady (cùng lý do như buildMetadata) để service
+// vừa bật lại kịp nối trong 1 s thì vẫn báo healthy; dừng hẳn thì unhealthy sau ≈ 1 s (DEADLINE_EXCEEDED).
+export function healthMetadata() {
+  return new grpc.Metadata({ waitForReady: true });
 }
 
 // Gọi một rpc unary có deadline 3 000 ms (mọi lời gọi gRPC phải có deadline: service treo

@@ -30,8 +30,8 @@ export function loadConfig(env = process.env) {
     databaseUrl: required(env, 'DATABASE_URL'),
     // Địa chỉ Kafka: phát K5 trip.status-changed (spec 14-15-16-19-30 mục 6).
     kafkaBrokers: required(env, 'KAFKA_BROKERS'),
-    // Chỉ có địa chỉ của service mà service này được phép gọi (02 mục 4.3); spec sau dùng.
-    driverGrpcAddr: required(env, 'DRIVER_GRPC_ADDR'),
+    // Không có địa chỉ gRPC của service nào: trip-service không gọi ai (spec 17-18 mục 6). Họ tên, biển số tài xế
+    // đã được chụp vào chuyến lúc nhận (CD10) nên S6 GetDriverSummary bỏ hẳn, bỏ luôn DRIVER_GRPC_ADDR (spec 00 H14).
     simulationMode: bool(env, 'SIMULATION_MODE'),
   });
 }
