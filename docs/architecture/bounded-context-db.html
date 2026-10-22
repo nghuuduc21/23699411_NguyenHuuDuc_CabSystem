@@ -104,7 +104,7 @@ const contexts = [
       { t: 'trips', hd: '#bfe8c2', cols: [
         ['PK', 'trip_id', 'bigint'], ['UK', 'booking_id', 'bigint', 'booking'], ['', 'customer_id', 'bigint', 'customer'], ['', 'driver_id', 'bigint', 'driver'],
         ['', 'vehicle_type', 'text'], ['', 'pickup_lat, pickup_lng', 'double precision'], ['', 'destination_lat, destination_lng', 'double precision'],
-        ['', 'pickup_address, destination_address', 'text'], ['', 'payment_method', 'text'], ['', 'fare_amount', 'integer'],
+        ['', 'pickup_address, destination_address', 'text'], ['', 'driver_name, driver_plate', 'text'], ['', 'payment_method', 'text'], ['', 'fare_amount', 'integer'],
         ['', 'status', 'text'], ['', 'started_at, ended_at', 'timestamptz'], ['', 'cancel_reason', 'text'], ['', 'canceled_by', 'text']] },
       { t: 'trip_status_history', hd: '#bcd9f7', cols: [
         ['PK', 'history_id', 'bigint'], ['FK', 'trip_id', 'bigint'], ['', 'from_status', 'text'], ['', 'to_status', 'text'],
