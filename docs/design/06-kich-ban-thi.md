@@ -80,7 +80,7 @@ Nói gì: `.env` chứa mật khẩu database, `JWT_SECRET`, khóa mã hóa nên
 
 Ý cần nói (mở ảnh `docs/architecture/kien-truc.png`):
 
-- **gRPC là mặc định** khi bên gọi cần kết quả ngay: Booking → Driver (tìm, giữ tài xế), Booking → Payment (tính cước), Booking → Trip (tạo chuyến khi tài xế nhận), Trip → Driver (thông tin xe), Rating → Trip (chuyến đã xong chưa).
+- **gRPC là mặc định** khi bên gọi cần kết quả ngay: Booking → Driver (tìm, giữ tài xế), Booking → Payment (tính cước), Booking → Trip (tạo chuyến khi tài xế nhận; họ tên, biển số tài xế được chụp vào chuyến nên không có Trip → Driver), Rating → Trip (chuyến đã xong chưa).
 - **Kafka chỉ khi bắt buộc**: bên phát không được chờ / không được lỗi theo bên nhận (NFR05), hoặc nhiều bên cùng nghe. 7 topic. Ví dụ: hủy chuyến phải thành công **dù Payment đang dừng** → Trip phát `trip.status-changed`, Payment nghe để hoàn tiền sau.
 - Auth, Customer, Rating không dùng Kafka; Auth và Customer **không gọi nhau**.
 
@@ -475,7 +475,7 @@ Giảng viên gọi lệch thứ tự: mục chỉ đọc (6, 11–14, 24–26, 
 | Body đăng nhập | Khách / admin `{"email":"kh1@cab.vn","password":"12345678"}`; tài xế `{"phone":"0910000001","password":"12345678"}` | Đúng một trong hai field |
 | Địa chỉ | Gateway `localhost:3000`; Kafka UI `localhost:8080`; service bên trong `:50051`–`:50058` (không mở) | auth 1, customer 2, driver 3, booking 4, trip 5, payment 6, notification 7, rating 8 |
 | Container database | `<context>-db`: `auth-db`, `customer-db`, … (PostgreSQL), `notification-db` (MongoDB) | |
-| Database, user | Database = tên context; user **`cab`**; mật khẩu `cab123` | |
+| Database, user | Database = tên context; user **`cab`**; mật khẩu = `DB_PASSWORD` trong `.env` (sinh ngẫu nhiên, ADR-022); `docker exec … psql` không cần gõ mật khẩu | |
 | Lệnh xem bảng | `docker exec customer-db psql -U cab -d customer -c "table customer_profiles"` | `table <bảng>` = `select *` |
 | Lệnh dựng / đặt lại / xem | `docker compose up -d --build`; `docker compose down -v`; `docker compose ps -a` (21 container) | |
 | Giới hạn thời gian (`.env`) | Offer 300 s; thanh toán 600 s (B7: 1 ngày); OTP 300 s; token 3 600 s; rate limit 5 công khai / 10 s, 30 có token / 10 s | |
