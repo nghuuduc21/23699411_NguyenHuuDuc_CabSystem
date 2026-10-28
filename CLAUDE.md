@@ -27,6 +27,7 @@ Nhánh `rebuild/agent-workflow`: xây lại từ đầu bằng quy trình ba age
 | Kịch bản thi: request gõ tay, lệnh, câu trả lời vấn đáp cho từng mục chấm; những thứ phải nhớ | `docs/design/06-kich-ban-thi.md` | Có |
 | Luyện tập 30 mục: Postman environment + collection theo thứ tự thi, 3 cấp độ, bảng bấm giờ | `docs/study/03-luyen-tap-postman.md`, `postman/luyen-tap/` | Có |
 | Lộ trình 3 ngày đọc code và hiểu sâu hệ thống (15 giờ, file:dòng, câu tự kiểm) | `docs/study/04-lo-trinh-3-ngay.md` | Có |
+| Hướng dẫn ôn tập trọn bộ dạng Word (hiểu hệ thống, 30 mục kèm code chạy, DevOps, câu hỏi vấn đáp, checklist ngày thi) | `docs/study/05-huong-dan-on-thi.docx` | Có |
 | Đặc tả từng phần việc | `docs/specs/` | `00-ha-tang`, `09-10-dang-ky-dang-nhap`, `11-ho-so-khach-hang`, `12-13-21-23-tai-xe`, `14-15-16-19-30-dat-xe-thanh-toan`, `17-18-chuyen-di-thong-bao`, `20-29-danh-gia-gioi-han` (đã code, đã kiểm thử) |
 | Quyết định thiết kế kèm lý do | `docs/decisions/` | ADR-001 đến ADR-022 |
 | Báo cáo kiểm thử | `docs/test-reports/` | test-agent viết |
