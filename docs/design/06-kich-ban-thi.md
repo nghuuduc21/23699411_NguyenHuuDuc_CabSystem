@@ -3,7 +3,7 @@
 > Viết 2026-10-03. Nguồn: `docs/design/04-api.md` (API, mục 5), `docs/design/03-du-lieu.md` mục 13 (biến môi trường), mục 14 (seed), `CLAUDE.md` (Ràng buộc khi thi). Sửa API hay seed thì sửa file này theo.
 > **Sửa 2026-10-03 lần 4 theo 04 lần 4 (ADR-018):** mọi đường dẫn dưới `/api/v1/`; đổi trạng thái là `PATCH` + `status`; được **dùng lại tab**; 30 giây **gồm cả giải thích**, nên mỗi mục chỉ giữ request chính, phần còn lại ghi `(tùy chọn)`.
 > Luật thi: Postman **không lưu sẵn** gì; **được copy** giá trị từ response; **được dùng lại tab và mở tab mới**; lệnh terminal **gõ đầy đủ**; **không mở ghi chú**. Mỗi mục khoảng **30 giây, vừa làm vừa nói**.
-> **Sửa 2026-10-05** (sinh viên chốt spec 17-18, 20-29): mục 16 thêm xem thông báo là request chính; mục 18 gõ ở tab GET đang mang token KH1; mục 29 bấm Send ở tab **đăng nhập** KH1; `driver_avg` in `5`.
+> **Sửa 2026-10-05** (sinh viên chốt spec 17-18, 20-29): mục 16 thêm xem thông báo là request chính; mục 18 gõ ở tab GET đang mang token KH1; mục 29 bấm Send ở tab **đăng nhập** KH1 (từ 2026-10-28: tab **đặt xe**); `driver_avg` in `5`.
 > **Sửa 2026-10-05 lần 2** (sinh viên chốt): tài khoản chỉ có số điện thoại + mật khẩu, email nằm ở hồ sơ khách (mục 9, 11 — ADR-019); bị từ chối thì nộp lại bằng chính request nộp hồ sơ (mục 21, 22 — FR43); cổng gRPC riêng 50051–50058 (mục 8, mục 4 — ADR-020). Không thêm request vào chuỗi chính.
 > **Sửa 2026-10-07** (sinh viên chốt M1 báo cáo hồi quy): mục 7 thêm câu trả lời vấn đáp về Kafka UI chỉ đọc và chống lặp event. Không thêm request.
 > **Sửa 2026-10-14 (theo yêu cầu giảng viên, sinh viên chốt — ADR-021 thay ADR-019):** health trả `healthy` / `ready` / `unhealthy` (mục 6); khách, admin đăng ký / đăng nhập bằng **email**, tài xế bằng **số điện thoại**, nhóm route `/api/v1/auth/…` (mục 9, 10, 21, 25, 29); hồ sơ khách có `phone` thay `email` (mục 11, 24); xem tài xế theo mã chỉ admin và chính tài xế, thêm **tab admin** (mục 12); booking theo mã khách `customers/{id}/bookings` (mục 14); mục 27 demo bằng jwt.io (ADR-016). Mục 4 "Những thứ phải nhớ" đổi seed: `kh1@cab.vn`, `admin@cab.vn`.
@@ -398,17 +398,20 @@ Nói gì: dán lên jwt.io thấy ngay payload `sub`, `role`, `jti`, `exp` — p
 
 Nói gì: Gateway so `role` trong token với danh sách role của đường dẫn **trước** khi đọc body — body rỗng vẫn 403. Ba role cố định, không có bảng PERMISSION. Lớp thứ hai ở service: đúng role nhưng không phải chủ → 403 `NOT_OWNER` (mục 11).
 
-### Mục 29 — Spam → 429
+### Mục 29 — Spam đặt xe → 429
 
-Chuẩn bị: làm **cuối cùng** (khóa đăng nhập / đăng ký theo IP tối đa 10 giây); trong 10 giây trước đó không gửi request công khai nào.
+> **Sửa 2026-10-28** (sinh viên chốt): mục 29 demo ở **đặt xe** `POST /api/v1/bookings` — bộ đếm riêng theo tài khoản, `RATE_LIMIT_BOOKING_MAX=5` mỗi 10 giây. Giới hạn đăng nhập theo IP vẫn giữ (dự phòng).
+
+Chuẩn bị: làm **cuối cùng** (5 booking mới làm đổi `total` của mục 14). Tab đặt xe đang `[TX1]` từ mục 28 → đổi lại token KH1; nếu mục 27 đã đăng xuất thì Send tab đăng nhập KH1 một lần và copy token mới.
 
 | # | Gõ | Kết quả |
 |---|---|---|
-| 1 | **Tab đăng nhập KH1** (`POST …/api/v1/auth/login`, body `{"email":"kh1@cab.vn","password":"12345678"}` của mục 10 — route công khai, ngưỡng 5; **không** phải tab có token, ngưỡng 30), bấm **Send** (hoặc **Ctrl+Enter**) **liên tục 6 lần** → mở tab **Headers** của response | Lần 1–5: 200; lần 6: **429 `RATE_LIMITED`**, header `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0` |
+| 1 | **Tab đặt xe** (`POST …/api/v1/bookings`, `[KH1]`, body `{"from":[10.82,106.68],"to":[10.83,106.69]}` của mục 15), bấm **Send** (hoặc **Ctrl+Enter**) **liên tục 6 lần** → mở tab **Headers** của response | Lần 1–5: 201 `SEARCHING`; lần 6: **429 `RATE_LIMITED`**, header `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0` |
+| Dự phòng | Tab đăng nhập KH1 (`POST …/api/v1/auth/login`), Send 6 lần | Lần 6: 429 — giới hạn theo IP của bốn route công khai |
 
 Thời gian: bấm ~4 s + mở Headers ~4 s + nói ~10 s → **~18 s, Ổn**. Không dùng Collection Runner (cần collection lưu sẵn — luật thi cấm).
 
-Nói gì: Gateway đếm bằng Redis: route công khai (bốn route `auth/register`, `auth/login`, `auth/otp`, `auth/driver-register`, **chung một** bộ đếm) theo **IP**, 5 lần mỗi 10 giây, để chặn dò mật khẩu và spam đăng ký; route có token theo **tài khoản**, 30 lần — đếm **sau** khi kiểm token nên token sai là 401 chứ không phải 429. Cửa sổ **bắt đầu từ request đầu tiên**; spam không kéo dài cửa sổ; `Retry-After` cho biết bao lâu nữa gọi lại được. Vượt ngưỡng thì không request nào tới service. Ngưỡng đọc từ biến môi trường (NFR17). Redis dừng thì cho qua và ghi log.
+Nói gì: Gateway đếm bằng Redis **trước khi gọi gRPC**. Đặt xe có **bộ đếm riêng theo tài khoản** (khóa `rl:bk:<mã tài khoản>`), 5 lần mỗi 10 giây: mỗi lần đặt xe tạo booking, gọi Payment tính cước và hỏi tài xế, nên spam đặt xe tốn tài nguyên và làm phiền tài xế thật — chặn ở Gateway thì lần 6 **không tới booking-service**. Đếm theo **tài khoản** chứ không theo IP vì route này có token; đếm **sau** khi kiểm token nên token sai là 401 chứ không phải 429. Các route có token khác chung bộ đếm 30 lần; bốn route công khai `auth/…` theo IP 5 lần (chặn dò mật khẩu). Cửa sổ **bắt đầu từ request đầu tiên**; spam không kéo dài cửa sổ; `Retry-After` cho biết bao lâu nữa gọi lại được. Ngưỡng đọc từ biến môi trường (NFR17). Redis dừng thì cho qua và ghi log. Code: `gateway/src/routes.js` (A19 `rateLimit: 'booking'`), `app.js` hàm `wrap()`, `rate-limit.js`.
 
 ### Mục 30 — Replay thanh toán → trả response cũ
 
@@ -437,7 +440,7 @@ Nói gì: hai lớp chống lặp — khách bấm hai lần: `idempotency_keys`
 | 9 | 21 → 22 → 23 | Một tab tài xế; 22 duyệt tài xế của 21; 23 sau 17 (TX1 rảnh) |
 | 10 | 24 → 25 → 26 → 28 | Chỉ đọc hoặc bị từ chối |
 | 11 | **27** | Phần tùy chọn đăng xuất thu hồi token KH1 |
-| 12 | **29** cuối cùng | Bấm Send ở **tab đăng nhập KH1**; khóa đăng nhập / đăng ký theo IP tối đa 10 giây |
+| 12 | **29** cuối cùng | Bấm Send 6 lần ở **tab đặt xe** `[KH1]`; tạo thêm 5 booking (đổi `total` mục 14), khóa đặt xe của KH1 tối đa 10 giây |
 
 Giảng viên gọi lệch thứ tự: mục chỉ đọc (6, 11–14, 24–26, 28) chạy lúc nào cũng được; mục đổi seed (15–20, 22, 23, 30) xem dòng "Chuẩn bị". Tab cần chưa có thì gõ mới (≈ +10 s). Seed hỏng thì `docker compose down -v` rồi `docker compose up -d --build`.
 

@@ -2,9 +2,12 @@
 // Vì sao ở Gateway: mọi request đi qua đây, chặn ở đây thì request thừa KHÔNG tới service nào.
 // Vì sao Redis: bộ đếm dùng chung cho mọi bản Gateway và còn nguyên khi Gateway khởi động lại (ADR-010).
 //
-// Hai loại bộ đếm (GH3):
+// Ba loại bộ đếm (GH3):
+//   - `booking`: đặt xe `POST /api/v1/bookings` — bộ đếm RIÊNG theo mã tài khoản, ngưỡng thấp (mục chấm 29). Vì sao
+//                riêng: mỗi lần đặt xe tạo booking, tính cước (gọi Payment) và hỏi tài xế — spam đặt xe tốn tài nguyên
+//                và làm phiền tài xế thật, nên chặn sớm hơn các route xem dữ liệu.
 //   - `ip`:      4 route công khai (đăng ký, đăng nhập, OTP, đăng ký tài xế) chung MỘT bộ đếm theo IP — chặn dò mật khẩu.
-//   - `account`: mọi route có token chung MỘT bộ đếm theo mã tài khoản (đã xác thực chữ ký) — chặn một tài khoản spam.
+//   - `account`: các route có token còn lại chung MỘT bộ đếm theo mã tài khoản (đã xác thực chữ ký) — chặn một tài khoản spam.
 //
 // Cửa sổ CỐ ĐỊNH, BẮT ĐẦU TỪ REQUEST ĐẦU TIÊN (GH1): request đầu tạo key kèm hạn; các request sau chỉ tăng số, không
 // kéo dài hạn. Vì sao không chia theo đồng hồ (floor(giờ / 10 s)): bấm Send 6 lần có thể rơi vào hai cửa sổ → lần 6
@@ -13,9 +16,9 @@
 // Phụ thuộc (redis, ngưỡng, log) truyền từ ngoài vào để test không cần Redis thật.
 import { REDIS_COMMAND_TIMEOUT_MS, withTimeout } from './redis.js';
 
-export function createRateLimiter({ redis, windowSeconds, publicMax, accountMax, log, timeoutMs = REDIS_COMMAND_TIMEOUT_MS }) {
-  const limits = { ip: publicMax, account: accountMax };
-  const prefix = { ip: 'rl:ip:', account: 'rl:acc:' };
+export function createRateLimiter({ redis, windowSeconds, publicMax, accountMax, bookingMax, log, timeoutMs = REDIS_COMMAND_TIMEOUT_MS }) {
+  const limits = { ip: publicMax, account: accountMax, booking: bookingMax };
+  const prefix = { ip: 'rl:ip:', account: 'rl:acc:', booking: 'rl:bk:' };
 
   // Một lần đếm = MỘT vòng gọi Redis (MULTI … EXEC chạy liền một khối):
   //   SET key 0 EX <window> NX → chỉ request đầu tạo key và đặt hạn;
@@ -40,7 +43,7 @@ export function createRateLimiter({ redis, windowSeconds, publicMax, accountMax,
   }
 
   return {
-    // scope: 'ip' | 'account'; id: địa chỉ IP hoặc mã tài khoản.
+    // scope: 'ip' | 'account' | 'booking'; id: địa chỉ IP hoặc mã tài khoản.
     // Trả { skipped: true } khi Redis lỗi; hoặc { limited, headers } — headers gắn vào MỌI response của route bị đếm.
     async hit(scope, id, req) {
       const max = limits[scope];

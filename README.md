@@ -112,7 +112,7 @@ Chỉ `gateway` và `kafka-ui` mở cổng ra máy. Mọi container khác chỉ 
 | `GET /api/v1/trips/{id}` | Chuyến + lịch sử (A27): khách / tài xế của chuyến, admin |
 | `POST /api/v1/ratings` `{"trip_id":4,"score":5}` (token KH1) | 201 kèm `driver_avg`, `driver_count` (A34, mục 20); gửi lại → 409 `RATING_ALREADY_EXISTS`; chuyến chưa xong → 409 `TRIP_NOT_COMPLETED` |
 | `GET /api/v1/ratings?trip_id=4` / `?driver_id=11` (token bất kỳ) | Đánh giá của chuyến (A35) / điểm tài xế `{"driver_id":11,"avg":5,"count":1}` (A36) |
-| Gửi liên tục `POST /api/v1/auth/login` | Lần 6 trong 10 giây → 429 `RATE_LIMITED` + `Retry-After` (mục 29). Bốn route công khai `auth/register`, `auth/login`, `auth/otp`, `auth/driver-register` chung một bộ đếm theo IP (5), route có token theo tài khoản (30); chạy bộ test tự động thì đặt `RATE_LIMIT_PUBLIC_MAX=1000 RATE_LIMIT_ACCOUNT_MAX=1000 docker compose up -d gateway` |
+| Gửi liên tục `POST /api/v1/bookings` (token khách) | Lần 6 trong 10 giây → 429 `RATE_LIMITED` + `Retry-After` (mục 29): đặt xe có bộ đếm riêng theo tài khoản (5). Bốn route công khai `auth/register`, `auth/login`, `auth/otp`, `auth/driver-register` chung một bộ đếm theo IP (5), các route có token khác theo tài khoản (30); chạy bộ test tự động thì đặt `RATE_LIMIT_PUBLIC_MAX=1000 RATE_LIMIT_ACCOUNT_MAX=1000 RATE_LIMIT_BOOKING_MAX=1000 docker compose up -d gateway` |
 | Đường dẫn khác | 404 `{"error":"ROUTE_NOT_FOUND"}` |
 
 API nghiệp vụ nằm dưới `/api/v1/…` (`docs/design/04-api.md`) và được thêm theo từng đặc tả.

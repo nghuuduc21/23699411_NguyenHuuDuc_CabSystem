@@ -1,7 +1,8 @@
 // Spec 20-29 — rate limit tại Gateway (mục 29, NFR17). AC-GH-01…10; AC-TX-43 (spec 12-13-21-23).
 // 2026-10-14 (ADR-021): bốn route công khai auth/register, auth/login, auth/otp, auth/driver-register chung một bộ đếm IP.
+// 2026-10-28: mục 29 demo ở đặt xe — A19 POST /bookings có bộ đếm riêng theo tài khoản, RATE_LIMIT_BOOKING_MAX=5 (AC-GH-11).
 // Chạy RIÊNG và CUỐI CÙNG bằng `npm run test:rate-limit`, với ngưỡng mẫu của `.env.example`
-// (RATE_LIMIT_WINDOW_SECONDS=10, PUBLIC_MAX=5, ACCOUNT_MAX=30) — các nhóm test khác chạy với ngưỡng 1000 (GH-Q3).
+// (RATE_LIMIT_WINDOW_SECONDS=10, PUBLIC_MAX=5, ACCOUNT_MAX=30, BOOKING_MAX=5) — các nhóm test khác chạy với ngưỡng 1000 (GH-Q3).
 // AC-GH-05, 06 tạm dựng lại gateway với RATE_LIMIT_ACCOUNT_MAX=3 (biến môi trường của tiến trình test đè `.env`
 // khi Compose nội suy), xong dựng lại theo `.env` (30). AC-GH-07 dừng redis. Hook `after` luôn trả gateway về `.env`
 // và bật lại redis.
@@ -22,6 +23,7 @@ const envOf = (name) => run('docker', ['exec', 'gateway', 'printenv', name]).std
 async function gatewayUp(extraEnv = {}) {
   delete process.env.RATE_LIMIT_PUBLIC_MAX;
   delete process.env.RATE_LIMIT_ACCOUNT_MAX;
+  delete process.env.RATE_LIMIT_BOOKING_MAX;
   Object.assign(process.env, extraEnv);
   const r = compose('up', '-d', 'gateway');
   for (const k of Object.keys(extraEnv)) delete process.env[k];
@@ -37,8 +39,9 @@ async function waitIpWindowClear() {
 
 before(async () => {
   assert.deepEqual(
-    [envOf('RATE_LIMIT_WINDOW_SECONDS'), envOf('RATE_LIMIT_PUBLIC_MAX'), envOf('RATE_LIMIT_ACCOUNT_MAX')], ['10', '5', '30'],
-    'Tiền điều kiện: gateway chạy với ngưỡng mẫu 10 / 5 / 30 (`docker compose up -d gateway` theo .env).',
+    [envOf('RATE_LIMIT_WINDOW_SECONDS'), envOf('RATE_LIMIT_PUBLIC_MAX'), envOf('RATE_LIMIT_ACCOUNT_MAX'), envOf('RATE_LIMIT_BOOKING_MAX')],
+    ['10', '5', '30', '5'],
+    'Tiền điều kiện: gateway chạy với ngưỡng mẫu 10 / 5 / 30 / 5 (`docker compose up -d gateway` theo .env).',
   );
   await waitIpWindowClear();
   // Lấy token trước (tốn 2 lần đếm công khai), rồi đợi cửa sổ IP hết hạn để AC-GH-01 bắt đầu từ 0.
@@ -53,7 +56,37 @@ after(async () => {
     compose('start', 'redis');
     await waitHealthy('redis', 120_000);
   }
-  if (envOf('RATE_LIMIT_ACCOUNT_MAX') !== '30' || envOf('RATE_LIMIT_PUBLIC_MAX') !== '5') await gatewayUp();
+  if (envOf('RATE_LIMIT_ACCOUNT_MAX') !== '30' || envOf('RATE_LIMIT_PUBLIC_MAX') !== '5' || envOf('RATE_LIMIT_BOOKING_MAX') !== '5') await gatewayUp();
+});
+
+// Mục 29 theo kịch bản thi: tab đặt xe của mục 15 bấm Send 6 lần. Tọa độ ở Hà Nội (không có tài xế seed trong 1 km) để
+// các booking tạo ra không gửi lời mời cho tài xế seed, không ảnh hưởng các nhóm test khác.
+test('AC-GH-11 (mục 29): A19 đặt xe [KH3] Send 6 lần liên tục → 201 ×5 (Limit 5, Remaining 4…0), lần 6: 429 RATE_LIMITED, Retry-After 1–10; log rate_limited scope booking; Redis rl:bk:3; [KH3] GET /customers/me không 429 (bộ đếm 30); [KH2] đặt xe → 201', async () => {
+  const kh3 = (await login(SEED.KH3)).token;
+  await waitIpWindowClear();
+  const since = new Date(Date.now() - 1000).toISOString();
+  const book = (t) => call('POST', '/bookings', { token: t, body: { from: [21.02, 105.85], to: [21.03, 105.86] } });
+  const res = [];
+  for (let i = 0; i < 6; i += 1) res.push(await book(kh3));
+  assert.deepEqual(res.map((r) => r.status), [201, 201, 201, 201, 201, 429], res.map((r) => r.text).join(' | '));
+  res.slice(0, 5).forEach((r, i) => {
+    assert.equal(h(r, 'ratelimit-limit'), '5');
+    assert.equal(h(r, 'ratelimit-remaining'), String(4 - i));
+  });
+  const six = res[5];
+  assert.deepEqual(six.body, { error: 'RATE_LIMITED' });
+  const ra = Number(h(six, 'retry-after'));
+  assert.ok(ra >= 1 && ra <= 10, `Retry-After ${ra}`);
+  assert.ok(redisKeys().includes('rl:bk:3'), 'có khóa rl:bk:3');
+  const me = await call('GET', '/customers/me', { token: kh3 });
+  assert.notEqual(me.status, 429, me.text); // KH3 chưa có hồ sơ → 404, nhưng vẫn đếm ở bộ đếm tài khoản (30)
+  assert.equal(h(me, 'ratelimit-limit'), '30');
+  assert.equal((await book(S.kh2)).status, 201, 'tài khoản khác không bị chặn');
+  await sleep(500);
+  const line = gatewayLogsSince(since).split(/\r?\n/).find((l) => l.includes('"rate_limited"'));
+  assert.ok(line, 'log gateway có rate_limited');
+  const o = JSON.parse(line);
+  assert.deepEqual([o.scope, String(o.account_id)], ['booking', '3']);
 });
 
 test('AC-GH-01 + AC-GH-08 (mục 29): đăng nhập KH1 Send 6 lần liên tục → 1–5: 200, Limit 5, Remaining 4…0, Reset 1–10; lần 6: 429 RATE_LIMITED, Retry-After 1–10, Remaining 0, X-Request-Id; log rate_limited scope ip; Redis có rl:ip:<ip> TTL 1–10', async () => {
@@ -89,7 +122,7 @@ test('AC-GH-01 + AC-GH-08 (mục 29): đăng nhập KH1 Send 6 lần liên tục
   assert.ok(ttl >= 1 && ttl <= 10, `TTL ${ttl}`);
   await sleep(500);
   const logs = gatewayLogsSince(S.since);
-  const line = logs.split(/\r?\n/).find((l) => l.includes('"rate_limited"'));
+  const line = logs.split(/\r?\n/).find((l) => l.includes('"rate_limited"') && l.includes('"scope":"ip"'));
   assert.ok(line, 'log gateway có rate_limited');
   const o = JSON.parse(line);
   assert.equal(o.scope, 'ip');
@@ -157,7 +190,7 @@ test('AC-GH-04 (mục 29): A32 payment-callbacks gửi 10 lần liên tục → 
   }
 });
 
-test('AC-GH-05 + AC-GH-06 (mục 29, tài khoản): ACCOUNT_MAX=3 — A38 [KH1] ×4 → 200 ×3, 429 (scope account); [KH2] → 200; A06 [KH1] → 429; KH1 bị chặn: không token → 401, token sửa → 401 TOKEN_INVALID, A19 không body → 429', async () => {
+test('AC-GH-05 + AC-GH-06 (mục 29, tài khoản): ACCOUNT_MAX=3 — A38 [KH1] ×4 → 200 ×3, 429 (scope account); [KH2] → 200; A06 [KH1] → 429; KH1 bị chặn: không token → 401, token sửa → 401 TOKEN_INVALID, A19 không body → 400 (đặt xe có bộ đếm riêng)', async () => {
   await gatewayUp({ RATE_LIMIT_ACCOUNT_MAX: '3' });
   try {
     assert.equal(envOf('RATE_LIMIT_ACCOUNT_MAX'), '3');
@@ -185,8 +218,8 @@ test('AC-GH-05 + AC-GH-06 (mục 29, tài khoản): ACCOUNT_MAX=3 — A38 [KH1] 
     assert.equal(t.status, 401);
     assert.deepEqual(t.body, { error: 'TOKEN_INVALID' });
     const b = await call('POST', '/bookings', { token: S.kh1 });
-    assert.equal(b.status, 429, '429 trước 400');
-    assert.deepEqual(b.body, { error: 'RATE_LIMITED' });
+    assert.equal(b.status, 400, 'đặt xe dùng bộ đếm riêng, không bị chặn theo bộ đếm tài khoản');
+    assert.deepEqual(b.body, { error: 'INVALID_INPUT' });
   } finally {
     await gatewayUp();
   }

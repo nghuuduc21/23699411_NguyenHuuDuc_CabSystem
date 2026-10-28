@@ -172,7 +172,7 @@ Ví dụ: KH1 gõ `GET http://localhost:3000/api/v1/customers/2`.
 | — | `securityHeaders` | Gắn `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`, `Cache-Control: no-store` | |
 | 1 | `wrap()` | Route công khai có đếm (đăng ký, đăng nhập, OTP, đăng ký tài xế) → đếm theo IP | 429 `RATE_LIMITED` |
 | 2–5 | `token.js` | Đọc Bearer → kiểm chữ ký HS256 → hạn → claim (`sub`, `role`, `jti`, `exp`) → tra `revoked:{jti}` trong Redis | 401 `TOKEN_MISSING` / `TOKEN_INVALID` / `TOKEN_EXPIRED` / `TOKEN_REVOKED` |
-| 5a | `rate-limit.js` | Route có token → đếm theo mã tài khoản (sau khi đã xác thực) | 429 |
+| 5a | `rate-limit.js` | Route có token → đếm theo mã tài khoản (sau khi đã xác thực); đặt xe `POST /bookings` dùng bộ đếm riêng `rl:bk:<mã>`, ngưỡng 5 | 429 |
 | 6 | `wrap()` | Role trong token có nằm trong `roles` của route không | 403 `FORBIDDEN`, **trước cả khi đọc body** |
 | 7 | `parseBody()` | Đọc body thành JSON, bất kể `Content-Type` | 400 `INVALID_JSON` |
 | 8 | `validate.js` | Kiểm hình thức body, rồi tham số đường dẫn (`:id` phải là số nguyên dương) | 400 `INVALID_INPUT`, `INVALID_ID`, `TEXT_CONTAINS_HTML`… |
@@ -621,7 +621,7 @@ Tất cả trong **một giao dịch** của booking-service:
 | XSS (`<script>`) | Chặn `<` `>` ở trường văn bản → 400 `TEXT_CONTAINS_HTML`; header `nosniff`, CSP `default-src 'none'`; API chỉ trả JSON | `validate.js`, `app.js` | 26 |
 | Lộ mật khẩu khi database bị lấy | scrypt có salt; CHECK chỉ nhận chuỗi `scrypt$…` | `auth-service/src/domain/password.js`, migration 001 | 24 |
 | Lộ dữ liệu cá nhân khi database bị lấy | AES-256-GCM; khóa riêng từng service, đọc từ `.env` | `domain/crypto.js` (customer, driver) | 24 |
-| Dò mật khẩu, spam | 5 request / 10 giây theo IP; 30 / 10 giây theo tài khoản → 429 | `rate-limit.js` | 29 |
+| Spam đặt xe, dò mật khẩu, spam | Đặt xe 5 lần / 10 giây mỗi tài khoản (bộ đếm riêng); 5 request / 10 giây theo IP cho `auth/…`; 30 / 10 giây theo tài khoản cho route có token khác → 429 | `routes.js` (A19 `rateLimit: 'booking'`), `rate-limit.js` | 29 |
 | Thanh toán bị gửi lặp | `Idempotency-Key` + khóa dòng | `payments.js` | 30 |
 | Callback giả | `X-Callback-Secret` so khóa → 401 | `payments.js` | 19 |
 | Lộ thông tin qua lỗi hay log | Lỗi chỉ là mã; không stack trace; log không ghi token, body, mật khẩu | `errors.js`, `app.js`, `log.js` | NFR |
@@ -709,10 +709,10 @@ docker exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:90
 npm run test:ha-tang       # Compose, health, Kafka, cấu hình
 npm run test:nghiep-vu     # nghiệp vụ (cần ngưỡng rate limit cao)
 npm run test:dung-service  # dừng / bật service
-npm run test:rate-limit    # mục 29, ngưỡng thật 5/30
+npm run test:rate-limit    # mục 29, ngưỡng thật 5/30/5
 # Ngưỡng cao tạm thời cho test:
-RATE_LIMIT_PUBLIC_MAX=1000 RATE_LIMIT_ACCOUNT_MAX=1000 docker compose up -d gateway
-docker compose up -d gateway                      # về lại 5/30
+RATE_LIMIT_PUBLIC_MAX=1000 RATE_LIMIT_ACCOUNT_MAX=1000 RATE_LIMIT_BOOKING_MAX=1000 docker compose up -d gateway
+docker compose up -d gateway                      # về lại 5/30/5
 ```
 
 ---

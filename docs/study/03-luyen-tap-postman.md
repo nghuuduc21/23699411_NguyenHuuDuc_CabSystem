@@ -97,7 +97,7 @@ Thứ tự thư mục trong collection chính là thứ tự thi (06 mục 3). B
 | 23 | 26 | `PATCH /customers/me` `{"name":"<script>…"}` → `GET` xem Headers | 400 → `nosniff`, CSP | `validate.js`, `app.js` `securityHeaders` |
 | 24 | 28 | [KH1] `PATCH /drivers/17`; [TX1] `POST /bookings` | 403, 403 | `app.js` `wrap()` bước 6 |
 | 25 | 27 | Token sửa trên jwt.io → No Auth | 401 `TOKEN_INVALID` → 401 `TOKEN_MISSING` | `gateway/src/token.js` |
-| 26 | 29 | Tab đăng nhập KH1, Send 6 lần | Lần 6: 429 + `Retry-After` | `gateway/src/rate-limit.js` |
+| 26 | 29 | Tab đặt xe `[KH1]`, Send 6 lần | Lần 6: 429 + `Retry-After` | `gateway/src/rate-limit.js` |
 
 ## 5. Bảng bấm giờ (tự điền khi luyện cấp 2, 3)
 

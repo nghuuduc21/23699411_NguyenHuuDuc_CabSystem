@@ -845,13 +845,13 @@ Bằng chứng khi chấm: xem file 04, chuỗi request của mục 24.
 | (a) **Bắt đầu từ request đầu** (chọn) | Bấm Send 6 lần liên tục thì lần 6 **luôn** 429 — demo 30 giây không phụ thuộc may rủi; vẫn một vòng gọi Redis | Ba lệnh trong `MULTI` thay vì một `INCR` |
 | (b) Chia theo đồng hồ | Một lệnh `INCR` | 6 lần bấm có thể rơi vào hai cửa sổ → lần 6 vẫn 200 (~30 % khả năng khi demo); ở ranh giới lọt gấp đôi ngưỡng |
 
-Giá trị demo trong `.env.example`: cửa sổ 10 giây, 5 request công khai, 30 request có token (mục 13) — đủ thấp để bấm Send liên tục là thấy 429, đủ cao để gõ tay bình thường không bao giờ chạm (mỗi request gõ tay mất ≥ 5 giây). Bộ test tự động của các mục khác chạy với `RATE_LIMIT_PUBLIC_MAX=1000`, `RATE_LIMIT_ACCOUNT_MAX=1000`; chỉ bộ test mục 29 dùng giá trị mẫu (GH-Q3).
+Giá trị demo trong `.env.example`: cửa sổ 10 giây, 5 request công khai, 30 request có token, 5 lần đặt xe mỗi tài khoản (mục 13) — đủ thấp để bấm Send liên tục là thấy 429, đủ cao để gõ tay bình thường không bao giờ chạm (mỗi request gõ tay mất ≥ 5 giây). Bộ test tự động của các mục khác chạy với `RATE_LIMIT_PUBLIC_MAX=1000`, `RATE_LIMIT_ACCOUNT_MAX=1000`, `RATE_LIMIT_BOOKING_MAX=1000`; chỉ bộ test mục 29 dùng giá trị mẫu (GH-Q3).
 
 Redis dừng [ĐC]: Gateway cho request đi qua và ghi log cảnh báo; trong lúc đó không có rate limit và token đã đăng xuất dùng lại được.
 
 Redis không lưu dữ liệu nghiệp vụ, không cache, không session (`CLAUDE.md`).
 
-## 13. Biến môi trường (rút gọn 2026-10-03 — 14 biến)
+## 13. Biến môi trường (rút gọn 2026-10-03 — 14 biến; 15 từ 2026-10-28)
 
 Nguyên tắc: chỉ giữ biến là **bí mật** hoặc **giới hạn thời gian / ngưỡng cần chỉnh khi demo** [ĐC]. Con số nghiệp vụ đã chốt (3 lần thử, bán kính 1 km, hệ số 1,3, 5 lần nhập OTP) và deadline gRPC là **hằng số trong code** (ghi ở mục "Hằng số" dưới). `.env.example` (có trên Git) **để trống 5 biến bí mật**; mỗi máy tự sinh khóa trong `.env` (không commit) — ADR-022; biến không bí mật giữ giá trị mặc định.
 
@@ -871,6 +871,7 @@ Nguyên tắc: chỉ giữ biến là **bí mật** hoặc **giới hạn thời
 | 12 | `RATE_LIMIT_WINDOW_SECONDS` | gateway | `10` | Mục 29 |
 | 13 | `RATE_LIMIT_PUBLIC_MAX` | gateway | `5` | Mục 29 |
 | 14 | `RATE_LIMIT_ACCOUNT_MAX` | gateway | `30` | Mục 29 |
+| 15 | `RATE_LIMIT_BOOKING_MAX` | gateway | `5` (đặt xe, bộ đếm riêng theo tài khoản — thêm 2026-10-28) | Mục 29 |
 
 Đã bỏ: `GATEWAY_PORT`, `KAFKA_UI_PORT`, `KAFKA_CLUSTER_ID`, `REDIS_PASSWORD`, `LOG_LEVEL` (đặt thẳng trong `compose.yaml` / code); 7 biến `*_DB_PASSWORD` (gộp thành `DB_PASSWORD`); `JWT_PRIVATE_KEY_B64`, `JWT_PUBLIC_KEY_B64`, `JWT_ISSUER` (ADR-016); `AUTH_DATA_KEY`, `AUTH_BLIND_INDEX_KEY`, `DRIVER_BLIND_INDEX_KEY` (ADR-012); `AUTH_OTP_HMAC_KEY` (OTP băm scrypt); `OUTBOX_POLL_INTERVAL_MS` (ADR-017); biến bật seed riêng (gộp vào `SIMULATION_MODE`); các hằng số dưới.
 

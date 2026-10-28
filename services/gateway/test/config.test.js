@@ -10,6 +10,7 @@ const VALID = {
   RATE_LIMIT_WINDOW_SECONDS: '10',
   RATE_LIMIT_PUBLIC_MAX: '5',
   RATE_LIMIT_ACCOUNT_MAX: '30',
+  RATE_LIMIT_BOOKING_MAX: '5',
   ...Object.fromEntries(BACKEND_SERVICES.map(([name, variable]) => [variable, `${name}:50058`])),
 };
 

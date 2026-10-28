@@ -53,6 +53,7 @@ export function loadConfig(env = process.env) {
     rateLimitWindowSeconds: positiveInt(env, 'RATE_LIMIT_WINDOW_SECONDS'),
     rateLimitPublicMax: positiveInt(env, 'RATE_LIMIT_PUBLIC_MAX'),
     rateLimitAccountMax: positiveInt(env, 'RATE_LIMIT_ACCOUNT_MAX'),
+    rateLimitBookingMax: positiveInt(env, 'RATE_LIMIT_BOOKING_MAX'),
     grpcAddrs: Object.freeze(grpcAddrs),
   });
 }

@@ -1,7 +1,7 @@
 // Test rate limit (spec 20-29 mục 4.3–4.5, 5.4; AC-GH-01 … AC-GH-07) qua HTTP thật (cổng ngẫu nhiên) với Redis giả
 // trong bộ nhớ (đồng hồ điều khiển được) và auth / customer-service giả. Kiểm: lần max + 1 → 429 kèm Retry-After,
 // handler gRPC KHÔNG được gọi; header RateLimit-*; cửa sổ neo theo request đầu, spam không kéo dài; bộ đếm IP chung cho
-// 4 route công khai; bộ đếm tài khoản riêng; 401 trước 429 trước 403; route không đếm; Redis dừng → cho qua.
+// 4 route công khai; bộ đếm tài khoản riêng; bộ đếm đặt xe riêng (mục 29); 401 trước 429 trước 403; route không đếm; Redis dừng → cho qua.
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
@@ -61,10 +61,10 @@ before(async () => {
     health: { live: (req, res) => res.json({ status: 'UP' }), ready() {}, services() {} },
     auth: createAuthHandlers({ authClient, revocations, log }),
     customers: createCustomerHandlers({ customerClient: { GetCustomer: fakeRpc({ customer_id: 1, name: 'An' }) } }),
-    bookings: createBookingHandlers({ bookingClient: {} }),
+    bookings: createBookingHandlers({ bookingClient: { CreateBooking: fakeRpc({ booking_id: 1000, status: 'SEARCHING' }) } }),
     payments: createPaymentHandlers({ paymentClient: { HandleProviderCallback: (r, m, o, cb) => { grpcCalls += 1; setImmediate(() => cb({ code: 16, details: 'CALLBACK_UNAUTHORIZED' })); } } }),
   });
-  const rateLimiter = createRateLimiter({ redis: fakeRedis, windowSeconds: 10, publicMax: 5, accountMax: 3, log });
+  const rateLimiter = createRateLimiter({ redis: fakeRedis, windowSeconds: 10, publicMax: 5, accountMax: 3, bookingMax: 5, log });
   const authenticate = createAuthenticator({ secret: SECRET, isRevoked: revocations.isRevoked, log });
   server = createApp({ routes, log, authenticate, rateLimiter }).listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -177,7 +177,7 @@ test('AC-GH-05: ngưỡng tài khoản 3 → KH1 lần 4 → 429 scope account; 
   assert.ok(!JSON.stringify(logs).includes(KH1), 'không ghi token vào log');
 });
 
-test('AC-GH-06: KH1 đang bị chặn — không token / token sửa → 401 (401 trước 429); POST /bookings không body → 429 (429 trước 400); tài xế bị chặn gọi route khách → 429 trước 403', async () => {
+test('AC-GH-06: KH1 bị chặn ở bộ đếm tài khoản — không token / token sửa → 401 (401 trước 429); POST /bookings vẫn qua (bộ đếm đặt xe riêng) → 400; tài xế spam đặt xe → 403 ×5 rồi 429 (429 trước 403)', async () => {
   for (let i = 0; i < 4; i += 1) await send('GET', '/api/v1/customers/me', { t: KH1 });
   const none = await send('GET', '/api/v1/customers/me');
   assert.deepEqual([none.status, await none.json()], [401, { error: 'TOKEN_MISSING' }]);
@@ -185,10 +185,34 @@ test('AC-GH-06: KH1 đang bị chặn — không token / token sửa → 401 (40
   const bad = await send('GET', '/api/v1/customers/me', { t: tampered });
   assert.deepEqual([bad.status, await bad.json()], [401, { error: 'TOKEN_INVALID' }]);
   const b = await send('POST', '/api/v1/bookings', { t: KH1 });
-  assert.deepEqual([b.status, await b.json()], [429, { error: 'RATE_LIMITED' }]);
-  // Tài xế: 3 lần 403 (vẫn bị đếm), lần 4 → 429 chứ không 403.
-  for (let i = 0; i < 3; i += 1) assert.equal((await send('POST', '/api/v1/bookings', { t: TX1 })).status, 403);
+  assert.deepEqual([b.status, await b.json()], [400, { error: 'INVALID_INPUT' }]);
+  // Tài xế: 5 lần 403 (vẫn bị đếm ở bộ đếm đặt xe), lần 6 → 429 chứ không 403.
+  for (let i = 0; i < 5; i += 1) assert.equal((await send('POST', '/api/v1/bookings', { t: TX1 })).status, 403);
   assert.equal((await send('POST', '/api/v1/bookings', { t: TX1 })).status, 429);
+});
+
+test('AC-GH-11 (mục 29): KH1 đặt xe 6 lần liên tục → 201 ×5 (Limit 5, Remaining 4…0), lần 6 → 429 RATE_LIMITED + Retry-After; gRPC CreateBooking chỉ 5 lần; bộ đếm tài khoản và IP không bị ảnh hưởng; KH2 vẫn đặt được', async () => {
+  const book = (t) => send('POST', '/api/v1/bookings', { t, body: { from: [10.82, 106.68], to: [10.83, 106.69] } });
+  for (let i = 1; i <= 5; i += 1) {
+    const r = await book(KH1);
+    assert.equal(r.status, 201);
+    assert.deepEqual(rl(r), ['5', String(5 - i), '10', null]);
+  }
+  const r6 = await book(KH1);
+  assert.deepEqual([r6.status, await r6.json()], [429, { error: 'RATE_LIMITED' }]);
+  assert.deepEqual(rl(r6), ['5', '0', '10', '10']);
+  assert.equal(grpcCalls, 5, 'lần 6 không tới booking-service');
+  const line = logs.find((l) => l.msg === 'rate_limited');
+  assert.deepEqual([line.scope, line.account_id], ['booking', '1']);
+  assert.deepEqual([...store.keys()].sort(), ['rl:bk:1']);
+  // Bộ đếm khác không bị ảnh hưởng.
+  const me = await send('GET', '/api/v1/customers/me', { t: KH1 });
+  assert.deepEqual([me.status, me.headers.get('ratelimit-remaining')], [200, '2']);
+  assert.equal((await login()).status, 200);
+  assert.equal((await book(KH2)).status, 201, 'tài khoản khác có bộ đếm riêng');
+  // Hết cửa sổ → đặt lại được.
+  now += 10_000;
+  assert.equal((await book(KH1)).status, 201);
 });
 
 test('AC-GH-07: Redis dừng → cho qua cả 7 lần, không header RateLimit-*, log warn rate_limit_skipped kèm request_id', async () => {

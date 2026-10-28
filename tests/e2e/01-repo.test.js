@@ -75,12 +75,12 @@ const ENV_VARS = [
   'DB_PASSWORD', 'JWT_SECRET', 'JWT_TTL_SECONDS', 'CUSTOMER_DATA_KEY', 'DRIVER_DATA_KEY',
   'PAYMENT_CALLBACK_SECRET', 'SIMULATION_MODE', 'SEED_PASSWORD', 'PAYMENT_TIMEOUT_SECONDS',
   'OFFER_TIMEOUT_SECONDS', 'OTP_TTL_SECONDS', 'RATE_LIMIT_WINDOW_SECONDS', 'RATE_LIMIT_PUBLIC_MAX',
-  'RATE_LIMIT_ACCOUNT_MAX',
+  'RATE_LIMIT_ACCOUNT_MAX', 'RATE_LIMIT_BOOKING_MAX',
 ];
 const SECRET_VARS = ['DB_PASSWORD', 'JWT_SECRET', 'CUSTOMER_DATA_KEY', 'DRIVER_DATA_KEY', 'PAYMENT_CALLBACK_SECRET'];
 
 // File mẫu có trên Git nên biến bí mật phải để trống; biến không bí mật có giá trị mặc định.
-test('AC-HT-02 (mục 2): .env.example có đủ 14 biến, 5 biến bí mật để trống', () => {
+test('AC-HT-02 (mục 2): .env.example có đủ 15 biến, 5 biến bí mật để trống', () => {
   const vars = readEnvFile('.env.example');
   assert.deepEqual(Object.keys(vars).sort(), [...ENV_VARS].sort());
   for (const k of SECRET_VARS) assert.equal(vars[k], '', `${k} trong .env.example phải để trống`);

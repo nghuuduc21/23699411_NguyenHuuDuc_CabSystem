@@ -61,6 +61,7 @@ export function parseBody(req) {
 
 // Loại bộ đếm rate limit của route (spec 20-29 mục 4.4): khai báo ở cột `rateLimit` của bảng route.
 // Không khai báo: route có token → 'account'; route công khai → 'none' (health, callback cổng thanh toán).
+// 'booking' (chỉ đặt xe): đếm theo mã tài khoản như 'account' nhưng bộ đếm riêng, ngưỡng riêng.
 export const rateLimitScope = (route) => route.rateLimit ?? (route.roles ? 'account' : 'none');
 
 // Đếm một request; trả true nếu đã trả 429 (bên gọi dừng). Header RateLimit-* gắn vào res nên có ở MỌI response sau đó
@@ -72,7 +73,7 @@ async function limited(rateLimiter, scope, id, req, res, log) {
   if (!result.limited) return false;
   // Không ghi IP vào log (GH4: không log dữ liệu cá nhân); mã tài khoản thì được (là mã nội bộ).
   const fields = { scope, path: req.path, request_id: req.requestId };
-  if (scope === 'account') fields.account_id = id;
+  if (scope !== 'ip') fields.account_id = id;
   log.info('rate_limited', fields);
   res.status(429).json({ error: 'RATE_LIMITED' });
   return true;
@@ -82,7 +83,7 @@ async function limited(rateLimiter, scope, id, req, res, log) {
 //   0. khớp route (Express làm) → 404 nếu không có (không đếm)
 //   1. route công khai có đếm: rate limit theo IP → 429
 //   2–5. route cần token: đọc, kiểm tra chữ ký, hạn, claim, danh sách thu hồi → 401
-//   5a. route cần token: rate limit theo mã tài khoản → 429. Đếm SAU khi xác thực (GH2): mã tài khoản chỉ đáng tin
+//   5a. route cần token: rate limit theo mã tài khoản (bộ đếm 'account', hoặc 'booking' ở đặt xe) → 429. Đếm SAU khi xác thực (GH2): mã tài khoản chỉ đáng tin
 //       khi chữ ký đúng; đọc `sub` từ token chưa kiểm thì kẻ xấu ghi `sub` của người khác để làm người đó bị chặn.
 //       Hệ quả: trên route có token, 401 đứng trước 429.
 //   6. role của token có trong danh sách của route không → 403
@@ -103,7 +104,8 @@ function wrap(route, { authenticate, rateLimiter, log }) {
         res.status(result.status).json({ error: result.error });
         return;
       }
-      if (rateLimiter && scope === 'account' && await limited(rateLimiter, 'account', result.identity.accountId, req, res, log)) return;
+      if (rateLimiter && (scope === 'account' || scope === 'booking')
+        && await limited(rateLimiter, scope, result.identity.accountId, req, res, log)) return;
       if (!route.roles.includes(result.identity.role)) {
         res.status(403).json({ error: 'FORBIDDEN' });
         return;
@@ -150,7 +152,7 @@ export function createApp({ routes, log, authenticate, rateLimiter }) {
   for (const route of routes) {
     // Route cần token mà không có bộ kiểm tra token là lỗi lắp ghép: dừng ngay khi khởi động.
     if (route.roles && !authenticate) throw new Error(`route ${route.path} cần token nhưng thiếu authenticate`);
-    if (!['ip', 'account', 'none'].includes(rateLimitScope(route))) throw new Error(`route ${route.path}: rateLimit sai`);
+    if (!['ip', 'account', 'booking', 'none'].includes(rateLimitScope(route))) throw new Error(`route ${route.path}: rateLimit sai`);
     app[route.method.toLowerCase()](route.path, wrap(route, { authenticate, rateLimiter, log }));
   }
 

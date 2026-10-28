@@ -96,7 +96,8 @@ API có phân trang: A12 (mục 13), A20 (mục 14), A13, A23, A26, A33.
 | Điểm | Quy ước |
 |---|---|
 | Route công khai (A04 `auth/register`, A05 `auth/login`, A07 `auth/otp`, A08 `auth/driver-register` — đường dẫn đổi 2026-10-14) | Đếm theo **IP**, **một bộ đếm chung** cho cả bốn; `RATE_LIMIT_PUBLIC_MAX` = **5** mỗi `RATE_LIMIT_WINDOW_SECONDS` = **10** giây (`.env.example`) |
-| Route có token | Đếm theo **`account_id`**; `RATE_LIMIT_ACCOUNT_MAX` = **30** mỗi 10 giây |
+| Đặt xe (A19 `POST /api/v1/bookings`, thêm 2026-10-28) | Bộ đếm **riêng** theo **`account_id`**; `RATE_LIMIT_BOOKING_MAX` = **5** mỗi 10 giây — mục chấm 29 demo ở đây |
+| Route có token còn lại | Đếm theo **`account_id`**; `RATE_LIMIT_ACCOUNT_MAX` = **30** mỗi 10 giây |
 | Không giới hạn | A01–A03 (health), A32 (callback — xác thực bằng khóa; Provider gửi nhiều callback từ một IP là bình thường) |
 | Cửa sổ | Cố định, **bắt đầu từ request đầu tiên** của client (key Redis tạo kèm hạn ở request đầu; request sau không kéo dài hạn) — file 03 mục 12, GH-Q1. Bấm Send 6 lần liên tục thì lần 6 luôn 429 |
 | Thứ tự | Route công khai: đếm trước mọi kiểm tra. Route có token: xác thực token trước, rồi mới đếm (401 trước 429) — mục 1 |

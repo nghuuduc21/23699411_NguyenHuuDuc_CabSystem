@@ -198,6 +198,7 @@ Quy ước chống lặp ở bên nghe (sinh viên xác nhận 2026-10-05, 02 m�
 | 12 | `RATE_LIMIT_WINDOW_SECONDS` | gateway | `10` |
 | 13 | `RATE_LIMIT_PUBLIC_MAX` | gateway | `5` |
 | 14 | `RATE_LIMIT_ACCOUNT_MAX` | gateway | `30` |
+| 15 | `RATE_LIMIT_BOOKING_MAX` | gateway | `5` (thêm 2026-10-28, spec 20-29) |
 
 Mỗi service **chỉ nhận biến của mình**: Compose ghi từng biến trong khối `environment:` của service, không dùng `env_file` chung (khóa của Customer không lọt sang Auth).
 

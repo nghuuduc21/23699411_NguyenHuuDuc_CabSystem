@@ -7,7 +7,8 @@
 //   select:   (chỉ đường dẫn có nhiều mã API — 04 mục 1.10) tra bảng theo body / query, trả
 //             { error } hoặc { roles, handler } của biến thể; message gRPC dựng sẵn ở req.rpcRequest.
 //   rateLimit: bộ đếm của mục chấm 29 (spec 20-29 mục 4.4): 'ip' = 4 route công khai chung một bộ đếm theo IP;
-//             'account' = mặc định của route có token (một bộ đếm theo mã tài khoản); 'none' = không đếm
+//             'account' = mặc định của route có token (một bộ đếm theo mã tài khoản); 'booking' = riêng đặt xe
+//             (bộ đếm riêng theo mã tài khoản, ngưỡng thấp — mục chấm 29 demo ở đây); 'none' = không đếm
 //             (health để Docker / người chấm luôn xem được; callback vì cổng thanh toán không phải người dùng).
 // A01–A03 nằm ngoài tiền tố /api/v1 vì không phải tài nguyên nghiệp vụ.
 import { ROLES } from './token.js';
@@ -106,9 +107,10 @@ export function buildRoutes({ health, auth, customers, drivers, bookings, paymen
 
     // Spec 14-15-16-19-30 — đặt xe, lời mời. Role của đường dẫn kiểm TRƯỚC body (mục chấm 28: tài xế đặt xe → 403).
     ...(bookings ? [
-      // A19: đặt xe = POST vào tập `bookings`; khách đặt được nhiều booking.
+      // A19: đặt xe = POST vào tập `bookings`; khách đặt được nhiều booking, nhưng tối đa RATE_LIMIT_BOOKING_MAX lần
+      // trong mỗi cửa sổ (mục chấm 29: spam đặt xe → 429).
       {
-        code: 'A19', method: 'POST', path: '/api/v1/bookings', roles: ['customer'], rpc: 'cab.booking.v1.BookingService/CreateBooking',
+        code: 'A19', method: 'POST', path: '/api/v1/bookings', roles: ['customer'], rateLimit: 'booking', rpc: 'cab.booking.v1.BookingService/CreateBooking',
         select: selectBy((req) => parseCreateBooking(req.body), { A19: { handler: bookings.create } }),
       },
       // A20 (sửa 2026-10-14 theo yêu cầu giảng viên): booking THEO MÃ KHÁCH — tài nguyên con của khách

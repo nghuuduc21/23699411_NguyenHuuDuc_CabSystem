@@ -2740,16 +2740,45 @@
       ]
     },
     {
-      "name": "29 · Spam → 429 (làm CUỐI)",
-      "description": "Code: `gateway/src/rate-limit.js` (Redis MULTI: SET NX EX → INCR → TTL). Route công khai: 5 lần / 10 giây theo IP; route có token: 30 lần / 10 giây theo tài khoản.",
+      "name": "29 · Spam đặt xe → 429 (làm CUỐI)",
+      "description": "Code: `gateway/src/routes.js` (A19 `rateLimit: 'booking'`) → `app.js` `wrap()` → `rate-limit.js` (Redis MULTI: SET NX EX → INCR → TTL). Đặt xe: 5 lần / 10 giây theo tài khoản (bộ đếm riêng `rl:bk:<mã>`); route công khai `auth/…`: 5 lần / 10 giây theo IP; route có token khác: 30 lần / 10 giây.",
       "item": [
         {
-          "name": "29.1 Bấm Send 6 lần liên tục",
+          "name": "29.1 Đặt xe — bấm Send 6 lần liên tục",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base}}/api/v1/bookings",
+            "description": "**Gõ:** tab đặt xe (mục 15), đổi token về `[KH1]`, bấm **Send** (hoặc Ctrl+Enter) **6 lần liên tục**, rồi mở tab Headers của response\n**Kết quả:** lần 1–5: 201 `SEARCHING`; lần 6: **429 `RATE_LIMITED`**, `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0`\n**Nói:** đặt xe có bộ đếm riêng theo tài khoản vì mỗi lần đặt tạo booking, gọi Payment, hỏi tài xế; đếm sau khi kiểm token (token sai → 401). Cửa sổ bắt đầu từ request đầu tiên; vượt ngưỡng thì request không tới booking-service. Ngưỡng đọc từ `.env` (NFR17). Redis dừng thì cho qua.\n(Runner chỉ gửi 1 lần — mục này phải bấm tay.)",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tok_kh1}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"from\":[10.82,106.68],\"to\":[10.83,106.69]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": []
+        },
+        {
+          "name": "29.2 (dự phòng) Đăng nhập — Send 6 lần",
           "request": {
             "method": "POST",
             "header": [],
             "url": "{{base}}/api/v1/auth/login",
-            "description": "**Gõ:** tab đăng nhập KH1, bấm **Send** (hoặc Ctrl+Enter) **6 lần liên tục**, rồi mở tab Headers của response\n**Kết quả:** lần 1–5: 200; lần 6: **429 `RATE_LIMITED`**, `Retry-After`, `RateLimit-Limit: 5`, `RateLimit-Remaining: 0`\n**Nói:** cửa sổ bắt đầu từ request đầu tiên; spam không kéo dài cửa sổ; vượt ngưỡng thì request không tới service. Ngưỡng đọc từ `.env` (NFR17). Redis dừng thì cho qua.\n(Runner chỉ gửi 1 lần — mục này phải bấm tay.)",
+            "description": "**Gõ:** tab đăng nhập KH1, Send 6 lần → lần 6: 429. Bốn route công khai `auth/…` chung một bộ đếm theo IP (chặn dò mật khẩu).",
             "auth": {
               "type": "noauth"
             },

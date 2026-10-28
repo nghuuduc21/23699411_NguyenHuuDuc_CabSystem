@@ -53,6 +53,7 @@ const rateLimiter = createRateLimiter({
   windowSeconds: config.rateLimitWindowSeconds,
   publicMax: config.rateLimitPublicMax,
   accountMax: config.rateLimitAccountMax,
+  bookingMax: config.rateLimitBookingMax,
   log,
 });
 
