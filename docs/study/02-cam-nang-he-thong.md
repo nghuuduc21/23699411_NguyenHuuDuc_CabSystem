@@ -695,7 +695,7 @@ docker compose down -v                    # xóa container + volume → seed l�
 docker exec -it auth-db psql -U cab -d auth -c "table accounts"
 docker exec -it customer-db psql -U cab -d customer -c "table customer_profiles"   # thấy \x… = đã mã hóa
 docker exec -it driver-db psql -U cab -d driver -c "select driver_id, approval_status, availability from drivers"
-docker exec -it notification-db mongosh -u cab -p cab123 --authenticationDatabase admin notification --eval "db.notifications.find().limit(3)"
+docker exec -it notification-db mongosh -u cab -p <DB_PASSWORD trong .env> --authenticationDatabase admin notification --eval "db.notifications.find().limit(3)"
 
 # Redis
 docker exec -it redis redis-cli keys "*"          # rl:ip:…, rl:acc:…, revoked:…

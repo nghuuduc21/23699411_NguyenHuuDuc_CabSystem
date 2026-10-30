@@ -184,7 +184,7 @@ Quy ước chống lặp ở bên nghe (sinh viên xác nhận 2026-10-05, 02 m�
 
 | # | Biến | Container nhận | Giá trị trong `.env.example` |
 |---|---|---|---|
-| 1 | `DB_PASSWORD` | 8 database; service **không** nhận riêng, chỉ nhận qua `DATABASE_URL` / `MONGODB_URI` (bảng dưới) | `cab123` |
+| 1 | `DB_PASSWORD` | 8 database; service **không** nhận riêng, chỉ nhận qua `DATABASE_URL` / `MONGODB_URI` (bảng dưới) | **để trống** (bí mật, ADR-022) |
 | 2 | `JWT_SECRET` | **chỉ** auth-service (ký), gateway (kiểm tra) | `demo-jwt-secret-chi-dung-cho-may-demo-32b` (≥ 32 ký tự) |
 | 3 | `JWT_TTL_SECONDS` | auth-service | `3600` |
 | 4 | `CUSTOMER_DATA_KEY` | **chỉ** customer-service | 32 byte base64 cố định (44 ký tự) |

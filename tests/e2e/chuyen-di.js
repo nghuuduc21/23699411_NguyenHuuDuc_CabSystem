@@ -3,7 +3,7 @@
 // qua API "Produce" của Kafka UI (đúng thao tác AC-HT-04 làm bằng tay trên giao diện).
 // Quy ước: tài xế nhận chuyến luôn là TX1 (11) — gần P0 nhất (111 m). Trước khi tạo chuyến, mọi booking test còn
 // Offer chờ được dọn (drainAllTestBookings) để Offer mới chắc chắn tới TX1.
-import { call } from './api.js';
+import { call, envFromFile } from './api.js';
 import { book201, drainAllTestBookings, driversDb, waitOffer } from './dat-xe.js';
 import { spawnSync } from 'node:child_process';
 import { KAFKA_UI_URL, REPO_ROOT, waitFor } from './helpers.js';
@@ -96,9 +96,10 @@ export async function kafkaUiProduceStatus(topic, { key, content, partition = 0 
 }
 
 // Chạy một biểu thức mongosh trong notification-db (đọc trực tiếp collection, như sinh viên gõ khi thi); trả stdout.
+// Mật khẩu đọc từ DB_PASSWORD trong .env (ADR-022): không ghi khóa thật vào file có trên Git.
 export function mongoEval(expr) {
   const r = spawnSync('docker', [
-    'exec', 'notification-db', 'mongosh', '-u', 'cab', '-p', 'cab123', '--authenticationDatabase', 'admin', 'notification',
+    'exec', 'notification-db', 'mongosh', '-u', 'cab', '-p', envFromFile('DB_PASSWORD'), '--authenticationDatabase', 'admin', 'notification',
     '--quiet', '--eval', expr,
   ], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 60_000, windowsHide: true });
   if (r.status !== 0) throw new Error(`mongosh: ${r.stderr}`);
